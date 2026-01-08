@@ -1,7 +1,8 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { MapPin } from "lucide-react";
+import { useEffect } from "react";
+import { MapPin, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,14 +28,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
 
 const addressSchema = z.object({
   addressType: z.string().min(1, "Address type is required"),
   address: z.string().min(1, "Address is required"),
   phone: z.string().min(1, "Phone is required"),
   fax: z.string().optional(),
-  postalCode: z.string().min(1, "Postal code is required"),
+  postalCode: z.number().int().positive().optional().nullable(),
   city: z.string().min(1, "City is required"),
   state: z.string().optional(),
   country: z.string().min(1, "Country is required"),
@@ -48,7 +48,7 @@ interface Address {
   address: string;
   phone: string;
   fax: string;
-  postalCode: string;
+  postalCode: number | null;
   city: string;
   state: string;
   country: string;
@@ -59,31 +59,47 @@ interface AddressEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   address: Address | null;
-  onSave: (data: AddressFormData) => void;
+  onSave: (data: AddressFormData) => Promise<void>;
+  isSubmitting?: boolean;
 }
 
 const addressTypes = ["Head Office", "Branch Office", "Warehouse", "Factory", "Other"];
 
-export function AddressEditDialog({ open, onOpenChange, address, onSave }: AddressEditDialogProps) {
+export function AddressEditDialog({ open, onOpenChange, address, onSave, isSubmitting = false }: AddressEditDialogProps) {
   const form = useForm<AddressFormData>({
     resolver: zodResolver(addressSchema),
     defaultValues: {
-      addressType: address?.addressType || "",
-      address: address?.address || "",
-      phone: address?.phone || "",
-      fax: address?.fax || "",
-      postalCode: address?.postalCode || "",
-      city: address?.city || "",
-      state: address?.state || "",
-      country: address?.country || "",
-      status: address?.status || "Active",
+      addressType: "",
+      address: "",
+      phone: "",
+      fax: "",
+      postalCode: null,
+      city: "",
+      state: "",
+      country: "",
+      status: "Active",
     },
   });
 
-  const handleSubmit = (data: AddressFormData) => {
-    onSave(data);
-    toast.success("Address updated successfully");
-    onOpenChange(false);
+  // Reset form when address changes or dialog opens
+  useEffect(() => {
+    if (open && address) {
+      form.reset({
+        addressType: address.addressType || "",
+        address: address.address || "",
+        phone: address.phone || "",
+        fax: address.fax || "",
+        postalCode: address.postalCode || null,
+        city: address.city || "",
+        state: address.state || "",
+        country: address.country || "",
+        status: address.status || "Active",
+      });
+    }
+  }, [open, address, form]);
+
+  const handleSubmit = async (data: AddressFormData) => {
+    await onSave(data);
   };
 
   return (
@@ -199,9 +215,14 @@ export function AddressEditDialog({ open, onOpenChange, address, onSave }: Addre
                 name="postalCode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Postal Code *</FormLabel>
+                    <FormLabel>Postal Code</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="12345" />
+                      <Input
+                        type="number"
+                        placeholder="12345"
+                        value={field.value ?? ""}
+                        onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -252,10 +273,19 @@ export function AddressEditDialog({ open, onOpenChange, address, onSave }: Addre
             </div>
 
             <DialogFooter className="pt-4 border-t">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button type="submit">Save Changes</Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
             </DialogFooter>
           </form>
         </Form>

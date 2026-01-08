@@ -14,6 +14,7 @@ import {
   User,
   Plus,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import { FileUpload } from "@/components/ui/file-upload";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { customerService } from "@/services/customerService";
 
 // Address Schema
 const addressSchema = z.object({
@@ -78,6 +80,7 @@ type CustomerFormData = z.infer<typeof customerFormSchema>;
 export default function CustomerNewPage() {
   const router = useRouter();
   const [legalDocument, setLegalDocument] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<CustomerFormData>({
     resolver: zodResolver(customerFormSchema),
@@ -137,10 +140,94 @@ export default function CustomerNewPage() {
     setLegalDocument(file);
   };
 
-  const onSubmit = (data: CustomerFormData) => {
-    console.log("Form data:", { ...data, legalDocument: legalDocument?.name });
-    toast.success("Customer created successfully");
-    router.push("/master/customer");
+  const onSubmit = async (data: CustomerFormData) => {
+    try {
+      setIsSubmitting(true);
+
+      // Map form data to backend format
+      const payload = {
+        code: data.code,
+        customer_name: data.customerName,
+        business: data.businessLine,
+        npwp: data.npwpNumber || null,
+        email: data.email,
+        sales_incharge: data.salesIncharge || null,
+        central_cust_id: data.centralCustomerId || null,
+        special_customer: false,
+        top: 0,
+        // First address
+        address: data.addresses[0] ? {
+          address_type: data.addresses[0].addressType,
+          address: data.addresses[0].address,
+          phone: data.addresses[0].phone,
+          fax: data.addresses[0].fax || null,
+          city: data.addresses[0].city,
+          state: data.addresses[0].state || null,
+          country: data.addresses[0].country,
+          postal_code: data.addresses[0].postalCode || null,
+        } : undefined,
+        // First contact
+        contact: data.contacts[0] ? {
+          title: data.contacts[0].title || '',
+          first_name: data.contacts[0].firstName,
+          surname: data.contacts[0].surname,
+          job_title: data.contacts[0].jobTitle || null,
+          department: data.contacts[0].department || null,
+          email: data.contacts[0].email,
+          phone: data.contacts[0].phone,
+        } : undefined,
+      };
+
+      const response = await customerService.create(payload);
+
+      toast.success("Customer created successfully");
+
+      // Add additional addresses if more than one
+      if (data.addresses.length > 1 && response.data?.id) {
+        for (let i = 1; i < data.addresses.length; i++) {
+          const addr = data.addresses[i];
+          await customerService.manageAddress({
+            action: 'create',
+            customer_id: response.data.id,
+            address_type: addr.addressType,
+            address: addr.address,
+            phone: addr.phone,
+            fax: addr.fax || undefined,
+            city: addr.city,
+            state: addr.state || undefined,
+            country: addr.country,
+            postal_code: addr.postalCode || undefined,
+          });
+        }
+      }
+
+      // Add additional contacts if more than one
+      if (data.contacts.length > 1 && response.data?.id && response.data.addresses?.[0]?.id) {
+        const addressId = response.data.addresses[0].id;
+        for (let i = 1; i < data.contacts.length; i++) {
+          const contact = data.contacts[i];
+          await customerService.manageContact({
+            action: 'create',
+            customer_id: response.data.id,
+            address_id: addressId,
+            title: contact.title || '',
+            first_name: contact.firstName,
+            surname: contact.surname,
+            job_title: contact.jobTitle || undefined,
+            department: contact.department || undefined,
+            email: contact.email,
+            phone: contact.phone,
+          });
+        }
+      }
+
+      router.push(`/master/customer/${response.data?.id || ''}`);
+    } catch (error: any) {
+      console.error('Error creating customer:', error);
+      toast.error(error.response?.data?.message || 'Failed to create customer');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const addNewAddress = () => {
@@ -198,9 +285,13 @@ export default function CustomerNewPage() {
                 <X className="h-4 w-4" />
                 Cancel
               </Button>
-              <Button type="submit" className="gap-2">
-                <Save className="h-4 w-4" />
-                Save Customer
+              <Button type="submit" className="gap-2" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {isSubmitting ? "Saving..." : "Save Customer"}
               </Button>
             </div>
           </div>

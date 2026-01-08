@@ -1,11 +1,26 @@
 'use client';
 
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Edit, Trash2, Building2, Mail, Phone, Briefcase, Factory, Badge } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, Building2, MapPin, User, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge as BadgeComponent } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,20 +32,200 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { customers } from "@/data/masterData";
+import { AddressEditDialog } from "@/components/forms/AddressEditDialog";
+import { ContactEditDialog } from "@/components/forms/ContactEditDialog";
+import { customerService, Customer, Address, Contact } from "@/services/customerService";
 import { toast } from "sonner";
+
+// Local interfaces for dialog state (with proper typing)
+interface AddressDialogData {
+  id: number;
+  addressType: string;
+  address: string;
+  phone: string;
+  fax: string;
+  postalCode: number | null;
+  city: string;
+  state: string;
+  country: string;
+  status: "Active" | "Inactive";
+}
+
+interface ContactDialogData {
+  id: number;
+  title: string;
+  firstName: string;
+  surname: string;
+  jobTitle: string;
+  department: string;
+  email: string;
+  phone: string;
+  status: "Active" | "Inactive";
+}
+
+// Transform API address to dialog format
+const transformAddress = (addr: Address): AddressDialogData => ({
+  id: addr.id,
+  addressType: addr.address_type,
+  address: addr.address,
+  phone: addr.phone,
+  fax: addr.fax || "",
+  postalCode: addr.postal_code ?? null,
+  city: addr.city,
+  state: addr.state,
+  country: addr.country,
+  status: addr.status === "Active" ? "Active" : "Inactive",
+});
+
+// Transform API contact to dialog format
+const transformContact = (contact: Contact): ContactDialogData => ({
+  id: contact.id,
+  title: contact.title,
+  firstName: contact.first_name,
+  surname: contact.surname,
+  jobTitle: contact.job_title || "",
+  department: contact.department || "",
+  email: contact.email,
+  phone: contact.phone,
+  status: contact.status === "Active" ? "Active" : "Inactive",
+});
 
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = typeof params.id === 'string' ? params.id : '';
 
-  const customer = customers.find((c) => c.id === id);
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("customer-info");
+  const [selectedAddress, setSelectedAddress] = useState<AddressDialogData | null>(null);
+  const [selectedContact, setSelectedContact] = useState<ContactDialogData | null>(null);
+  const [editingAddress, setEditingAddress] = useState<AddressDialogData | null>(null);
+  const [editingContact, setEditingContact] = useState<ContactDialogData | null>(null);
+  const [isAddressSaving, setIsAddressSaving] = useState(false);
+  const [isContactSaving, setIsContactSaving] = useState(false);
 
-  const handleDelete = () => {
-    toast.success("Customer deleted successfully");
-    router.push("/master/customer");
+  const fetchCustomer = useCallback(async () => {
+    if (!id) return;
+    try {
+      setLoading(true);
+      const response = await customerService.getById(id);
+      setCustomer(response.data);
+    } catch (error: any) {
+      console.error('Error fetching customer:', error);
+      toast.error(error.response?.data?.message || 'Failed to fetch customer');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchCustomer();
+  }, [fetchCustomer]);
+
+  const handleAddressSave = async (data: any) => {
+    if (!editingAddress || !customer) return;
+    try {
+      setIsAddressSaving(true);
+      await customerService.manageAddress({
+        action: 'update',
+        id: editingAddress.id,
+        address_type: data.addressType,
+        address: data.address,
+        phone: data.phone,
+        fax: data.fax,
+        city: data.city,
+        state: data.state,
+        country: data.country,
+        postal_code: data.postalCode,
+        status: data.status,
+      });
+      toast.success("Address updated successfully");
+      setEditingAddress(null);
+      fetchCustomer(); // Refresh data
+    } catch (error: any) {
+      console.error('Error updating address:', error);
+      toast.error(error.response?.data?.message || 'Failed to update address');
+    } finally {
+      setIsAddressSaving(false);
+    }
   };
+
+  const handleContactSave = async (data: any) => {
+    if (!editingContact || !customer) return;
+    try {
+      setIsContactSaving(true);
+      await customerService.manageContact({
+        action: 'update',
+        id: editingContact.id,
+        title: data.title,
+        first_name: data.firstName,
+        surname: data.surname,
+        job_title: data.jobTitle,
+        department: data.department,
+        email: data.email,
+        phone: data.phone,
+        status: data.status,
+      });
+      toast.success("Contact updated successfully");
+      setEditingContact(null);
+      fetchCustomer(); // Refresh data
+    } catch (error: any) {
+      console.error('Error updating contact:', error);
+      toast.error(error.response?.data?.message || 'Failed to update contact');
+    } finally {
+      setIsContactSaving(false);
+    }
+  };
+
+  const handleAddressDelete = async (addressId: number) => {
+    try {
+      await customerService.manageAddress({
+        action: 'delete',
+        id: addressId,
+      });
+      toast.success("Address deleted successfully");
+      setSelectedAddress(null);
+      fetchCustomer(); // Refresh data
+    } catch (error: any) {
+      console.error('Error deleting address:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete address');
+    }
+  };
+
+  const handleContactDelete = async (contactId: number) => {
+    try {
+      await customerService.manageContact({
+        action: 'delete',
+        id: contactId,
+      });
+      toast.success("Contact deleted successfully");
+      setSelectedContact(null);
+      fetchCustomer(); // Refresh data
+    } catch (error: any) {
+      console.error('Error deleting contact:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete contact');
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await customerService.delete(id);
+      toast.success("Customer deleted successfully");
+      router.push("/master/customer");
+    } catch (error: any) {
+      console.error('Error deleting customer:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete customer');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!customer) {
     return (
@@ -40,8 +235,10 @@ export default function CustomerDetailPage() {
     );
   }
 
+  const isWhitelist = customer.special_customer === 1;
+
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -53,144 +250,455 @@ export default function CustomerDetailPage() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold text-foreground">Customer</h1>
-              <BadgeComponent 
-                variant={customer.status === "Contract" ? "default" : "secondary"}
-                className="animate-fade-in"
-              >
-                {customer.status}
-              </BadgeComponent>
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">Code: {customer.code}</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-foreground">{customer.code}</h1>
+            <Badge variant={isWhitelist ? "secondary" : "default"}>
+              {isWhitelist ? "Whitelist" : "Contract"}
+            </Badge>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => router.push(`/master/customer/${id}/edit`)}
-            className="gap-2 hover:border-primary hover:text-primary transition-colors"
-          >
-            <Edit className="h-4 w-4" />
-            Edit
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" className="gap-2">
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete the
-                  customer "{customer.code}".
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="sm" className="gap-2">
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this customer? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
-      {/* Customer Information Card */}
-      <Card className="overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
-          <CardTitle className="flex items-center gap-2">
-            <div className="p-1.5 rounded-md bg-primary/10">
-              <Building2 className="h-4 w-4 text-primary" />
-            </div>
-            Customer Information
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="space-y-1.5 p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors group">
-              <div className="flex items-center gap-2">
-                <div className="p-1 rounded bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                  <Badge className="h-3.5 w-3.5 text-primary" />
-                </div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Code</p>
-              </div>
-              <p className="text-sm font-semibold text-foreground pl-7">{customer.code}</p>
-            </div>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3 mb-6">
+          <TabsTrigger value="customer-info" className="gap-2">
+            <Building2 className="h-4 w-4" />
+            Customer Info
+          </TabsTrigger>
+          <TabsTrigger value="addresses" className="gap-2">
+            <MapPin className="h-4 w-4" />
+            Addresses ({customer.addresses?.length || 0})
+          </TabsTrigger>
+          <TabsTrigger value="contacts" className="gap-2">
+            <User className="h-4 w-4" />
+            Contacts ({customer.contacts?.length || 0})
+          </TabsTrigger>
+        </TabsList>
 
-            <div className="space-y-1.5 p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors group">
-              <div className="flex items-center gap-2">
-                <div className="p-1 rounded bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                  <Building2 className="h-3.5 w-3.5 text-primary" />
-                </div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Name</p>
+        {/* Customer Info Tab */}
+        <TabsContent value="customer-info">
+          <Card className="overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-md bg-primary/10">
+                    <Building2 className="h-4 w-4 text-primary" />
+                  </div>
+                  Customer Info
+                </CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push(`/master/customer/${id}/edit`)}
+                  className="gap-2"
+                >
+                  <Edit className="h-4 w-4" />
+                  Edit
+                </Button>
               </div>
-              <p className="text-sm font-semibold text-foreground pl-7">{customer.name}</p>
-            </div>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Code
+                  </p>
+                  <p className="text-sm font-medium">{customer.code}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Customer Name
+                  </p>
+                  <p className="text-sm font-medium">{customer.customer_name}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Business Line
+                  </p>
+                  <p className="text-sm font-medium">{customer.business}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Customer Category
+                  </p>
+                  <p className="text-sm font-medium">{isWhitelist ? "Whitelist" : "Contract"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Term of Payment (Days)
+                  </p>
+                  <p className="text-sm font-medium">{customer.top?.toString() || "-"}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    NPWP Number
+                  </p>
+                  <p className="text-sm font-medium">{customer.npwp || "-"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Central Customer ID
+                  </p>
+                  <p className="text-sm font-medium">{customer.central_cust_id || "-"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Sales Incharge
+                  </p>
+                  <p className="text-sm font-medium">{customer.sales_incharge || "-"}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Email
+                  </p>
+                  <p className="text-sm font-medium">{customer.email || "-"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Legal Document
+                  </p>
+                  <p className="text-sm font-medium">{customer.legal_document || "-"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-            <div className="space-y-1.5 p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors group">
-              <div className="flex items-center gap-2">
-                <div className="p-1 rounded bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                  <Briefcase className="h-3.5 w-3.5 text-primary" />
+        {/* Addresses Tab */}
+        <TabsContent value="addresses">
+          <Card className="overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
+              <CardTitle className="flex items-center gap-2">
+                <div className="p-1.5 rounded-md bg-primary/10">
+                  <MapPin className="h-4 w-4 text-primary" />
                 </div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Business Line</p>
-              </div>
-              <p className="text-sm font-semibold text-foreground pl-7">{customer.businessLine}</p>
-            </div>
+                Addresses
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Address Type</TableHead>
+                    <TableHead>Address</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {customer.addresses?.map((address) => (
+                    <TableRow
+                      key={address.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => setSelectedAddress(transformAddress(address))}
+                    >
+                      <TableCell className="font-medium text-primary hover:underline">
+                        {address.address_type}
+                      </TableCell>
+                      <TableCell className="max-w-md truncate">
+                        {address.address}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={address.status === "Active" ? "default" : "secondary"}>
+                          {address.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(!customer.addresses || customer.addresses.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        No addresses found
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-            <div className="space-y-1.5 p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors group">
-              <div className="flex items-center gap-2">
-                <div className="p-1 rounded bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                  <Factory className="h-3.5 w-3.5 text-primary" />
+        {/* Contacts Tab */}
+        <TabsContent value="contacts">
+          <Card className="overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
+              <CardTitle className="flex items-center gap-2">
+                <div className="p-1.5 rounded-md bg-primary/10">
+                  <User className="h-4 w-4 text-primary" />
                 </div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Industry</p>
-              </div>
-              <p className="text-sm font-semibold text-foreground pl-7">{customer.industry}</p>
-            </div>
+                Contacts
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Full Name</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {customer.contacts?.map((contact) => (
+                    <TableRow
+                      key={contact.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => setSelectedContact(transformContact(contact))}
+                    >
+                      <TableCell className="font-medium text-primary hover:underline">
+                        {contact.title} {contact.first_name} {contact.surname}
+                      </TableCell>
+                      <TableCell>{contact.phone}</TableCell>
+                      <TableCell>
+                        <Badge variant={contact.status === "Active" ? "default" : "secondary"}>
+                          {contact.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(!customer.contacts || customer.contacts.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        No contacts found
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-            <div className="space-y-1.5 p-4 rounded-lg bg-primary/5 hover:bg-primary/10 transition-colors border border-primary/20 group">
-              <div className="flex items-center gap-2">
-                <div className="p-1 rounded bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                  <Mail className="h-3.5 w-3.5 text-primary" />
+      {/* Address Detail Dialog */}
+      <Dialog open={!!selectedAddress} onOpenChange={() => setSelectedAddress(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="border-b pb-4">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <MapPin className="h-5 w-5 text-primary" />
                 </div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email</p>
-              </div>
-              <a 
-                href={`mailto:${customer.email}`} 
-                className="text-sm font-semibold text-primary hover:underline pl-7 block"
-              >
-                {customer.email}
-              </a>
+                <span>{selectedAddress?.addressType}</span>
+              </DialogTitle>
+              <Badge variant={selectedAddress?.status === "Active" ? "default" : "secondary"} className="ml-auto mr-8">
+                {selectedAddress?.status}
+              </Badge>
             </div>
+          </DialogHeader>
+          {selectedAddress && (
+            <div className="space-y-5 pt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Address Type</p>
+                  <p className="text-sm font-medium">{selectedAddress.addressType}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</p>
+                  <p className="text-sm font-medium">{selectedAddress.status}</p>
+                </div>
+              </div>
 
-            <div className="space-y-1.5 p-4 rounded-lg bg-primary/5 hover:bg-primary/10 transition-colors border border-primary/20 group">
-              <div className="flex items-center gap-2">
-                <div className="p-1 rounded bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                  <Phone className="h-3.5 w-3.5 text-primary" />
-                </div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Phone</p>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Address</p>
+                <p className="text-sm font-medium">{selectedAddress.address}</p>
               </div>
-              <a 
-                href={`tel:${customer.phone}`} 
-                className="text-sm font-semibold text-primary hover:underline pl-7 block"
-              >
-                {customer.phone}
-              </a>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Phone</p>
+                  <p className="text-sm font-medium">{selectedAddress.phone}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Fax</p>
+                  <p className="text-sm font-medium">{selectedAddress.fax || "-"}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Postal Code</p>
+                  <p className="text-sm font-medium">{selectedAddress.postalCode?.toString() || "-"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">City</p>
+                  <p className="text-sm font-medium">{selectedAddress.city}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">State</p>
+                  <p className="text-sm font-medium">{selectedAddress.state || "-"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Country</p>
+                  <p className="text-sm font-medium">{selectedAddress.country}</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => {
+                    setEditingAddress(selectedAddress);
+                    setSelectedAddress(null);
+                  }}
+                >
+                  <Edit className="h-4 w-4" />
+                  Edit
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => handleAddressDelete(selectedAddress.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </Button>
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Contact Detail Dialog */}
+      <Dialog open={!!selectedContact} onOpenChange={() => setSelectedContact(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="border-b pb-4">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <User className="h-5 w-5 text-primary" />
+                </div>
+                <span>{selectedContact?.title} {selectedContact?.firstName} {selectedContact?.surname}</span>
+              </DialogTitle>
+              <Badge variant={selectedContact?.status === "Active" ? "default" : "secondary"} className="ml-auto mr-8">
+                {selectedContact?.status}
+              </Badge>
+            </div>
+          </DialogHeader>
+          {selectedContact && (
+            <div className="space-y-5 pt-2">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Title</p>
+                  <p className="text-sm font-medium">{selectedContact.title || "-"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">First Name</p>
+                  <p className="text-sm font-medium">{selectedContact.firstName}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Surname</p>
+                  <p className="text-sm font-medium">{selectedContact.surname}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Job Title</p>
+                  <p className="text-sm font-medium">{selectedContact.jobTitle || "-"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Department</p>
+                  <p className="text-sm font-medium">{selectedContact.department || "-"}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email</p>
+                  <p className="text-sm font-medium">{selectedContact.email}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Phone</p>
+                  <p className="text-sm font-medium">{selectedContact.phone}</p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</p>
+                <p className="text-sm font-medium">{selectedContact.status}</p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => {
+                    setEditingContact(selectedContact);
+                    setSelectedContact(null);
+                  }}
+                >
+                  <Edit className="h-4 w-4" />
+                  Edit
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => handleContactDelete(selectedContact.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Address Edit Dialog */}
+      <AddressEditDialog
+        open={!!editingAddress}
+        onOpenChange={(open) => !open && setEditingAddress(null)}
+        address={editingAddress}
+        onSave={handleAddressSave}
+        isSubmitting={isAddressSaving}
+      />
+
+      {/* Contact Edit Dialog */}
+      <ContactEditDialog
+        open={!!editingContact}
+        onOpenChange={(open) => !open && setEditingContact(null)}
+        contact={editingContact}
+        onSave={handleContactSave}
+        isSubmitting={isContactSaving}
+      />
     </div>
   );
 }
-
-
-
-
-
-
-
-

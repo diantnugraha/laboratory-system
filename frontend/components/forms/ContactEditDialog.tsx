@@ -1,7 +1,8 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { User } from "lucide-react";
+import { useEffect } from "react";
+import { User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
 
 const contactSchema = z.object({
   title: z.string().optional(),
@@ -56,30 +56,45 @@ interface ContactEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contact: Contact | null;
-  onSave: (data: ContactFormData) => void;
+  onSave: (data: ContactFormData) => Promise<void>;
+  isSubmitting?: boolean;
 }
 
 const titles = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
 
-export function ContactEditDialog({ open, onOpenChange, contact, onSave }: ContactEditDialogProps) {
+export function ContactEditDialog({ open, onOpenChange, contact, onSave, isSubmitting = false }: ContactEditDialogProps) {
   const form = useForm<ContactFormData>({
     resolver: zodResolver(contactSchema),
     defaultValues: {
-      title: contact?.title || "",
-      firstName: contact?.firstName || "",
-      surname: contact?.surname || "",
-      jobTitle: contact?.jobTitle || "",
-      department: contact?.department || "",
-      email: contact?.email || "",
-      phone: contact?.phone || "",
-      status: contact?.status || "Active",
+      title: "",
+      firstName: "",
+      surname: "",
+      jobTitle: "",
+      department: "",
+      email: "",
+      phone: "",
+      status: "Active",
     },
   });
 
-  const handleSubmit = (data: ContactFormData) => {
-    onSave(data);
-    toast.success("Contact updated successfully");
-    onOpenChange(false);
+  // Reset form when contact changes or dialog opens
+  useEffect(() => {
+    if (open && contact) {
+      form.reset({
+        title: contact.title || "",
+        firstName: contact.firstName || "",
+        surname: contact.surname || "",
+        jobTitle: contact.jobTitle || "",
+        department: contact.department || "",
+        email: contact.email || "",
+        phone: contact.phone || "",
+        status: contact.status || "Active",
+      });
+    }
+  }, [open, contact, form]);
+
+  const handleSubmit = async (data: ContactFormData) => {
+    await onSave(data);
   };
 
   return (
@@ -234,10 +249,19 @@ export function ContactEditDialog({ open, onOpenChange, contact, onSave }: Conta
             />
 
             <DialogFooter className="pt-4 border-t">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button type="submit">Save Changes</Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
             </DialogFooter>
           </form>
         </Form>

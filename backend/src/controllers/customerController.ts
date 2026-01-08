@@ -4,26 +4,26 @@ import { buildSearchCondition, buildMultiFieldSearchCondition, sanitizeSearchQue
 import { parseId, parseQueryParam, ApiResponse } from '../types';
 
 /**
- * GET /api/customers - List customers with search, pagination, and filters (6 months optional)
+ * GET /api/customers - List customers with search, pagination, and filters (12 months optional)
  */
 export const getCustomers = async (req: Request, res: Response): Promise<void> => {
   try {
-    const limit = Math.min(parseQueryParam(req.query.limit, 20), 100);
+    const limit = Math.min(parseQueryParam(req.query.limit, 30), 1000);
     const offset = parseQueryParam(req.query.offset, 0);
     const searchQuery = sanitizeSearchQuery((req.query.search || req.query.q) as string | undefined);
     const lastMonths = (() => {
-      const raw = typeof req.query.months === 'string' ? parseInt(req.query.months, 10) : 6;
-      return Number.isFinite(raw) ? Math.max(0, raw) : 6;
+      const raw = typeof req.query.months === 'string' ? parseInt(req.query.months, 10) : 12;
+      return Number.isFinite(raw) ? Math.max(0, raw) : 12;
     })();
 
-    // Optional last X months filter (default 6). When months=0, no filter applied
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - lastMonths);
+    // Optional last X months filter (default 12). When months=0, no filter applied
+    const twoYearAgo = new Date();
+    twoYearAgo.setMonth(twoYearAgo.getMonth() - lastMonths);
 
     // Build where condition with spread operators
     const where: any = {
       trash: null,
-      ...(lastMonths > 0 ? { created_at: { gte: sixMonthsAgo } } : {}),
+      ...(lastMonths > 0 ? { created_at: { gte: twoYearAgo } } : {}),
       ...buildMultiFieldSearchCondition(
         ['customer_name', 'code', 'business', 'email'],
         searchQuery
@@ -1224,7 +1224,7 @@ export const manageAddress = async (req: Request, res: Response): Promise<void> 
           city: normalizeLocation(String(city)),
           state: normalizeLocation(String(state)),
           country: normalizeLocation(String(country)),
-          postal_code: postal_code || null,
+          postal_code: postal_code ? parseInt(String(postal_code), 10) || null : null,
           npwp: npwp || null,
           status: status || 'Active',
           created_by: userId
@@ -1277,7 +1277,7 @@ export const manageAddress = async (req: Request, res: Response): Promise<void> 
           ...(city !== undefined ? { city: normalizeLocation(String(city)) } : {}),
           ...(state !== undefined ? { state: normalizeLocation(String(state)) } : {}),
           ...(country !== undefined ? { country: normalizeLocation(String(country)) } : {}),
-          ...(postal_code !== undefined ? { postal_code } : {}),
+          ...(postal_code !== undefined ? { postal_code: postal_code ? parseInt(String(postal_code), 10) || null : null } : {}),
           ...(npwp !== undefined ? { npwp } : {}),
           ...(status !== undefined ? { status } : {}),
           updated_by: userId
