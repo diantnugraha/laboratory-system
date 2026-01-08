@@ -1,0 +1,562 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model Users {
+  id               Int       @id @default(autoincrement())
+  username         String    @db.VarChar(255)
+  email            String    @db.VarChar(255)
+  password         String    @db.VarChar(255)
+  display_name     String    @map("display_name") @db.VarChar(255)
+  role_id          Int       @map("role_id")
+  customer_id      Int?      @map("customer_id")
+  complain_category Int?     @map("complain_category")
+  last_login       DateTime? @map("last_login") @db.Date
+  token            String?   @db.VarChar(255)
+  created_at       DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at       DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by       Int       @map("created_by")
+  updated_by       Int?      @map("updated_by")
+  trash            Int?
+  department       String?   @db.VarChar(255)
+  contact_id       Int?      @map("contact_id")
+  profile_picture  String?   @map("profile_picture") @db.VarChar(255)
+  employee_id      Int?      @map("employee_id")
+  list_customer    String?   @map("list_customer") @db.Text
+  list_contact     String?   @map("list_contact") @db.Text
+  central_pic_id   String?   @map("central_pic_id") @db.VarChar(255)
+
+  role             Roles     @relation(fields: [role_id], references: [id])
+  customer         Customer? @relation(fields: [customer_id], references: [id])
+  contact          Contact?  @relation(fields: [contact_id], references: [id])
+  analystRules     AnalystRules[]
+
+  @@index([role_id])
+  @@index([customer_id])
+  @@index([complain_category])
+  @@index([contact_id])
+  @@index([email])
+  @@index([username])
+  @@map("users")
+}
+
+model Roles {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(255)
+
+  users Users[]
+
+  @@map("roles")
+}
+
+model Customer {
+  id              Int       @id @default(autoincrement())
+  code            String    @db.VarChar(255)
+  zahir_id        String?   @map("zahir_id") @db.VarChar(20)
+  customer_name   String    @map("customer_name") @db.VarChar(255)
+  business        String    @db.VarChar(255)
+  npwp            String?   @db.VarChar(255)
+  legal_document  String?   @map("legal_document") @db.VarChar(255)
+  email           String?   @db.VarChar(255)
+  website         String?   @db.VarChar(255)
+  bank_name       String?   @map("bank_name") @db.VarChar(255)
+  account_name    String?   @map("account_name") @db.VarChar(255)
+  account_number  String?   @map("account_number") @db.VarChar(255)
+  bank_branch     String?   @map("bank_branch") @db.VarChar(255)
+  bank_address    String?   @map("bank_address") @db.VarChar(255)
+  supplier_of     String?   @map("supplier_of") @db.VarChar(255)
+  supplier_code   String?   @map("supplier_code") @db.VarChar(255)
+  remarks         String?   @db.VarChar(255)
+  created_at      DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at      DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by      Int?      @map("created_by")
+  updated_by      Int?      @map("updated_by")
+  trash           Int?
+  special_customer Int?     @map("special_customer") @default(0)
+  top             Int?      @default(0)
+  payment_middle  Int?      @map("payment_middle") @default(0)
+  sales_incharge  String?   @map("sales_incharge") @db.VarChar(255)
+  ecoa            Int?      @default(0)
+  feeder          String?   @db.VarChar(255)
+  feeder_fee      Int?      @map("feeder_fee") @default(0)
+  agency          Int?      @default(0)
+  sales_feeder    Int?      @map("sales_feeder") @default(0)
+  p_drop          Int       @map("p_drop") @default(0)
+  p_growth        Int       @map("p_growth") @default(0)
+  p_lost          Int       @map("p_lost") @default(0)
+  p_new           Int       @map("p_new") @default(0)
+  p_all           Int       @map("p_all") @default(0)
+  sales_id        Int?      @map("sales_id")
+  central_cust_id String?   @map("central_cust_id") @db.VarChar(255)
+  is_corporate    Int       @map("is_corporate") @default(0)
+
+  users           Users[]
+  contacts        Contact[]
+  addresses       Address[]
+  standarts       Standart[]
+  quotations      Quotation[]
+  preOrders       PreOrder[]
+  contracts       Contract[]
+  packages        Package[]
+
+  @@index([customer_name], name: "idx_customer_name")
+  @@index([special_customer, top], name: "idx_customer_special_top")
+  @@map("customer")
+}
+
+model AnalystRules {
+  id              Int      @id @default(autoincrement())
+  user_id         Int      @map("user_id")
+  analyst_type_id Int      @map("analyst_type_id")
+  created_at       DateTime @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at       DateTime @updatedAt @map("updated_at") @db.DateTime(0)
+  trash            DateTime? @db.DateTime(0)
+
+  user Users @relation(fields: [user_id], references: [id])
+  analystType AnalystType @relation(fields: [analyst_type_id], references: [id])
+
+  @@index([user_id])
+  @@index([analyst_type_id])
+  @@map("analyst_rules")
+}
+
+model AnalystType {
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(255)
+  list_service String?  @map("list_service") @db.LongText
+  created_at  DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at DateTime?  @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by  Int       @map("created_by")
+  updated_by  Int?      @map("updated_by")
+  trash       Int?
+
+  analystRules AnalystRules[]
+  services     Service[]
+
+  @@index([name])
+  @@map("analyst_type")
+}
+
+model Contact {
+  id              Int       @id @default(autoincrement())
+  customer_id     Int       @map("customer_id")
+  address_id      Int       @map("address_id")
+  title           String    @db.VarChar(255)
+  first_name      String    @map("first_name") @db.VarChar(255)
+  middle_name     String?   @map("middle_name") @db.VarChar(255)
+  surname         String    @db.VarChar(255)
+  username        String    @db.VarChar(255)
+  job_title       String?   @map("job_title") @db.VarChar(255)
+  department      String?   @db.VarChar(255)
+  email           String    @db.VarChar(255)
+  phone           String    @db.VarChar(255)
+  fax             String?   @db.VarChar(255)
+  mobile_phone    String?   @map("mobile_phone") @db.VarChar(255)
+  created_at      DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at      DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by      Int       @map("created_by")
+  updated_by      Int?      @map("updated_by")
+  status          String?   @db.VarChar(45)
+  trash           Int?
+  onesignal_id    String?   @map("onesignal_id") @db.VarChar(100)
+  central_user_id String?   @map("central_user_id") @db.VarChar(255)
+
+  customer        Customer  @relation(fields: [customer_id], references: [id])
+  address         Address   @relation(fields: [address_id], references: [id])
+  users           Users[]
+  quotations      Quotation[]
+  preOrders       PreOrder[]
+
+  @@index([customer_id])
+  @@index([address_id])
+  @@map("contact")
+}
+
+model Address {
+  id                Int       @id @default(autoincrement())
+  customer_id       Int       @map("customer_id")
+  address_type      String    @map("address_type") @db.VarChar(255)
+  address           String    @db.Text
+  phone             String    @db.VarChar(255)
+  fax               String?   @db.VarChar(255)
+  city              String    @db.VarChar(255)
+  state             String    @db.VarChar(255)
+  country           String    @db.VarChar(255)
+  postal_code       Int?      @map("postal_code")
+  created_at        DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at        DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by        Int       @map("created_by")
+  updated_by        Int?      @map("updated_by")
+  status            String?   @db.VarChar(45)
+  npwp              String?   @db.VarChar(100)
+  trash             Int?
+  central_address_id Int?     @map("central_address_id")
+
+  customer          Customer  @relation(fields: [customer_id], references: [id])
+  contacts          Contact[]
+  quotations        Quotation[]
+
+  @@index([customer_id])
+  @@map("address")
+}
+
+model Matrix {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(255)
+  trash     Int?
+
+  methods   Method[]
+
+  @@index([name])
+  @@map("matrix")
+}
+
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(255)
+  trash     Int?
+
+  services Service[]
+  standarts Standart[]
+
+  @@index([name])
+  @@map("category")
+}
+
+model Method {
+  id              Int       @id @default(autoincrement())
+  code            String    @db.VarChar(255)
+  name            String    @db.VarChar(255)
+  matrix_id       Int       @map("matrix_id")
+  category_name   String?   @map("category_name") @db.VarChar(255)
+  status          String?   @db.VarChar(255)
+  description     String?   @db.Text
+  method_document String?   @map("method_document") @db.VarChar(255)
+  instruction     String?   @db.Text
+  created_at      DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at      DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by      Int?      @map("created_by")
+  updated_by      Int?      @map("updated_by")
+  trash           Int?
+
+  matrix          Matrix    @relation(fields: [matrix_id], references: [id])
+  services        Service[]
+
+  @@index([matrix_id])
+  @@index([name])
+  @@index([code])
+  @@map("method")
+}
+
+model Lab {
+  id    Int     @id @default(autoincrement())
+  name  String  @db.VarChar(255)
+  trash Int?
+
+  parameters Parameter[]
+  units      Unit[]
+
+  @@index([name])
+  @@map("lab")
+}
+
+model Parameter {
+  id     Int     @id @default(autoincrement())
+  name   String  @db.VarChar(255)
+  lab_id Int     @map("lab_id")
+  trash  Int?
+
+  lab      Lab       @relation(fields: [lab_id], references: [id])
+  services Service[]
+
+  @@index([lab_id])
+  @@index([name])
+  @@map("parameter")
+}
+
+model Unit {
+  id          Int     @id @default(autoincrement())
+  name        String  @db.VarChar(255)
+  description String  @db.Text
+  lab_id      Int?    @map("lab_id")
+
+  lab Lab? @relation(fields: [lab_id], references: [id])
+
+  @@index([lab_id])
+  @@index([name])
+  @@map("unit")
+}
+
+model Subcontractor {
+  id          Int       @id @default(autoincrement())
+  lab_name    String    @map("lab_name") @db.VarChar(255)
+  address_name String?  @map("address_name") @db.VarChar(255)
+  phone       String?   @db.VarChar(255)
+  fax         String?   @db.VarChar(255)
+  contact     String?   @db.VarChar(255)
+  email       String?   @db.VarChar(255)
+  trash       Int?
+
+  services Service[]
+
+  @@index([lab_name])
+  @@map("subcontractor")
+}
+
+model Service {
+  id                    Int       @id @default(autoincrement())
+  code                  String    @db.VarChar(255)
+  name                  String    @db.VarChar(255)
+  category_id           Int       @map("category_id")
+  parameter_id          Int       @map("parameter_id")
+  method_id             Int       @map("method_id")
+  subcontractor_id      Int?      @map("subcontractor_id")
+  analyst_type_id       Int?      @map("analyst_type_id")
+  accreditation         String?   @db.VarChar(255)
+  accreditation_valid_date String? @map("accreditation_valid_date") @db.VarChar(255)
+  unit                  String?   @db.VarChar(255)
+  published_date        DateTime? @map("published_date") @db.Date
+  lod                   String?   @db.VarChar(255)
+  loq                   String?   @db.VarChar(255)
+  proficiency_test      String?   @map("proficiency_test") @db.VarChar(255)
+  description           String?   @db.Text
+  price                 Int
+  user                  Int?      @default(1)
+  use_pc                Int?      @map("use_pc") @default(0)
+  status                String?   @db.VarChar(255)
+  created_at            DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at            DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by            Int       @map("created_by")
+  updated_by            Int?      @map("updated_by")
+  trash                 Int?
+
+  category      Category      @relation(fields: [category_id], references: [id])
+  parameter     Parameter     @relation(fields: [parameter_id], references: [id])
+  method        Method        @relation(fields: [method_id], references: [id])
+  subcontractor Subcontractor? @relation(fields: [subcontractor_id], references: [id])
+  analystType   AnalystType?  @relation(fields: [analyst_type_id], references: [id])
+
+  @@index([category_id])
+  @@index([parameter_id])
+  @@index([method_id])
+  @@index([code])
+  @@index([name])
+  @@index([status])
+  standartDetails StandartDetail[]
+  contractDetails ContractDetail[]
+
+  @@map("service")
+}
+
+model Standart {
+  id         Int       @id @default(autoincrement())
+  code       String    @db.VarChar(255)
+  name       String    @db.VarChar(255)
+  category_id Int?    @map("category_id")
+  customer_id Int?     @map("customer_id")
+  created_at DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by Int       @map("created_by")
+  updated_by Int?      @map("updated_by")
+  trash      Int?
+
+  category       Category?        @relation(fields: [category_id], references: [id])
+  customer       Customer?        @relation(fields: [customer_id], references: [id])
+  standartDetails StandartDetail[]
+
+  @@index([category_id])
+  @@index([customer_id])
+  @@index([name])
+  @@index([code])
+  @@map("standart")
+}
+
+model StandartDetail {
+  id         Int      @id @default(autoincrement())
+  standart_id Int    @map("standart_id")
+  service_id Int     @map("service_id")
+  max        String  @db.VarChar(255)
+  min        String  @db.VarChar(255)
+  unit       String  @db.VarChar(255)
+
+  standart Standart @relation(fields: [standart_id], references: [id])
+  service  Service  @relation(fields: [service_id], references: [id])
+
+  @@index([standart_id])
+  @@index([service_id])
+  @@map("standart_detail")
+}
+
+model Quotation {
+  id              Int       @id @default(autoincrement())
+  code            String    @db.VarChar(255)
+  quo_status      String    @map("quo_status") @db.VarChar(255)
+  quo_date        DateTime  @map("quo_date") @db.Date
+  sampling_request String?  @map("sampling_request") @db.VarChar(255)
+  sampling_date   DateTime? @map("sampling_date") @db.Date
+  customer_id     Int?      @map("customer_id")
+  contact_id      Int?      @map("contact_id")
+  address_id      Int?      @map("address_id")
+  volume          String?   @db.VarChar(255)
+  remarks         String?   @db.VarChar(255)
+  min_volume_sample String? @map("min_volume_sample") @db.VarChar(255)
+  sub_total       Float     @map("sub_total")
+  percent_discount Float     @map("percent_discount") @default(0)
+  percent_vat     Float     @map("percent_vat") @default(11)
+  percent_pc      Float?    @map("percent_pc")
+  price_group     Int?      @map("price_group")
+  priority        String?   @db.VarChar(255)
+  total           Float
+  created_at      DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at      DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by      Int       @map("created_by")
+  updated_by      Int?      @map("updated_by")
+  expired_date    DateTime? @map("expired_date") @db.Date
+  lab             String?   @db.VarChar(255)
+  trash           Int?
+
+  customer        Customer? @relation(fields: [customer_id], references: [id])
+  contact         Contact?  @relation(fields: [contact_id], references: [id])
+  address         Address?  @relation(fields: [address_id], references: [id])
+  preOrders       PreOrder[]
+
+  @@index([customer_id])
+  @@index([contact_id])
+  @@index([address_id])
+  @@map("quotation")
+}
+
+model PreOrder {
+  id                Int       @id @default(autoincrement())
+  code              String    @db.VarChar(255)
+  customer_id       Int       @map("customer_id")
+  quotation_id      Int?      @map("quotation_id")
+  contact_id        Int       @map("contact_id")
+  received_date     DateTime? @map("received_date") @db.Date
+  delivery          String?   @db.VarChar(255)
+  receipt_number    String?   @map("receipt_number") @db.VarChar(255)
+  driver_id         Int?      @map("driver_id")
+  order_id          Int?      @map("order_id")
+  submited_by       String    @map("submited_by") @db.VarChar(255)
+  sample_quantity   Int       @map("sample_quantity") @default(1)
+  priority          String?   @db.VarChar(255)
+  document          String?   @db.VarChar(255)
+  covering_letter   String?   @map("covering_letter") @db.VarChar(255)
+  testing_parameters String?  @map("testing_parameters") @db.VarChar(255)
+  complete_date     DateTime? @map("complete_date") @db.DateTime(0)
+  created_at        DateTime? @map("created_at") @db.DateTime(0)
+  updated_at        DateTime? @map("updated_at") @db.DateTime(0)
+  created_by        Int?      @map("created_by")
+  updated_by        Int?      @map("updated_by")
+  trash             Int?
+  remarks           String?   @db.VarChar(255)
+  unlock            Int?
+  characteristic    Int?
+  lab               Int       @default(0)
+  subcon            Int?
+  subcon_id         Int?      @map("subcon_id")
+  subcon_due        DateTime? @map("subcon_due") @db.Date
+  notes_customer    String?   @map("notes_customer") @db.VarChar(255)
+
+  customer          Customer  @relation(fields: [customer_id], references: [id])
+  contact           Contact   @relation(fields: [contact_id], references: [id])
+  quotation         Quotation? @relation(fields: [quotation_id], references: [id])
+
+  @@index([customer_id])
+  @@index([contact_id])
+  @@index([quotation_id])
+  @@index([driver_id])
+  @@index([order_id])
+  @@map("pre_order")
+}
+
+enum ContractStatusService {
+  ALL      @map("all")
+  SELECTED @map("selected")
+}
+
+model Contract {
+  id                Int                  @id @default(autoincrement())
+  code              String               @db.VarChar(255)
+  customerId        Int                  @map("customer_id")
+  period            String               @db.VarChar(255)
+  periodFrom        DateTime             @map("periode_from") @db.Date
+  periodTo          DateTime             @map("periode_to") @db.Date
+  periodAlias       String?              @map("period_alias") @db.VarChar(255)
+  documents         Json?                @map("contract_document")
+  normalDay         Int                  @map("normal_day")
+  urgentDay         Int                  @map("urgent_day")
+  veryUrgentDay     Int                  @map("very_urgent_day")
+  statusService     ContractStatusService @default(ALL) @map("status_service")
+  discount          Float?               @default(0)
+  discountUrgent    Int?                 @default(50) @map("dsc_urgent")
+  discountVeryUrgent Int?                @default(100) @map("dsc_very_urgent")
+  promotionId       Int?                 @map("promotion_id")
+  remarks           String?              @db.VarChar(255)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt         DateTime?           @updatedAt @map("updated_at") @db.DateTime(0)
+  createdBy         Int?                 @map("created_by")
+  updatedBy         Int?                 @map("updated_by")
+  deletedAt         DateTime?            @map("deleted_at") @db.DateTime(0)
+
+  customer          Customer             @relation(fields: [customerId], references: [id])
+  details           ContractDetail[]
+
+  @@index([customerId])
+  @@index([periodTo])
+  @@index([deletedAt])
+  @@index([code])
+  @@map("contract")
+}
+
+model ContractDetail {
+  id                Int       @id @default(autoincrement())
+  contractId        Int       @map("contract_id")
+  serviceId         Int?      @map("service_id")
+  packageId        Int?      @map("package_id")
+  discountNormal    Float     @default(0) @map("dsc_normal")
+  discountUrgent    Int       @default(50) @map("dsc_urgent")
+  discountVeryUrgent Int      @default(100) @map("dsc_very_urgent")
+
+  contract          Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  service           Service?  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  package           Package?  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, serviceId])
+  @@unique([contractId, packageId])
+  @@index([serviceId])
+  @@index([packageId])
+  @@map("contract_detail")
+}
+
+model Package {
+  id              Int       @id @default(autoincrement())
+  code            String    @unique @db.VarChar(255)
+  name            String    @db.VarChar(255)
+  description     String?   @db.Text
+  totalPrice      Int?      @map("total_price")
+  promotionFrom   DateTime? @map("promotion_from") @db.Date
+  promotionTo     DateTime? @map("promotion_to") @db.Date
+  percentDiscount Int       @map("percent_discount")
+  listService     String    @map("list_service") @db.Text
+  customerId      Int?      @map("customer_id")
+  group           Int?      @default(0)
+  created_at      DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at      DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by      Int?      @map("created_by")
+  updated_by      Int?      @map("updated_by")
+  trash           Int?
+
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  contractDetails ContractDetail[]
+
+  @@index([customerId])
+  @@index([code])
+  @@index([name])
+  @@index([trash])
+  @@map("package")
+}
