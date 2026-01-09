@@ -1,7 +1,10 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildSearchCondition, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { ParameterRepository } from '../repositories/implementations/ParameterRepository';
 import { parseId, parseQueryParam, ApiResponse } from '../types';
+
+// Initialize repository
+const parameterRepo = new ParameterRepository(prisma);
 
 /**
  * GET /api/parameters - List dengan search & pagination
@@ -10,41 +13,27 @@ export const getAllParameters = async (req: Request, res: Response): Promise<voi
   try {
     const page = parseQueryParam(req.query.page, 1);
     const limit = parseQueryParam(req.query.limit, 20);
-    const skip = (page - 1) * limit;
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    const where = {
-      trash: null,
-      ...buildSearchCondition('name', search),
-    };
+    // Call repository
+    const result = await parameterRepo.findAll({ search, page, limit });
 
-    const [data, total] = await Promise.all([
-      prisma.parameter.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { name: 'asc' },
-        include: {
-          lab: {
-            select: {
-              id: true,
-              name: true
-            }
-          }
-        }
-      }),
-      prisma.parameter.count({ where })
-    ]);
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
+    const data = result.getValue();
+
+    // Return formatted response
     const response: ApiResponse = {
       success: true,
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
+      data: data.data,
+      pagination: data.pagination,
     };
 
     res.json(response);
@@ -73,27 +62,19 @@ export const getParameterById = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const data = await prisma.parameter.findFirst({
-      where: { id, trash: null },
-      include: {
-        lab: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Call repository
+    const result = await parameterRepo.findById(id);
 
-    if (!data) {
+    // Handle repository result
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Parameter not found'
+        message: result.error,
       });
       return;
     }
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: result.getValue() });
   } catch (error) {
     console.error('getById parameter error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -112,6 +93,7 @@ export const createParameter = async (req: Request, res: Response): Promise<void
   try {
     const { name, lab_id } = req.body;
 
+    // HTTP validation stays in controller
     if (!name || typeof name !== 'string' || name.trim() === '') {
       res.status(400).json({
         success: false,
@@ -129,11 +111,17 @@ export const createParameter = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // Check lab exists
-    const lab = await prisma.lab.findFirst({
-      where: { id: labIdNum, trash: null }
-    });
-    if (!lab) {
+    // Validate lab exists via repository
+    const labValidation = await parameterRepo.validateLabExists(labIdNum);
+    if (labValidation.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: labValidation.error,
+      });
+      return;
+    }
+
+    if (!labValidation.getValue()) {
       res.status(404).json({
         success: false,
         message: 'Lab not found'
@@ -141,13 +129,9 @@ export const createParameter = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // Check duplicate
-    const existing = await checkDuplicateCaseInsensitive(
-      prisma.parameter,
-      'name',
-      name.trim()
-    );
-    if (existing) {
+    // Check duplicate via repository
+    const duplicateResult = await parameterRepo.findByName(name.trim());
+    if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Name already exists'
@@ -155,25 +139,21 @@ export const createParameter = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const data = await prisma.parameter.create({
-      data: {
-        name: name.trim(),
-        lab_id: labIdNum
-      },
-      include: {
-        lab: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Create parameter
+    const result = await parameterRepo.create({ name: name.trim(), lab_id: labIdNum });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,
       message: 'Parameter created successfully',
-      data
+      data: result.getValue()
     });
   } catch (error) {
     console.error('create parameter error:', error);
@@ -194,6 +174,7 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
     const id = parseId(req.params.id);
     const { name, lab_id } = req.body;
 
+    // HTTP validation stays in controller
     if (!id) {
       res.status(400).json({
         success: false,
@@ -202,14 +183,12 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // Check exists
-    const existing = await prisma.parameter.findFirst({
-      where: { id, trash: null }
-    });
-    if (!existing) {
+    // Check if parameter exists using repository
+    const parameterResult = await parameterRepo.findById(id);
+    if (parameterResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Parameter not found'
+        message: 'Parameter not found',
       });
       return;
     }
@@ -250,12 +229,18 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // Check lab exists if updating lab_id
+    // Validate lab exists if updating lab_id
     if (updateData.lab_id) {
-      const lab = await prisma.lab.findFirst({
-        where: { id: updateData.lab_id, trash: null }
-      });
-      if (!lab) {
+      const labValidation = await parameterRepo.validateLabExists(updateData.lab_id);
+      if (labValidation.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: labValidation.error,
+        });
+        return;
+      }
+
+      if (!labValidation.getValue()) {
         res.status(404).json({
           success: false,
           message: 'Lab not found'
@@ -264,12 +249,10 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
       }
     }
 
-    // Check duplicate
+    // Check duplicate via repository
     if (updateData.name) {
-      const duplicate = await checkDuplicateCaseInsensitive(
-        prisma.parameter, 'name', updateData.name, id
-      );
-      if (duplicate) {
+      const duplicateResult = await parameterRepo.findByName(updateData.name, id);
+      if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Name already exists'
@@ -278,25 +261,21 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
       }
     }
 
-    const data = await prisma.parameter.update({
-      where: { id },
-      data: {
-        ...updateData
-      },
-      include: {
-        lab: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Update parameter
+    const result = await parameterRepo.update(id, updateData);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'Parameter updated successfully',
-      data
+      data: result.getValue()
     });
   } catch (error) {
     console.error('update parameter error:', error);
@@ -316,6 +295,7 @@ export const deleteParameter = async (req: Request, res: Response): Promise<void
   try {
     const id = parseId(req.params.id);
 
+    // HTTP validation stays in controller
     if (!id) {
       res.status(400).json({
         success: false,
@@ -324,22 +304,26 @@ export const deleteParameter = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const existing = await prisma.parameter.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!existing) {
+    // Check if parameter exists using repository
+    const parameterResult = await parameterRepo.findById(id);
+    if (parameterResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Parameter not found'
+        message: 'Parameter not found',
       });
       return;
     }
 
-    await prisma.parameter.update({
-      where: { id },
-      data: { trash: 1 }
-    });
+    // Delete parameter
+    const result = await parameterRepo.delete(id);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -361,46 +345,24 @@ export const deleteParameter = async (req: Request, res: Response): Promise<void
  */
 export const getParameterJson = async (req: Request, res: Response): Promise<void> => {
   try {
-    const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const search = typeof req.query.q === 'string' ? req.query.q : undefined;
     const isDataTable = req.query.dataTable !== undefined;
-    
-    const where = {
-      trash: null,
-      ...buildSearchCondition('name', searchTerm)
-    };
 
-    // Page size: 20 (standard) or 1000 (dataTable mode)
-    const pageSize = isDataTable ? 1000 : 20;
+    // Call repository
+    const result = await parameterRepo.findForAutocomplete(search, isDataTable);
 
-    const parameters = await prisma.parameter.findMany({
-      where,
-      take: pageSize,
-      orderBy: { name: 'asc' },
-      include: {
-        lab: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
-    const items = parameters.map(parameter => ({
-      id: parameter.id,
-      name: parameter.name,
-      lab: {
-        id: parameter.lab.id,
-        name: parameter.lab.name
-      }
-    }));
+    const response = result.getValue();
 
-    const response = {
-      total_count: items.length,
-      incomplete_results: false,
-      ...(isDataTable ? { data: items } : { items })
-    };
-
+    // Handle pretty print option (presentation logic in controller)
     if (req.query.pretty !== undefined) {
       res.setHeader('Content-Type', 'application/json');
       res.send(JSON.stringify(response, null, 2));
@@ -426,7 +388,7 @@ export const getParameterReport = async (req: Request, res: Response): Promise<v
     const start = typeof req.query.start === 'string' ? req.query.start : undefined;
     const end = typeof req.query.end === 'string' ? req.query.end : undefined;
 
-    // Validate date format (YYYY-MM-DD)
+    // Validate date format (YYYY-MM-DD) - HTTP validation in controller
     if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
       res.status(400).json({
         success: false,
@@ -443,40 +405,20 @@ export const getParameterReport = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const where: any = {
-      trash: null
-    };
+    // Repository provides data
+    const result = await parameterRepo.findAllForReport();
 
-    // Date filters are included for future compatibility
-    // Note: Parameter model may not have created_at field, but keeping for consistency
-    if (start || end) {
-      // If schema has created_at, uncomment and use:
-      // const startDate = start ? new Date(start) : undefined;
-      // const endDate = end ? new Date(end) : undefined;
-      // if (startDate) {
-      //   startDate.setHours(0, 0, 0, 0);
-      //   where.created_at = { ...where.created_at, gte: startDate };
-      // }
-      // if (endDate) {
-      //   endDate.setHours(23, 59, 59, 999);
-      //   where.created_at = { ...where.created_at, lte: endDate };
-      // }
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    const parameters = await prisma.parameter.findMany({
-      where,
-      orderBy: { name: 'asc' },
-      include: {
-        lab: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    const parameters = result.getValue();
 
-    // Generate CSV
+    // CSV formatting logic stays in controller (presentation layer)
     const escapeCSV = (value: string | null | undefined): string => {
       if (!value) return '';
       const str = String(value);
@@ -488,7 +430,7 @@ export const getParameterReport = async (req: Request, res: Response): Promise<v
     };
 
     const header = 'PARAMETER NAME,LAB NAME\r\n';
-    const rows = parameters.map(p => 
+    const rows = parameters.map((p: any) =>
       `${escapeCSV(p.name)},${escapeCSV(p.lab?.name || '')}`
     ).join('\r\n');
 
@@ -507,4 +449,3 @@ export const getParameterReport = async (req: Request, res: Response): Promise<v
     });
   }
 };
-

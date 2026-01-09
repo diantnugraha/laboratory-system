@@ -1,20 +1,12 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildSearchCondition, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { UserRepository } from '../repositories/implementations/UserRepository';
+import { handleDepartmentArray } from '../utils/userHelper';
 import { parseId, parseQueryParam, ApiResponse } from '../types';
-import bcrypt from 'bcryptjs';
 import { generateSecurePassword } from '../utils/otpGenerator';
 
-/**
- * Helper: Handle department array (join with ";;" delimiter)
- */
-const handleDepartmentArray = (departments: string[] | string | undefined): string | null => {
-  if (!departments) return null;
-  if (Array.isArray(departments)) {
-    return departments.filter(d => d && String(d).trim()).join(';;');
-  }
-  return String(departments).trim() || null;
-};
+// Initialize repository
+const userRepo = new UserRepository(prisma);
 
 /**
  * Helper: Send welcome email (placeholder - requires email service)
@@ -40,51 +32,23 @@ export const getPublicUsers = async (req: Request, res: Response): Promise<void>
     const offset = parseQueryParam(req.query.offset, 0);
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    const where = {
-      trash: null,
-      ...buildSearchCondition('display_name', search),
-    };
+    // Call repository
+    const result = await userRepo.findAll({ search, limit, offset });
 
-    const [users, total] = await Promise.all([
-      prisma.users.findMany({
-        where,
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          display_name: true,
-          role_id: true,
-          customer_id: true,
-          contact_id: true,
-          profile_picture: true,
-          department: true,
-          created_at: true,
-          updated_at: true,
-          role: {
-            select: {
-              id: true,
-              name: true
-            }
-          }
-        },
-        orderBy: {
-          id: 'desc'
-        },
-        take: limit,
-        skip: offset
-      }),
-      prisma.users.count({ where })
-    ]);
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error
+      });
+      return;
+    }
+
+    const data = result.getValue();
 
     const response: ApiResponse = {
       success: true,
-      data: users,
-      pagination: {
-        page: Math.floor(offset / limit) + 1,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
+      data: data.data,
+      pagination: data.pagination
     };
 
     res.json(response);
@@ -106,7 +70,7 @@ export const getPublicUsers = async (req: Request, res: Response): Promise<void>
 export const getUserById = async (req: Request, res: Response): Promise<void> => {
   try {
     const id = parseId(req.params.id);
-    
+
     if (!id) {
       res.status(400).json({
         success: false,
@@ -115,43 +79,20 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const user = await prisma.users.findFirst({
-      where: {
-        id,
-        trash: null
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        display_name: true,
-        role_id: true,
-        customer_id: true,
-        contact_id: true,
-        profile_picture: true,
-        department: true,
-        created_at: true,
-        updated_at: true,
-        role: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Call repository
+    const result = await userRepo.findById(id);
 
-    if (!user) {
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: result.error
       });
       return;
     }
 
     res.json({
       success: true,
-      data: user
+      data: result.getValue()
     });
   } catch (error) {
     console.error('Get user by ID error:', error);
@@ -215,11 +156,9 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Check role exists
-    const role = await prisma.roles.findFirst({
-      where: { id: role_id }
-    });
-    if (!role) {
+    // Check role exists via repository
+    const roleValid = await userRepo.validateRoleExists(role_id);
+    if (roleValid.isFailure() || !roleValid.getValue()) {
       res.status(404).json({
         success: false,
         message: 'Role not found'
@@ -228,12 +167,15 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     }
 
     // Business Rule: Check username uniqueness separately - BR-001
-    const duplicateUsername = await checkDuplicateCaseInsensitive(
-      prisma.users,
-      'username',
-      username.trim()
-    );
-    if (duplicateUsername) {
+    const usernameResult = await userRepo.findByUsername(username.trim());
+    if (usernameResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: usernameResult.error
+      });
+      return;
+    }
+    if (usernameResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Username already exists'
@@ -242,12 +184,15 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     }
 
     // Business Rule: Check email uniqueness separately - BR-002
-    const duplicateEmail = await checkDuplicateCaseInsensitive(
-      prisma.users,
-      'email',
-      email.trim()
-    );
-    if (duplicateEmail) {
+    const emailResult = await userRepo.findByEmail(email.trim());
+    if (emailResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: emailResult.error
+      });
+      return;
+    }
+    if (emailResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Email already exists'
@@ -255,12 +200,10 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Check customer exists if provided
+    // Check customer exists if provided via repository
     if (customer_id) {
-      const customer = await prisma.customer.findFirst({
-        where: { id: customer_id, trash: null }
-      });
-      if (!customer) {
+      const customerValid = await userRepo.validateCustomerExists(customer_id);
+      if (customerValid.isFailure() || !customerValid.getValue()) {
         res.status(404).json({
           success: false,
           message: 'Customer not found'
@@ -271,68 +214,39 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
     // Generate secure password
     const generatedPassword = generateSecurePassword(12);
-    
-    // Hash password using bcryptjs
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(generatedPassword, salt);
+
+    // Hash password via repository
+    const hashedPassword = await userRepo.hashPassword(generatedPassword);
 
     // Handle department array
     const departmentStr = handleDepartmentArray(department);
 
-    // Create user in transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // Create user
-      const user = await tx.users.create({
-        data: {
-          username: username.trim(),
-          email: email.trim(),
-          display_name: display_name.trim(),
-          role_id,
-          customer_id: customer_id || null,
-          contact_id: contact_id || null,
-          department: departmentStr,
-          password: hashedPassword,
-          created_by: userId || 1 // Default to 1 if no user in request
-        },
-        include: {
-          role: {
-            select: {
-              id: true,
-              name: true
-            }
-          },
-          customer: {
-            select: {
-              id: true,
-              customer_name: true
-            }
-          }
-        }
-      });
-
-      // Business Rule: Create AnalystRules if role_id=8 (Analyst) - BR-005
-      if (role_id === 8 && analyst_type_id) {
-        // Check analyst_type exists
-        const analystType = await tx.analystType.findFirst({
-          where: { id: analyst_type_id, trash: null }
-        });
-        if (!analystType) {
-          throw new Error('Analyst type not found');
-        }
-
-        await tx.analystRules.create({
-          data: {
-            user_id: user.id,
-            analyst_type_id
-          }
-        });
-      }
-
-      return user;
+    // Create user via repository (handles transaction internally)
+    const result = await userRepo.create({
+      username: username.trim(),
+      email: email.trim(),
+      display_name: display_name.trim(),
+      role_id,
+      customer_id: customer_id || null,
+      contact_id: contact_id || null,
+      department: departmentStr,
+      password: hashedPassword,
+      created_by: userId || 1,
+      analyst_type_id: analyst_type_id || undefined
     });
 
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error
+      });
+      return;
+    }
+
+    const createdUser = result.getValue();
+
     // Send welcome email (async, don't wait)
-    sendWelcomeEmail(result.email, result.username, generatedPassword, result.display_name).catch(err => {
+    sendWelcomeEmail(createdUser.email, createdUser.username, generatedPassword, createdUser.display_name).catch(err => {
       console.error('Failed to send welcome email:', err);
     });
 
@@ -340,7 +254,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       success: true,
       message: 'User created successfully',
       data: {
-        ...result,
+        ...createdUser,
         password: generatedPassword // Return generated password (only in response, not stored)
       }
     });
@@ -374,18 +288,20 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     const userId = (req as any).user?.id;
     const isAdmin = (req as any).user?.role_id === 1; // SuperAdmin
 
-    // Check if user exists
-    const existingUser = await prisma.users.findFirst({
+    // Check if user exists via repository (need full user data for authorization & role check)
+    const existingResult = await prisma.users.findFirst({
       where: { id }
     });
 
-    if (!existingUser || existingUser.trash !== null) {
+    if (!existingResult || existingResult.trash !== null) {
       res.status(404).json({
         success: false,
         message: 'User not found'
       });
       return;
     }
+
+    const existingUser = existingResult;
 
     // Check authorization: Admin or self
     if (!isAdmin && existingUser.id !== userId) {
@@ -396,15 +312,16 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Handle soft delete (BR-004)
+    // Handle soft delete (BR-004) via repository
     if (deleteFlag === true || deleteFlag === '1' || deleteFlag === 1) {
-      await prisma.users.update({
-        where: { id },
-        data: {
-          trash: 1,
-          updated_by: userId || null
-        }
-      });
+      const deleteResult = await userRepo.delete(id, userId || null);
+      if (deleteResult.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: deleteResult.error
+        });
+        return;
+      }
 
       res.json({
         success: true,
@@ -472,18 +389,15 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       updateData.department = handleDepartmentArray(department);
     }
 
-    // Handle password update (if provided)
+    // Handle password update (if provided) via repository
     if (password && typeof password === 'string' && password.trim() !== '') {
-      const salt = await bcrypt.genSalt(10);
-      updateData.password = await bcrypt.hash(password.trim(), salt);
+      updateData.password = await userRepo.hashPassword(password.trim());
     }
 
-    // Validate role exists if updating
+    // Validate role exists if updating via repository
     if (updateData.role_id) {
-      const role = await prisma.roles.findFirst({
-        where: { id: updateData.role_id }
-      });
-      if (!role) {
+      const roleValid = await userRepo.validateRoleExists(updateData.role_id);
+      if (roleValid.isFailure() || !roleValid.getValue()) {
         res.status(404).json({
           success: false,
           message: 'Role not found'
@@ -501,12 +415,10 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
-    // Validate customer exists if updating
+    // Validate customer exists if updating via repository
     if (updateData.customer_id) {
-      const customer = await prisma.customer.findFirst({
-        where: { id: updateData.customer_id, trash: null }
-      });
-      if (!customer) {
+      const customerValid = await userRepo.validateCustomerExists(updateData.customer_id);
+      if (customerValid.isFailure() || !customerValid.getValue()) {
         res.status(404).json({
           success: false,
           message: 'Customer not found'
@@ -517,13 +429,15 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 
     // Business Rule: Check username uniqueness (exclude self) - BR-001
     if (updateData.username) {
-      const duplicateUsername = await checkDuplicateCaseInsensitive(
-        prisma.users,
-        'username',
-        updateData.username,
-        id
-      );
-      if (duplicateUsername) {
+      const usernameResult = await userRepo.findByUsername(updateData.username, id);
+      if (usernameResult.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: usernameResult.error
+        });
+        return;
+      }
+      if (usernameResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Username already exists'
@@ -534,13 +448,15 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 
     // Business Rule: Check email uniqueness (exclude self) - BR-002
     if (updateData.email) {
-      const duplicateEmail = await checkDuplicateCaseInsensitive(
-        prisma.users,
-        'email',
-        updateData.email,
-        id
-      );
-      if (duplicateEmail) {
+      const emailResult = await userRepo.findByEmail(updateData.email, id);
+      if (emailResult.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: emailResult.error
+        });
+        return;
+      }
+      if (emailResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Email already exists'
@@ -550,81 +466,23 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     }
 
     updateData.updated_by = userId || null;
+    updateData.analyst_type_id = analyst_type_id || undefined;
 
-    // Update user and handle AnalystRules in transaction
-    const updatedUser = await prisma.$transaction(async (tx) => {
-      const user = await tx.users.update({
-      where: { id },
-      data: updateData,
-        include: {
-        role: {
-          select: {
-            id: true,
-            name: true
-          }
-          },
-          customer: {
-            select: {
-              id: true,
-              customer_name: true
-            }
-          }
-        }
+    // Update user via repository (handles AnalystRules management in transaction)
+    const result = await userRepo.update(id, updateData, existingUser.role_id);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error
       });
-
-      // Business Rule: Handle AnalystRules - BR-005
-      const newRoleId = updateData.role_id !== undefined ? updateData.role_id : existingUser.role_id;
-      const oldRoleId = existingUser.role_id;
-
-      // If role changed to Analyst (8) and analyst_type_id provided
-      if (newRoleId === 8 && analyst_type_id) {
-        // Check analyst_type exists
-        const analystType = await tx.analystType.findFirst({
-          where: { id: analyst_type_id, trash: null }
-        });
-        if (!analystType) {
-          throw new Error('Analyst type not found');
-        }
-
-        // Check if AnalystRule already exists
-        const existingRule = await tx.analystRules.findFirst({
-          where: {
-            user_id: id,
-            analyst_type_id,
-            trash: null
-          }
-        });
-
-        if (!existingRule) {
-          await tx.analystRules.create({
-            data: {
-              user_id: id,
-              analyst_type_id
-            }
-          });
-        }
-      }
-
-      // If role changed from Analyst (8) to other role
-      if (oldRoleId === 8 && newRoleId !== 8) {
-        await tx.analystRules.updateMany({
-          where: {
-            user_id: id,
-            trash: null
-          },
-          data: {
-            trash: new Date()
-          }
-        });
-      }
-
-      return user;
-    });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'User updated successfully',
-      data: updatedUser
+      data: result.getValue()
     });
   } catch (error) {
     console.error('Update user error:', error);
@@ -663,11 +521,9 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const existing = await prisma.users.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!existing) {
+    // Check if user exists via repository
+    const existingResult = await userRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
         message: 'User not found'
@@ -675,13 +531,15 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    await prisma.users.update({
-      where: { id },
-      data: {
-        trash: 1,
-        updated_by: userId || null
-      }
-    });
+    // Delete via repository
+    const result = await userRepo.delete(id, userId || null);
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -709,68 +567,55 @@ export const getUsersJson = async (req: Request, res: Response): Promise<void> =
     const exceptRole = typeof req.query.except_role === 'string' ? parseId(req.query.except_role) : undefined;
     const isDataTable = req.query.dataTable !== undefined;
 
-    const where: any = {
-      trash: null
-    };
-
-    // Search by display_name
-    if (searchTerm) {
-      where.display_name = {
-        contains: searchTerm.trim()
-      };
-    }
-
-    // Filter by IDs
+    // Parse filterIds (comma-separated)
+    let filterIds: number[] | undefined;
     if (idIn) {
-      const ids = idIn.split(',').map(id => parseId(id.trim())).filter(id => id !== null);
-      if (ids.length > 0) {
-        where.id = { in: ids };
-      }
+      filterIds = idIn.split(',').map(id => parseId(id.trim())).filter((id): id is number => id !== null);
     }
 
-    // Exclude role
-    if (exceptRole) {
-      where.role_id = { not: exceptRole };
-    } else {
-      // Exclude Customer role (16) by default
-      where.role_id = { not: 16 };
+    // Parse excludeRoles (comma-separated: "16,28")
+    const excludeRolesParam = typeof req.query.exclude_roles === 'string' ? req.query.exclude_roles : undefined;
+    let excludeRoles: number[] | undefined;
+    if (excludeRolesParam) {
+      excludeRoles = excludeRolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
     }
 
-    const users = await prisma.users.findMany({
-      where,
-      take: isDataTable ? 1000 : 20,
-      orderBy: { display_name: 'asc' },
-      include: {
-        role: {
-          select: {
-            id: true,
-            name: true
-          }
-        },
-        customer: {
-          select: {
-            id: true,
-            customer_name: true
-          }
-        }
-      }
+    // Parse includeRoles (comma-separated: "16,28")
+    const includeRolesParam = typeof req.query.include_roles === 'string' ? req.query.include_roles : undefined;
+    let includeRoles: number[] | undefined;
+    if (includeRolesParam) {
+      includeRoles = includeRolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
+    }
+
+    // Determine limit based on mode
+    const limit = isDataTable ? 1000 : 20;
+
+    // Call repository for autocomplete
+    const result = await userRepo.findForAutocomplete({
+      search: searchTerm,
+      excludeRole: exceptRole ?? undefined,  // Backward compatibility
+      excludeRoles,  // For Internal tab
+      includeRoles,  // For External tab
+      filterIds,
+      limit
     });
 
-    const items = users.map(user => ({
-      id: user.id,
-      name: user.display_name,
-      login: user.last_login ? user.last_login.toISOString() : null,
-      role: {
-        id: user.role.id,
-        name: user.role.name
-      },
-      company: user.customer?.customer_name || 'Internal'
-    }));
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error
+      });
+      return;
+    }
 
+    // Get response from repository
+    const data = result.getValue();
+
+    // Adjust response format based on dataTable parameter
     const response = {
-      total_count: items.length,
-      incomplete_results: false,
-      ...(isDataTable ? { data: items } : { items })
+      total_count: data.total_count,
+      incomplete_results: data.incomplete_results,
+      ...(isDataTable ? { data: data.items } : { items: data.items })
     };
 
     res.json(response);
@@ -793,82 +638,36 @@ export const getUsersFetchJson = async (req: Request, res: Response): Promise<vo
   try {
     const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
     const name = typeof req.query.name === 'string' ? req.query.name : undefined;
-    const roles = typeof req.query.roles === 'string' ? req.query.roles : undefined;
+    const rolesParam = typeof req.query.roles === 'string' ? req.query.roles : undefined;
     const customerId = typeof req.query.customer_id === 'string' ? parseId(req.query.customer_id) : undefined;
-    const perPage = parseQueryParam(req.query.per_page, 20);
-    const page = parseQueryParam(req.query.page, 1);
-    const orderBy = typeof req.query.order_by === 'string' ? req.query.order_by : 'display_name';
-    const skip = (page - 1) * perPage;
+    const orderBy = typeof req.query.order_by === 'string' ? req.query.order_by : undefined;
 
-    const where: any = {
-      trash: null
-    };
+    // Parse roles (comma-separated)
+    let roleIds: number[] | undefined;
+    if (rolesParam) {
+      roleIds = rolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
+    }
 
     // Search by display_name (q or name)
-    const searchName = searchTerm || name;
-    if (searchName) {
-      where.display_name = {
-        contains: searchName.trim()
-      };
-    }
+    const search = searchTerm || name;
 
-    // Filter by roles (comma-separated)
-    if (roles) {
-      const roleIds = roles.split(',').map(r => parseId(r.trim())).filter(r => r !== null);
-      if (roleIds.length > 0) {
-        where.role_id = { in: roleIds };
-      }
-    }
-
-    // Filter by customer_id
-    if (customerId) {
-      where.customer_id = customerId;
-    }
-
-    // Validate order_by field
-    const validOrderFields = ['id', 'display_name', 'username', 'email', 'created_at', 'updated_at'];
-    const orderField = validOrderFields.includes(orderBy) ? orderBy : 'display_name';
-    const orderDir = req.query.order_dir === 'desc' ? 'desc' : 'asc';
-
-    const [users, total] = await Promise.all([
-      prisma.users.findMany({
-        where,
-        skip,
-        take: perPage,
-        orderBy: { [orderField]: orderDir },
-        include: {
-          role: {
-            select: {
-              id: true,
-              name: true
-            }
-          },
-          customer: {
-            select: {
-              id: true,
-              customer_name: true
-            }
-          }
-        }
-      }),
-      prisma.users.count({ where })
-    ]);
-
-    const items = users.map(user => ({
-      id: user.id,
-      name: user.display_name,
-      login: user.last_login ? user.last_login.toISOString() : null,
-      role: {
-        id: user.role.id,
-        name: user.role.name
-      },
-      company: user.customer?.customer_name || 'Internal'
-    }));
-
-    res.json({
-      total_count: total,
-      items
+    // Call repository for DataTable
+    const result = await userRepo.findForDataTable({
+      search,
+      roles: roleIds,
+      customer_id: customerId ?? undefined,
+      orderBy
     });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error
+      });
+      return;
+    }
+
+    res.json(result.getValue());
   } catch (error) {
     console.error('getUsersFetchJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -895,11 +694,9 @@ export const resendWelcomeEmail = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const user = await prisma.users.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!user) {
+    // Check if user exists via repository
+    const userResult = await userRepo.findById(id);
+    if (userResult.isFailure()) {
       res.status(404).json({
         success: false,
         message: 'User not found'
@@ -907,22 +704,20 @@ export const resendWelcomeEmail = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    const user = userResult.getValue();
+
     // Generate new temporary password
     const generatedPassword = generateSecurePassword(12);
-    
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(generatedPassword, salt);
 
-    // Update user password
-    await prisma.users.update({
-      where: { id },
-      data: {
-        password: hashedPassword
-        // Note: must_change_password field doesn't exist in schema yet
-        // If added, set it to true here
-      }
-    });
+    // Update user password via repository
+    const passwordResult = await userRepo.updatePasswordAndGet(id, generatedPassword);
+    if (passwordResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: passwordResult.error
+      });
+      return;
+    }
 
     // Send welcome email (async, don't wait)
     sendWelcomeEmail(user.email, user.username, generatedPassword, user.display_name).catch(err => {

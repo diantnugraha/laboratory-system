@@ -221,7 +221,17 @@ export const customerService = {
     search?: string;
     months?: number;
   }): Promise<CustomersResponse> => {
-    const response = await api.get<CustomersResponse>('/customers', { params });
+    // Convert page to offset for backend
+    const { page = 1, limit = 30, ...otherParams } = params || {};
+    const offset = (page - 1) * limit;
+
+    const response = await api.get<CustomersResponse>('/customers', {
+      params: {
+        offset,
+        limit,
+        ...otherParams
+      }
+    });
     return response.data;
   },
 

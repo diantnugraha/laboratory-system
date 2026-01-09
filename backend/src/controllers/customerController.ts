@@ -1,122 +1,76 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildSearchCondition, buildMultiFieldSearchCondition, sanitizeSearchQuery, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { CustomerRepository } from '../repositories/implementations/CustomerRepository';
+import { buildSearchCondition, buildMultiFieldSearchCondition, sanitizeSearchQuery } from '../utils/searchHelper';
 import { parseId, parseQueryParam, ApiResponse } from '../types';
 
+// Initialize repository
+const customerRepo = new CustomerRepository(prisma);
+
 /**
- * GET /api/customers - List customers with search, pagination, and filters (12 months optional)
+ * GET /api/customers - List customers with search, pagination, and filters
+ * REFACTORED: Using Repository Pattern
  */
 export const getCustomers = async (req: Request, res: Response): Promise<void> => {
   try {
-    const limit = Math.min(parseQueryParam(req.query.limit, 30), 1000);
+    const limit = Math.min(parseQueryParam(req.query.limit, 30), 100);
     const offset = parseQueryParam(req.query.offset, 0);
-    const searchQuery = sanitizeSearchQuery((req.query.search || req.query.q) as string | undefined);
+    const searchQuery = (req.query.search || req.query.q) as string | undefined;
     const lastMonths = (() => {
-      const raw = typeof req.query.months === 'string' ? parseInt(req.query.months, 10) : 12;
-      return Number.isFinite(raw) ? Math.max(0, raw) : 12;
+      const raw = typeof req.query.months === 'string' ? parseInt(req.query.months, 10) : 60;
+      return Number.isFinite(raw) ? Math.max(0, raw) : 60;
     })();
 
-    // Optional last X months filter (default 12). When months=0, no filter applied
-    const twoYearAgo = new Date();
-    twoYearAgo.setMonth(twoYearAgo.getMonth() - lastMonths);
+    // Get user info for BR-010 customer role restrictions
+    const userRole = (req as any).user?.role_id;
+    const userCustomerId = (req as any).user?.customer_id;
 
-    // Build where condition with spread operators
-    const where: any = {
-      trash: null,
-      ...(lastMonths > 0 ? { created_at: { gte: twoYearAgo } } : {}),
-      ...buildMultiFieldSearchCondition(
-        ['customer_name', 'code', 'business', 'email'],
-        searchQuery
-      )
-    };
+    // ✅ Call repository instead of direct Prisma
+    const result = await customerRepo.findAll({
+      search: searchQuery,
+      months: lastMonths,
+      offset,
+      limit,
+      userRole,
+      userCustomerId,
+    });
 
-    // BR-010: Customer role restrictions: if current user is a Customer, restrict to their customer_id
-    if ((req as any).user?.role_id === 16 && (req as any).user?.customer_id) {
-      where.id = (req as any).user.customer_id;
+    // ✅ Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    const [customers, total, totalAll] = await Promise.all([
-      prisma.customer.findMany({
-        where,
-        orderBy: {
-          id: 'desc'
-        },
-        take: limit,
-        skip: offset,
-        select: {
-          id: true,
-          code: true,
-          customer_name: true,
-          business: true,
-          email: true,
-          special_customer: true,
-          payment_middle: true,
-          sales_incharge: true,
-          created_at: true,
-          addresses: {
-            where: { trash: null },
-            take: 1,
-            select: {
-              id: true,
-              address_type: true,
-              city: true,
-              state: true,
-              country: true
-            }
-          },
-          contacts: {
-            where: { trash: null },
-            take: 1,
-            select: {
-              id: true,
-              first_name: true,
-              middle_name: true,
-              surname: true,
-              email: true,
-              phone: true
-            }
-          }
-        }
-      }),
-      prisma.customer.count({
-        where
-      }),
-      prisma.customer.count({
-        where: { trash: null }
-      })
-    ]);
+    const data = result.getValue();
 
+    // ✅ Return formatted response
     const response: ApiResponse = {
       success: true,
-      data: customers,
-      message: `Showing ${total} customers from last 6 months (Total: ${totalAll} customers)`,
-      pagination: {
-        page: Math.floor(offset / limit) + 1,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
+      data: data.data,
+      message: result.metadata?.message || 'Customers fetched successfully',
+      pagination: data.pagination,
     };
 
     res.json(response);
-  } catch (error) {
-    console.error('Get customers error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error: any) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch customers',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+      message: error.message,
     });
   }
 };
 
 /**
- * GET /api/customers/:id - Get customer detail by ID with related data
+ * GET /api/customers/:id - Get customer detail
+ * REFACTORED: Using Repository Pattern
  */
 export const getCustomerDetail = async (req: Request, res: Response): Promise<void> => {
   try {
     const id = parseId(req.params.id);
-    
+
     if (!id) {
       res.status(400).json({
         success: false,
@@ -125,125 +79,26 @@ export const getCustomerDetail = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const customer = await prisma.customer.findFirst({
-      where: {
-        id,
-        trash: null
-      },
-      select: {
-        id: true,
-        code: true,
-        zahir_id: true,
-        customer_name: true,
-        business: true,
-        npwp: true,
-        legal_document: true,
-        email: true,
-        website: true,
-        bank_name: true,
-        account_name: true,
-        account_number: true,
-        bank_branch: true,
-        bank_address: true,
-        supplier_of: true,
-        supplier_code: true,
-        remarks: true,
-        created_at: true,
-        updated_at: true,
-        created_by: true,
-        updated_by: true,
-        special_customer: true,
-        top: true,
-        payment_middle: true,
-        sales_incharge: true,
-        ecoa: true,
-        feeder: true,
-        feeder_fee: true,
-        agency: true,
-        sales_feeder: true,
-        sales_id: true,
-        central_cust_id: true,
-        is_corporate: true,
-        addresses: {
-          where: { trash: null },
-          select: {
-            id: true,
-            address_type: true,
-            address: true,
-            phone: true,
-            fax: true,
-            city: true,
-            state: true,
-            country: true,
-            postal_code: true,
-            npwp: true,
-            status: true,
-            created_at: true,
-            updated_at: true
-          }
-        },
-        contacts: {
-          where: { trash: null },
-          select: {
-            id: true,
-            title: true,
-            first_name: true,
-            middle_name: true,
-            surname: true,
-            username: true,
-            job_title: true,
-            department: true,
-            email: true,
-            phone: true,
-            fax: true,
-            mobile_phone: true,
-            status: true,
-            created_at: true,
-            updated_at: true,
-            address: {
-              select: {
-                id: true,
-                address_type: true,
-                address: true,
-                city: true,
-                state: true,
-                country: true
-              }
-            }
-          }
-        },
-        users: {
-          where: { trash: null },
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            display_name: true,
-            role_id: true
-          }
-        }
-      }
-    });
+    // ✅ Call repository
+    const result = await customerRepo.findById(id);
 
-    if (!customer) {
+    // ✅ Handle repository result
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Customer not found'
+        message: result.error,
       });
       return;
     }
 
     res.json({
       success: true,
-      data: customer
+      data: result.getValue(),
     });
-  } catch (error) {
-    console.error('Get customer detail error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error: any) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch customer detail',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+      message: error.message,
     });
   }
 };
@@ -428,285 +283,70 @@ export const getRegions = async (req: Request, res: Response): Promise<void> => 
 };
 
 /**
- * POST /api/customers - Create new customer with optional address and contact
+ * POST /api/customers - Create new customer
+ * REFACTORED: Using Repository Pattern
  */
 export const createCustomer = async (req: Request, res: Response): Promise<void> => {
   try {
-    const {
-      code,
-      customer_name,
-      business,
-      npwp,
-      legal_document,
-      email,
-      website,
-      bank_name,
-      account_name,
-      account_number,
-      bank_branch,
-      bank_address,
-      supplier_of,
-      supplier_code,
-      remarks,
-      special_customer,
-      top,
-      payment_middle,
-      sales_incharge,
-      ecoa,
-      feeder,
-      feeder_fee,
-      agency,
-      sales_feeder,
-      sales_id,
-      central_cust_id,
-      is_corporate,
-      address,
-      contact
-    } = req.body;
+    const { code, customer_name, business, ...otherFields } = req.body;
 
-    // Validate required fields
+    // ✅ Validation logic stays in controller
     if (!code || !customer_name || !business) {
       res.status(400).json({
         success: false,
-        message: 'Code, customer_name, and business are required'
+        message: 'Missing required fields: code, customer_name, business',
       });
       return;
     }
 
-    // Check if code already exists
-    const existingCode = await checkDuplicateCaseInsensitive(
-      prisma.customer,
-      'code',
-      code
-    );
-    if (existingCode) {
-      res.status(409).json({
-        success: false,
-        message: 'Code already exists'
-      });
-      return;
-    }
-
-    // Check if customer_name already exists
-    const existingName = await checkDuplicateCaseInsensitive(
-      prisma.customer,
-      'customer_name',
-      customer_name
-    );
-    if (existingName) {
-      res.status(409).json({
-        success: false,
-        message: 'Customer name already exists'
-      });
-      return;
-    }
-
-    // If contact is provided, address must also be provided
-    if (contact && !address) {
+    // ✅ Check duplicate code using repository
+    const existingResult = await customerRepo.findByCode(code);
+    if (existingResult.isSuccess() && existingResult.getValue()) {
       res.status(400).json({
         success: false,
-        message: 'Address is required when contact is provided'
+        message: 'Customer code already exists',
       });
       return;
     }
 
-    const createdBy = req.user?.id || 1;
-
-    // Use transaction with nested writes to create customer, address, and contact atomically
-    const result = await prisma.$transaction(async (tx) => {
-      // Prepare nested writes data
-      const customerData: any = {
-        code,
-        customer_name,
-        business,
-        npwp: npwp || null,
-        legal_document: legal_document || null,
-        email: email || null,
-        website: website || null,
-        bank_name: bank_name || null,
-        account_name: account_name || null,
-        account_number: account_number || null,
-        bank_branch: bank_branch || null,
-        bank_address: bank_address || null,
-        supplier_of: supplier_of || null,
-        supplier_code: supplier_code || null,
-        remarks: remarks || null,
-        special_customer: special_customer ? 1 : 0,
-        top: top || 0,
-        payment_middle: payment_middle ? 1 : 0,
-        sales_incharge: sales_incharge || null,
-        ecoa: ecoa || 0,
-        feeder: feeder || null,
-        feeder_fee: feeder_fee || 0,
-        agency: agency || 0,
-        sales_feeder: sales_feeder || 0,
-        sales_id: sales_id || null,
-        central_cust_id: central_cust_id || null,
-        is_corporate: is_corporate || 0,
-        created_by: createdBy
-      };
-
-      // Add nested address creation if provided
-      if (address) {
-        // BR-003: Address type uniqueness validation
-        // Note: For new customer creation, uniqueness check is not needed since
-        // no addresses exist yet. Uniqueness is enforced in manageAddress for existing customers.
-        const addressType = address.address_type || 'Main Office';
-        
-        customerData.addresses = {
-          create: {
-            address_type: addressType,
-            address: address.address,
-            phone: address.phone,
-            fax: address.fax || null,
-            city: normalizeLocation(String(address.city)),
-            state: normalizeLocation(String(address.state)),
-            country: normalizeLocation(String(address.country)),
-            postal_code: address.postal_code || null,
-            npwp: address.npwp || null,
-            status: address.status || 'Active',
-            created_by: createdBy
-          }
-        };
-      }
-
-      // Create customer with nested writes
-      const customer = await tx.customer.create({
-        data: customerData,
-        include: {
-          addresses: true
-        }
-      });
-
-      // Create contact if provided (requires address)
-      if (contact && address && customer.addresses && customer.addresses.length > 0) {
-        const createdAddress = customer.addresses[0];
-        await tx.contact.create({
-          data: {
-            customer_id: customer.id,
-            address_id: createdAddress.id,
-            title: contact.title || '',
-            first_name: contact.first_name,
-            middle_name: contact.middle_name || null,
-            surname: contact.surname,
-            // BR-004: Username generation from first-middle-surname if email not provided
-            username: contact.email || generateUsername(contact.first_name, contact.middle_name, contact.surname),
-            job_title: contact.job_title || null,
-            department: contact.department || null,
-            email: contact.email,
-            phone: contact.phone,
-            fax: contact.fax || null,
-            mobile_phone: contact.mobile_phone || null,
-            status: contact.status || 'Active',
-            created_by: createdBy
-          }
-        });
-      }
-
-      // Return customer with all relations
-      return await tx.customer.findFirst({
-        where: { id: customer.id },
-        select: {
-          id: true,
-          code: true,
-          customer_name: true,
-          business: true,
-          npwp: true,
-          legal_document: true,
-          email: true,
-          website: true,
-          bank_name: true,
-          account_name: true,
-          account_number: true,
-          bank_branch: true,
-          bank_address: true,
-          supplier_of: true,
-          supplier_code: true,
-          remarks: true,
-          special_customer: true,
-          top: true,
-          payment_middle: true,
-          sales_incharge: true,
-          ecoa: true,
-          feeder: true,
-          feeder_fee: true,
-          agency: true,
-          sales_feeder: true,
-          sales_id: true,
-          central_cust_id: true,
-          is_corporate: true,
-          created_at: true,
-          addresses: {
-            where: { trash: null },
-            select: {
-              id: true,
-              address_type: true,
-              address: true,
-              phone: true,
-              fax: true,
-              city: true,
-              state: true,
-              country: true,
-              postal_code: true,
-              npwp: true,
-              status: true
-            }
-          },
-          contacts: {
-            where: { trash: null },
-            select: {
-              id: true,
-              title: true,
-              first_name: true,
-              middle_name: true,
-              surname: true,
-              username: true,
-              job_title: true,
-              department: true,
-              email: true,
-              phone: true,
-              fax: true,
-              mobile_phone: true,
-              status: true,
-              address: {
-                select: {
-                  id: true,
-                  address_type: true,
-                  address: true,
-                  city: true,
-                  state: true,
-                  country: true
-                }
-              }
-            }
-          }
-        }
-      });
+    // ✅ Create customer using repository
+    const result = await customerRepo.create({
+      code,
+      customer_name,
+      business,
+      ...otherFields,
     });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,
       message: 'Customer created successfully',
-      data: result
+      data: result.getValue(),
     });
-  } catch (error) {
-    console.error('Create customer error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error: any) {
     res.status(500).json({
       success: false,
-      message: 'Failed to create customer',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+      message: error.message,
     });
   }
 };
 
 /**
  * PUT /api/customers/:id - Update customer
+ * REFACTORED: Using Repository Pattern
  */
 export const updateCustomer = async (req: Request, res: Response): Promise<void> => {
   try {
     const id = parseId(req.params.id);
-    
+    const updateData = req.body;
+
     if (!id) {
       res.status(400).json({
         success: false,
@@ -715,289 +355,82 @@ export const updateCustomer = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if customer exists
-    const existingCustomer = await prisma.customer.findFirst({
-      where: {
-        id,
-        trash: null
-      }
-    });
-
-    if (!existingCustomer) {
+    // ✅ Check if customer exists using repository
+    const customerResult = await customerRepo.findById(id);
+    if (customerResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Customer not found'
+        message: 'Customer not found',
       });
       return;
     }
 
-    // Update customer
-    const {
-      code,
-      customer_name,
-      business,
-      npwp,
-      legal_document,
-      legal_document_add,
-      legal_document_remove,
-      email,
-      website,
-      bank_name,
-      account_name,
-      account_number,
-      bank_branch,
-      bank_address,
-      supplier_of,
-      supplier_code,
-      remarks,
-      special_customer,
-      top,
-      payment_middle,
-      sales_incharge,
-      ecoa,
-      feeder,
-      feeder_fee,
-      agency,
-      sales_feeder,
-      sales_id,
-      central_cust_id,
-      is_corporate
-    } = req.body;
-
-    // Code uniqueness validation if changed
-    if (code && code !== existingCustomer.code) {
-      const codeExists = await checkDuplicateCaseInsensitive(
-        prisma.customer,
-        'code',
-        code,
-        id
-      );
-      if (codeExists) {
-        res.status(409).json({
-          success: false,
-          message: 'Code already exists'
-        });
-        return;
-      }
-    }
-
-    // Check if customer_name is being changed and if it already exists
-    if (customer_name && customer_name !== existingCustomer.customer_name) {
-      const nameExists = await checkDuplicateCaseInsensitive(
-        prisma.customer,
-        'customer_name',
-        customer_name,
-        id
-      );
-      if (nameExists) {
-        res.status(409).json({
-          success: false,
-          message: 'Customer name already exists'
-        });
-        return;
-      }
-    }
-
-    // Build update data
-    const updateData: any = {};
-    
-    if (code !== undefined) updateData.code = code;
-    if (customer_name !== undefined) updateData.customer_name = customer_name;
-    if (business !== undefined) updateData.business = business;
-    if (npwp !== undefined) updateData.npwp = npwp;
-    // BR-006: File handling for legal_document. Support append/remove via ';;' delimiter
-    if (legal_document !== undefined || legal_document_add !== undefined || legal_document_remove !== undefined) {
-      updateData.legal_document = handleLegalDocument(
-        existingCustomer.legal_document || '',
-        typeof legal_document_add === 'string' ? legal_document_add : undefined,
-        Array.isArray(legal_document_remove) ? legal_document_remove as string[] : undefined,
-        typeof legal_document === 'string' ? legal_document : undefined
-      );
-    }
-    if (email !== undefined) updateData.email = email;
-    if (website !== undefined) updateData.website = website;
-    if (bank_name !== undefined) updateData.bank_name = bank_name;
-    if (account_name !== undefined) updateData.account_name = account_name;
-    if (account_number !== undefined) updateData.account_number = account_number;
-    if (bank_branch !== undefined) updateData.bank_branch = bank_branch;
-    if (bank_address !== undefined) updateData.bank_address = bank_address;
-    if (supplier_of !== undefined) updateData.supplier_of = supplier_of;
-    if (supplier_code !== undefined) updateData.supplier_code = supplier_code;
-    if (remarks !== undefined) updateData.remarks = remarks;
-    if (special_customer !== undefined) updateData.special_customer = special_customer ? 1 : 0;
-    if (top !== undefined) updateData.top = top;
-    if (payment_middle !== undefined) updateData.payment_middle = payment_middle ? 1 : 0;
-    if (sales_incharge !== undefined) updateData.sales_incharge = sales_incharge;
-    if (ecoa !== undefined) updateData.ecoa = ecoa;
-    if (feeder !== undefined) updateData.feeder = feeder;
-    if (feeder_fee !== undefined) updateData.feeder_fee = feeder_fee;
-    if (agency !== undefined) updateData.agency = agency;
-    if (sales_feeder !== undefined) updateData.sales_feeder = sales_feeder;
-    if (sales_id !== undefined) updateData.sales_id = sales_id;
-    if (central_cust_id !== undefined) updateData.central_cust_id = central_cust_id;
-    if (is_corporate !== undefined) updateData.is_corporate = is_corporate;
-
-    // Set updated_by if user is authenticated
-    if (req.user?.id) {
-      updateData.updated_by = req.user.id;
-    }
-
-    // Update customer with optimized select
-    const updatedCustomer = await prisma.customer.update({
-      where: { id },
-      data: updateData,
-      select: {
-        id: true,
-        code: true,
-        customer_name: true,
-        business: true,
-        npwp: true,
-        legal_document: true,
-        email: true,
-        website: true,
-        bank_name: true,
-        account_name: true,
-        account_number: true,
-        bank_branch: true,
-        bank_address: true,
-        supplier_of: true,
-        supplier_code: true,
-        remarks: true,
-        special_customer: true,
-        top: true,
-        payment_middle: true,
-        sales_incharge: true,
-        ecoa: true,
-        feeder: true,
-        feeder_fee: true,
-        agency: true,
-        sales_feeder: true,
-        sales_id: true,
-        central_cust_id: true,
-        is_corporate: true,
-        created_at: true,
-        updated_at: true,
-        addresses: {
-          where: { trash: null },
-          select: {
-            id: true,
-            address_type: true,
-            address: true,
-            phone: true,
-            fax: true,
-            city: true,
-            state: true,
-            country: true,
-            postal_code: true,
-            npwp: true,
-            status: true
-          }
-        },
-        contacts: {
-          where: { trash: null },
-          select: {
-            id: true,
-            title: true,
-            first_name: true,
-            middle_name: true,
-            surname: true,
-            username: true,
-            job_title: true,
-            department: true,
-            email: true,
-            phone: true,
-            fax: true,
-            mobile_phone: true,
-            status: true,
-            address: {
-              select: {
-                id: true,
-                address_type: true,
-                address: true,
-                city: true,
-                state: true,
-                country: true
-              }
-            }
-          }
+    // ✅ Check duplicate code if code is being changed
+    if (updateData.code) {
+      const customer = customerResult.getValue();
+      if (updateData.code !== customer.code) {
+        const existingResult = await customerRepo.findByCode(updateData.code);
+        if (existingResult.isSuccess() && existingResult.getValue()) {
+          res.status(400).json({
+            success: false,
+            message: 'Customer code already exists',
+          });
+          return;
         }
       }
-    });
+    }
+
+    // ✅ Update using repository
+    const result = await customerRepo.update(id, updateData);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'Customer updated successfully',
-      data: updatedCustomer
+      data: result.getValue(),
     });
-  } catch (error) {
-    console.error('Update customer error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error: any) {
     res.status(500).json({
       success: false,
-      message: 'Failed to update customer',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+      message: error.message,
     });
   }
 };
 
 /**
- * GET /api/customers/json - JSON search endpoint with nested data
+ * GET /api/customers/json - Get customers for autocomplete
+ * REFACTORED: Using Repository Pattern
  */
 export const getCustomersJson = async (req: Request, res: Response): Promise<void> => {
   try {
-    const q = sanitizeSearchQuery(typeof req.query.q === 'string' ? req.query.q : undefined);
-    const isDataTable = req.query.dataTable !== undefined;
-    const take = isDataTable ? 1000 : 20;
+    const search = req.query.q as string | undefined;
 
-    const where: any = {
-      trash: null,
-      ...(q && buildSearchCondition('customer_name', q))
-    };
+    // ✅ Call repository
+    const result = await customerRepo.findForAutocomplete(search);
 
-    // Role-based filter: customer role sees only their own record
-    if ((req as any).user?.role_id === 16 && (req as any).user?.customer_id) {
-      where.id = (req as any).user.customer_id;
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    const customers = await prisma.customer.findMany({
-      where,
-      take,
-      orderBy: { id: 'desc' },
-      include: {
-        addresses: { where: { trash: null } },
-        contacts: { where: { trash: null } }
-      }
+    res.json({
+      success: true,
+      data: result.getValue(),
     });
-
-    // Get active contracts for all customers (if Contract model exists)
-    const items = await Promise.all(customers.map(async (c) => {
-      const activeContract = await getActiveContract(c.id);
-      return {
-        id: c.id,
-        customer_name: c.customer_name,
-        code: c.code,
-        addresses: c.addresses,
-        contacts: c.contacts,
-        contract: activeContract,
-        ...getCustomFields(c.customer_name)
-      };
-    }));
-
-    const response: any = {
-      total_count: items.length,
-      incomplete_results: false
-    };
-    if (isDataTable) response.data = items;
-    else response.items = items;
-
-    res.json(response);
-  } catch (error) {
-    console.error('getCustomersJson error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error: any) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch customers JSON',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+      message: error.message,
     });
   }
 };
@@ -1182,266 +615,223 @@ export const getFetchJson = async (req: Request, res: Response): Promise<void> =
 };
 
 /**
- * POST/PUT/DELETE /api/customers/addresses - Manage Address
- * Body: { action: 'create'|'update'|'delete', ...fields }
+ * POST /api/customers/addresses - Manage address (create/update/delete)
+ * REFACTORED: Using Repository Pattern
  */
 export const manageAddress = async (req: Request, res: Response): Promise<void> => {
   try {
-    const action = typeof req.body.action === 'string' ? req.body.action.toLowerCase() : (req.method === 'DELETE' ? 'delete' : req.method === 'PUT' ? 'update' : 'create');
-    const userId = (req as any).user?.id || 1;
+    const { action, id, customer_id, ...addressData } = req.body;
 
+    // ✅ Validation logic in controller
+    if (!['create', 'update', 'delete'].includes(action)) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid action. Must be create, update, or delete',
+      });
+      return;
+    }
+
+    // ✅ Handle different actions using repository
     if (action === 'create') {
-      const customer_id = parseId(String(req.body.customer_id));
       if (!customer_id) {
-        res.status(400).json({ success: false, message: 'customer_id is required' });
+        res.status(400).json({
+          success: false,
+          message: 'customer_id is required for create action',
+        });
         return;
       }
-      const {
-        address_type, address, phone, fax, city, state, country, postal_code, npwp, status
-      } = req.body;
 
-      // BR-003: Address type uniqueness per customer
-      const incomingType = String(address_type || '').trim().toLowerCase();
-      if (incomingType) {
-        const existing = await prisma.address.findMany({
-          where: { customer_id, trash: null },
-          select: { id: true, address_type: true }
+      const result = await customerRepo.createAddress(customer_id, addressData);
+
+      if (result.isFailure()) {
+        res.status(400).json({
+          success: false,
+          message: result.error,
         });
-        const dup = existing.some(a => String(a.address_type).trim().toLowerCase() === incomingType);
-        if (dup) {
-          res.status(409).json({ success: false, message: 'Address type already exists for this customer' });
-          return;
-        }
+        return;
       }
 
-      const created = await prisma.address.create({
-        data: {
-          customer_id,
-          address_type: address_type || 'Main Office',
-          address,
-          phone,
-          fax: fax || null,
-          city: normalizeLocation(String(city)),
-          state: normalizeLocation(String(state)),
-          country: normalizeLocation(String(country)),
-          postal_code: postal_code ? parseInt(String(postal_code), 10) || null : null,
-          npwp: npwp || null,
-          status: status || 'Active',
-          created_by: userId
-        }
+      res.status(201).json({
+        success: true,
+        message: 'Address created successfully',
+        data: result.getValue(),
       });
-      res.status(201).json({ success: true, message: 'Address created', data: created });
       return;
     }
 
     if (action === 'update') {
-      const id = parseId(String(req.body.id));
       if (!id) {
-        res.status(400).json({ success: false, message: 'id is required' });
-        return;
-      }
-      const address = await prisma.address.findFirst({ where: { id, trash: null } });
-      if (!address) {
-        res.status(404).json({ success: false, message: 'Address not found' });
-        return;
-      }
-      const {
-        address_type, address: addr, phone, fax, city, state, country, postal_code, npwp, status
-      } = req.body;
-
-      // BR-003: Address type uniqueness (exclude self)
-      if (address_type && address_type !== address.address_type) {
-        const incomingType = String(address_type).trim().toLowerCase();
-        const existing = await prisma.address.findMany({
-          where: {
-            customer_id: address.customer_id,
-            trash: null,
-            id: { not: id }
-          },
-          select: { id: true, address_type: true }
+        res.status(400).json({
+          success: false,
+          message: 'id is required for update action',
         });
-        const dup = existing.some(a => String(a.address_type).trim().toLowerCase() === incomingType);
-        if (dup) {
-          res.status(409).json({ success: false, message: 'Address type already exists for this customer' });
-          return;
-        }
+        return;
       }
 
-      const updated = await prisma.address.update({
-        where: { id },
-        data: {
-          ...(address_type !== undefined ? { address_type } : {}),
-          ...(addr !== undefined ? { address: addr } : {}),
-          ...(phone !== undefined ? { phone } : {}),
-          ...(fax !== undefined ? { fax } : {}),
-          ...(city !== undefined ? { city: normalizeLocation(String(city)) } : {}),
-          ...(state !== undefined ? { state: normalizeLocation(String(state)) } : {}),
-          ...(country !== undefined ? { country: normalizeLocation(String(country)) } : {}),
-          ...(postal_code !== undefined ? { postal_code: postal_code ? parseInt(String(postal_code), 10) || null : null } : {}),
-          ...(npwp !== undefined ? { npwp } : {}),
-          ...(status !== undefined ? { status } : {}),
-          updated_by: userId
-        }
+      const result = await customerRepo.updateAddress(id, { ...addressData, customer_id });
+
+      if (result.isFailure()) {
+        res.status(400).json({
+          success: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: 'Address updated successfully',
+        data: result.getValue(),
       });
-      res.json({ success: true, message: 'Address updated', data: updated });
       return;
     }
 
     if (action === 'delete') {
-      const id = parseId(String(req.body.id || req.query.id || ''));
       if (!id) {
-        res.status(400).json({ success: false, message: 'id is required' });
+        res.status(400).json({
+          success: false,
+          message: 'id is required for delete action',
+        });
         return;
       }
-      const address = await prisma.address.findFirst({ where: { id, trash: null } });
-      if (!address) {
-        res.status(404).json({ success: false, message: 'Address not found' });
+
+      const result = await customerRepo.deleteAddress(id);
+
+      if (result.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: result.error,
+        });
         return;
       }
-      await prisma.address.update({ where: { id }, data: { trash: 1, updated_by: userId } });
-      res.json({ success: true, message: 'Address deleted' });
+
+      res.json({
+        success: true,
+        message: 'Address deleted successfully',
+      });
       return;
     }
-
-    res.status(400).json({ success: false, message: 'Unsupported action' });
-  } catch (error) {
-    console.error('manageAddress error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error: any) {
     res.status(500).json({
       success: false,
-      message: 'Failed to manage address',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+      message: error.message,
     });
   }
 };
 
 /**
- * POST/PUT/DELETE /api/customers/contacts - Manage Contact
- * Body: { action: 'create'|'update'|'delete', ...fields }
+ * POST /api/customers/contacts - Manage contact (create/update/delete)
+ * REFACTORED: Using Repository Pattern
  */
 export const manageContact = async (req: Request, res: Response): Promise<void> => {
   try {
-    const action = typeof req.body.action === 'string' ? req.body.action.toLowerCase() : (req.method === 'DELETE' ? 'delete' : req.method === 'PUT' ? 'update' : 'create');
-    const userId = (req as any).user?.id || 1;
+    const { action, id, customer_id, ...contactData } = req.body;
 
-    if (action === 'create') {
-      const customer_id = parseId(String(req.body.customer_id));
-      const address_id = parseId(String(req.body.address_id));
-      if (!customer_id || !address_id) {
-        res.status(400).json({ success: false, message: 'customer_id and address_id are required' });
-        return;
-      }
-
-      // Validate address belongs to customer
-      const address = await prisma.address.findFirst({ where: { id: address_id, customer_id, trash: null } });
-      if (!address) {
-        res.status(400).json({ success: false, message: 'address_id does not belong to the specified customer' });
-        return;
-      }
-
-      const {
-        title, first_name, middle_name, surname, job_title, department, email, phone, fax, mobile_phone, status
-      } = req.body;
-
-      const created = await prisma.contact.create({
-        data: {
-          customer_id,
-          address_id,
-          title: title || '',
-          first_name,
-          middle_name: middle_name || null,
-          surname,
-          username: email || generateUsername(first_name, middle_name, surname),
-          job_title: job_title || null,
-          department: department || null,
-          email,
-          phone,
-          fax: fax || null,
-          mobile_phone: mobile_phone || null,
-          status: status || 'Active',
-          created_by: userId
-        }
+    // ✅ Validation logic in controller
+    if (!['create', 'update', 'delete'].includes(action)) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid action. Must be create, update, or delete',
       });
-      res.status(201).json({ success: true, message: 'Contact created', data: created });
+      return;
+    }
+
+    // ✅ Handle different actions using repository
+    if (action === 'create') {
+      if (!customer_id) {
+        res.status(400).json({
+          success: false,
+          message: 'customer_id is required for create action',
+        });
+        return;
+      }
+
+      const result = await customerRepo.createContact(customer_id, contactData);
+
+      if (result.isFailure()) {
+        res.status(400).json({
+          success: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      res.status(201).json({
+        success: true,
+        message: 'Contact created successfully',
+        data: result.getValue(),
+      });
       return;
     }
 
     if (action === 'update') {
-      const id = parseId(String(req.body.id));
       if (!id) {
-        res.status(400).json({ success: false, message: 'id is required' });
-        return;
-      }
-      const existing = await prisma.contact.findFirst({ where: { id, trash: null } });
-      if (!existing) {
-        res.status(404).json({ success: false, message: 'Contact not found' });
+        res.status(400).json({
+          success: false,
+          message: 'id is required for update action',
+        });
         return;
       }
 
-      const {
-        title, first_name, middle_name, surname, job_title, department, email, phone, fax, mobile_phone, status
-      } = req.body;
+      const result = await customerRepo.updateContact(id, { ...contactData, customer_id });
 
-      const updated = await prisma.contact.update({
-        where: { id },
-        data: {
-          ...(title !== undefined ? { title } : {}),
-          ...(first_name !== undefined ? { first_name } : {}),
-          ...(middle_name !== undefined ? { middle_name } : {}),
-          ...(surname !== undefined ? { surname } : {}),
-          // Regenerate username when name changes and email not provided
-          ...(first_name !== undefined || middle_name !== undefined || surname !== undefined
-            ? { username: email || generateUsername(first_name ?? existing.first_name, middle_name ?? existing.middle_name ?? undefined, surname ?? existing.surname) }
-            : {}),
-          ...(job_title !== undefined ? { job_title } : {}),
-          ...(department !== undefined ? { department } : {}),
-          ...(email !== undefined ? { email } : {}),
-          ...(phone !== undefined ? { phone } : {}),
-          ...(fax !== undefined ? { fax } : {}),
-          ...(mobile_phone !== undefined ? { mobile_phone } : {}),
-          ...(status !== undefined ? { status } : {}),
-          updated_by: userId
-        }
+      if (result.isFailure()) {
+        res.status(400).json({
+          success: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: 'Contact updated successfully',
+        data: result.getValue(),
       });
-      res.json({ success: true, message: 'Contact updated', data: updated });
       return;
     }
 
     if (action === 'delete') {
-      const id = parseId(String(req.body.id || req.query.id || ''));
       if (!id) {
-        res.status(400).json({ success: false, message: 'id is required' });
+        res.status(400).json({
+          success: false,
+          message: 'id is required for delete action',
+        });
         return;
       }
-      const existing = await prisma.contact.findFirst({ where: { id, trash: null } });
-      if (!existing) {
-        res.status(404).json({ success: false, message: 'Contact not found' });
+
+      const result = await customerRepo.deleteContact(id);
+
+      if (result.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: result.error,
+        });
         return;
       }
-      await prisma.contact.update({ where: { id }, data: { trash: 1, updated_by: userId } });
-      res.json({ success: true, message: 'Contact deleted' });
+
+      res.json({
+        success: true,
+        message: 'Contact deleted successfully',
+      });
       return;
     }
-
-    res.status(400).json({ success: false, message: 'Unsupported action' });
-  } catch (error) {
-    console.error('manageContact error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error: any) {
     res.status(500).json({
       success: false,
-      message: 'Failed to manage contact',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+      message: error.message,
     });
   }
 };
 
 /**
  * DELETE /api/customers/:id - Soft delete customer
+ * REFACTORED: Using Repository Pattern
  */
 export const deleteCustomer = async (req: Request, res: Response): Promise<void> => {
   try {
     const id = parseId(req.params.id);
-    
+
     if (!id) {
       res.status(400).json({
         success: false,
@@ -1459,39 +849,25 @@ export const deleteCustomer = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if customer exists
-    const existingCustomer = await prisma.customer.findFirst({
-      where: {
-        id,
-        trash: null
-      }
-    });
+    // ✅ Delete using repository
+    const result = await customerRepo.delete(id);
 
-    if (!existingCustomer) {
-      res.status(404).json({
+    if (result.isFailure()) {
+      res.status(500).json({
         success: false,
-        message: 'Customer not found'
+        message: result.error,
       });
       return;
     }
 
-    // Soft delete
-    await prisma.customer.update({
-      where: { id },
-      data: { trash: 1 }
-    });
-
     res.json({
       success: true,
-      message: 'Customer deleted successfully'
+      message: 'Customer deleted successfully',
     });
-  } catch (error) {
-    console.error('Delete customer error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error: any) {
     res.status(500).json({
       success: false,
-      message: 'Failed to delete customer',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+      message: error.message,
     });
   }
 };

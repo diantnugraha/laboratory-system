@@ -1,7 +1,10 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildSearchCondition, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { AnalystTypeRepository } from '../repositories/implementations/AnalystTypeRepository';
 import { parseId, parseQueryParam, ApiResponse } from '../types';
+
+// Initialize repository
+const analystTypeRepo = new AnalystTypeRepository(prisma);
 
 /**
  * GET /api/analyst-types - List dengan search & pagination
@@ -10,38 +13,24 @@ export const getAllAnalystTypes = async (req: Request, res: Response): Promise<v
   try {
     const page = parseQueryParam(req.query.page, 1);
     const limit = parseQueryParam(req.query.limit, 20);
-    const skip = (page - 1) * limit;
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    const where = {
-      trash: null,
-      ...buildSearchCondition('name', search),
-    };
+    // Call repository
+    const result = await analystTypeRepo.findAll({ search, page, limit });
 
-    const [data, total] = await Promise.all([
-      prisma.analystType.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { id: 'asc' },
-        include: {
-          _count: {
-            select: {
-              analystRules: {
-                where: {
-                  trash: null,
-                  user: { trash: null }
-                }
-              }
-            }
-          }
-        }
-      }),
-      prisma.analystType.count({ where })
-    ]);
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
+
+    const data = result.getValue();
 
     // Transform data to include analystCount (exclude _count field)
-    const transformedData = data.map(item => {
+    const transformedData = data.data.map(item => {
       const { _count, ...rest } = item;
       return {
         ...rest,
@@ -52,12 +41,7 @@ export const getAllAnalystTypes = async (req: Request, res: Response): Promise<v
     const response: ApiResponse = {
       success: true,
       data: transformedData,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
+      pagination: data.pagination,
     };
 
     res.json(response);
@@ -86,32 +70,19 @@ export const getAnalystTypeById = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const data = await prisma.analystType.findFirst({
-      where: { id, trash: null },
-      include: {
-        _count: {
-          select: {
-            analystRules: {
-              where: {
-                trash: null,
-                user: { trash: null }
-              }
-            },
-            services: {
-              where: { trash: null }
-            }
-          }
-        }
-      }
-    });
+    // Call repository
+    const result = await analystTypeRepo.findById(id);
 
-    if (!data) {
+    // Handle repository result
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Analyst type not found'
+        message: result.error,
       });
       return;
     }
+
+    const data = result.getValue();
 
     // Transform data to include counts (exclude _count field)
     const { _count, ...rest } = data;
@@ -148,13 +119,9 @@ export const createAnalystType = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    // Check duplicate
-    const existing = await checkDuplicateCaseInsensitive(
-      prisma.analystType,
-      'name',
-      name.trim()
-    );
-    if (existing) {
+    // Check duplicate via repository
+    const duplicateResult = await analystTypeRepo.findByName(name.trim());
+    if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Name already exists'
@@ -162,18 +129,25 @@ export const createAnalystType = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const data = await prisma.analystType.create({
-      data: {
-        name: name.trim(),
-        list_service: typeof list_service === 'string' ? list_service.trim() || null : null,
-        created_by: req.user?.id || 1
-      }
+    // Create analyst type via repository
+    const result = await analystTypeRepo.create({
+      name: name.trim(),
+      list_service: typeof list_service === 'string' ? list_service.trim() || null : null,
+      created_by: req.user?.id || 1
     });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,
       message: 'Analyst type created successfully',
-      data
+      data: result.getValue(),
     });
   } catch (error) {
     console.error('create analyst type error:', error);
@@ -202,14 +176,12 @@ export const updateAnalystType = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    // Check exists
-    const existing = await prisma.analystType.findFirst({
-      where: { id, trash: null }
-    });
-    if (!existing) {
+    // Check exists via repository
+    const existingResult = await analystTypeRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Analyst type not found'
+        message: 'Analyst type not found',
       });
       return;
     }
@@ -239,12 +211,10 @@ export const updateAnalystType = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    // Check duplicate
+    // Check duplicate via repository
     if (updateData.name) {
-      const duplicate = await checkDuplicateCaseInsensitive(
-        prisma.analystType, 'name', updateData.name, id
-      );
-      if (duplicate) {
+      const duplicateResult = await analystTypeRepo.findByName(updateData.name, id);
+      if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Name already exists'
@@ -253,18 +223,22 @@ export const updateAnalystType = async (req: Request, res: Response): Promise<vo
       }
     }
 
-    const data = await prisma.analystType.update({
-      where: { id },
-      data: {
-        ...updateData,
-        updated_by: req.user?.id || null
-      }
-    });
+    // Update via repository
+    updateData.updated_by = req.user?.id || null;
+    const result = await analystTypeRepo.update(id, updateData);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'Analyst type updated successfully',
-      data
+      data: result.getValue(),
     });
   } catch (error) {
     console.error('update analyst type error:', error);
@@ -292,57 +266,46 @@ export const deleteAnalystType = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const existing = await prisma.analystType.findFirst({
-      where: { id, trash: null },
-      include: {
-        _count: {
-          select: {
-            analystRules: {
-              where: {
-                trash: null,
-                user: { trash: null }
-              }
-            },
-            services: {
-              where: { trash: null }
-            }
-          }
-        }
-      }
-    });
+    // Check dependencies via repository
+    const dependencyResult = await analystTypeRepo.checkDependencies(id);
 
-    if (!existing) {
+    if (dependencyResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Analyst type not found'
+        message: dependencyResult.error,
       });
       return;
     }
+
+    const dependencies = dependencyResult.getValue();
 
     // Check for dependencies before deletion
-    const analystCount = existing._count.analystRules;
-    const serviceCount = existing._count.services;
-
-    if (analystCount > 0) {
+    if (dependencies.analystCount > 0) {
       res.status(409).json({
         success: false,
-        message: `Cannot delete: ${analystCount} analyst(s) are assigned to this type`
+        message: `Cannot delete: ${dependencies.analystCount} analyst(s) are assigned to this type`
       });
       return;
     }
 
-    if (serviceCount > 0) {
+    if (dependencies.serviceCount > 0) {
       res.status(409).json({
         success: false,
-        message: `Cannot delete: ${serviceCount} service(s) are linked to this type`
+        message: `Cannot delete: ${dependencies.serviceCount} service(s) are linked to this type`
       });
       return;
     }
 
-    await prisma.analystType.update({
-      where: { id },
-      data: { trash: 1 }
-    });
+    // Delete via repository
+    const result = await analystTypeRepo.delete(id);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -366,42 +329,20 @@ export const getAnalystTypesJson = async (req: Request, res: Response): Promise<
   try {
     const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
     const isDataTable = req.query.dataTable !== undefined;
-    
-    // Fix unlimited page size issue - use max 1000 for dataTable mode
-    const limit = isDataTable ? 1000 : 20;
 
-    const where = {
-      trash: null,
-      ...buildSearchCondition('name', searchTerm),
-    };
+    // Call repository
+    const result = await analystTypeRepo.findForAutocomplete(searchTerm, isDataTable);
 
-    const [items, total] = await Promise.all([
-      prisma.analystType.findMany({
-        where,
-        select: {
-          id: true,
-          name: true
-        },
-        take: limit,
-        orderBy: { id: 'asc' }
-      }),
-      prisma.analystType.count({ where })
-    ]);
-
-    // JSON API Response Format
-    const response: any = {
-      total_count: total,
-      incomplete_results: total > limit
-    };
-
-    // Use 'data' for dataTable mode, 'items' for standard format
-    if (isDataTable) {
-      response.data = items;
-    } else {
-      response.items = items;
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    res.json(response);
+    res.json(result.getValue());
   } catch (error) {
     console.error('getAnalystTypesJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -419,57 +360,18 @@ export const getAnalystTypesJson = async (req: Request, res: Response): Promise<
  */
 export const reverseAnalystTypes = async (_req: Request, res: Response): Promise<void> => {
   try {
-    // Get all analyst types with list_service populated
-    const analystTypes = await prisma.analystType.findMany({
-      where: {
-        trash: null,
-        list_service: { not: null }
-      },
-      select: {
-        id: true,
-        name: true,
-        list_service: true
-      }
-    });
+    // Call repository for migration
+    const result = await analystTypeRepo.performReverseMigration();
 
-    let totalProcessed = 0;
-    const results: string[] = [];
-
-    for (const analystType of analystTypes) {
-      if (!analystType.list_service) continue;
-
-      // Parse comma-separated service IDs (format: ",1,2,3,")
-      const serviceIds = analystType.list_service
-        .split(',')
-        .map(id => id.trim())
-        .filter(id => id && !isNaN(parseInt(id, 10)))
-        .map(id => parseInt(id, 10));
-
-      for (const serviceId of serviceIds) {
-        try {
-          // Check if service exists and is not already assigned
-          const service = await prisma.service.findFirst({
-            where: {
-              id: serviceId,
-              trash: null,
-              analyst_type_id: null
-            }
-          });
-
-          if (service) {
-            await prisma.service.update({
-              where: { id: serviceId },
-              data: { analyst_type_id: analystType.id }
-            });
-            results.push(`${serviceId} : ${analystType.id}`);
-            totalProcessed++;
-          }
-        } catch (error) {
-          console.error(`Error updating service ${serviceId}:`, error);
-          // Continue with other services
-        }
-      }
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
+
+    const { results, totalProcessed } = result.getValue();
 
     // Return HTML response as per specification
     res.setHeader('Content-Type', 'text/html');
@@ -486,15 +388,3 @@ export const reverseAnalystTypes = async (_req: Request, res: Response): Promise
     });
   }
 };
-
-
-
-
-
-
-
-
-
-
-
-

@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 
 const contactSchema = z.object({
+  addressId: z.number().min(1, "Address is required"),
   title: z.string().optional(),
   firstName: z.string().min(1, "First name is required"),
   surname: z.string().min(1, "Surname is required"),
@@ -42,6 +43,7 @@ const contactSchema = z.object({
 type ContactFormData = z.infer<typeof contactSchema>;
 
 interface Contact {
+  addressId: number;
   title: string;
   firstName: string;
   surname: string;
@@ -56,16 +58,18 @@ interface ContactEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contact: Contact | null;
+  addresses: Array<{ id: number; address_type: string }>;
   onSave: (data: ContactFormData) => Promise<void>;
   isSubmitting?: boolean;
 }
 
 const titles = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof."];
 
-export function ContactEditDialog({ open, onOpenChange, contact, onSave, isSubmitting = false }: ContactEditDialogProps) {
+export function ContactEditDialog({ open, onOpenChange, contact, addresses, onSave, isSubmitting = false }: ContactEditDialogProps) {
   const form = useForm<ContactFormData>({
     resolver: zodResolver(contactSchema),
     defaultValues: {
+      addressId: 0,
       title: "",
       firstName: "",
       surname: "",
@@ -81,6 +85,7 @@ export function ContactEditDialog({ open, onOpenChange, contact, onSave, isSubmi
   useEffect(() => {
     if (open && contact) {
       form.reset({
+        addressId: contact.addressId || 0,
         title: contact.title || "",
         firstName: contact.firstName || "",
         surname: contact.surname || "",
@@ -165,6 +170,34 @@ export function ContactEditDialog({ open, onOpenChange, contact, onSave, isSubmi
                 )}
               />
             </div>
+
+            <FormField
+              control={form.control}
+              name="addressId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Address *</FormLabel>
+                  <Select
+                    onValueChange={(value) => field.onChange(parseInt(value))}
+                    value={field.value?.toString() || ""}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select address" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {addresses.map((addr) => (
+                        <SelectItem key={addr.id} value={addr.id.toString()}>
+                          {addr.address_type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <FormField

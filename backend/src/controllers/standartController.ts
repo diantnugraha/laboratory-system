@@ -1,58 +1,12 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildMultiFieldSearchCondition, sanitizeSearchQuery, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { StandartRepository } from '../repositories/implementations/StandartRepository';
+import { sanitizeSearchQuery } from '../utils/searchHelper';
 import { parseId, parseQueryParam, parseBooleanParam, ApiResponse } from '../types';
+import { parseMinMaxValue, validateMinMaxRange } from '../utils/standartHelper';
 
-/**
- * Parse min/max value to String, handling special cases like "Negative"
- * @param value - The value to parse (can be string, number, or null)
- * @returns String value (converts number to string, preserves "Negative" as is)
- */
-const parseMinMaxValue = (value: any): string => {
-  if (value === null || value === undefined) {
-    throw new Error('min and max values cannot be null or undefined');
-  }
-
-  // If already a string, trim and return
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed === '') {
-      throw new Error('min and max values cannot be empty strings');
-    }
-    return trimmed;
-  }
-
-  // If number, convert to string
-  if (typeof value === 'number') {
-    if (isNaN(value)) {
-      throw new Error('min and max must be valid numbers');
-    }
-    return value.toString();
-  }
-
-  // Convert other types to string
-  return String(value);
-};
-
-/**
- * Validate that min <= max (only when both are numeric)
- * @param min - Minimum value (string or number)
- * @param max - Maximum value (string or number)
- * @throws Error if min > max when both are numeric
- */
-const validateMinMaxRange = (min: any, max: any): void => {
-  // Only validate if both values are numeric
-  const minNum = typeof min === 'number' ? min : (typeof min === 'string' ? parseFloat(min) : NaN);
-  const maxNum = typeof max === 'number' ? max : (typeof max === 'string' ? parseFloat(max) : NaN);
-
-  // If both are valid numbers, check range
-  if (!isNaN(minNum) && !isNaN(maxNum)) {
-    if (minNum > maxNum) {
-      throw new Error(`Min value (${minNum}) cannot be greater than Max value (${maxNum})`);
-    }
-  }
-  // If one or both are strings like "Negative", skip validation
-};
+// Initialize repository
+const standartRepo = new StandartRepository(prisma);
 
 /**
  * GET /api/standards - List with search & pagination
@@ -60,91 +14,39 @@ const validateMinMaxRange = (min: any, max: any): void => {
  */
 export const getAllStandards = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Check if this is a select/dropdown request
     const isSelect = parseBooleanParam(req.query.select as string | string[] | undefined);
+    const page = parseQueryParam(req.query.page, 1);
+    const limit = parseQueryParam(req.query.limit, 20);
+    const search = sanitizeSearchQuery(typeof req.query.search === 'string' ? req.query.search : undefined);
 
-    if (isSelect) {
-      // Return simplified data for dropdown/select
-      const standards = await prisma.standart.findMany({
-        where: {
-          trash: null
-        },
-        select: {
-          id: true,
-          code: true,
-          name: true
-        },
-        orderBy: {
-          name: 'asc'
-        }
-      });
+    // Call repository
+    const result = await standartRepo.findAll({ search, page, limit, select: isSelect });
 
-      res.json({
-        success: true,
-        data: standards
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
       });
       return;
     }
 
-    // Standard list with pagination
-    const page = parseQueryParam(req.query.page, 1);
-    const limit = parseQueryParam(req.query.limit, 20);
-    const skip = (page - 1) * limit;
-    const search = sanitizeSearchQuery(typeof req.query.search === 'string' ? req.query.search : undefined);
+    const data = result.getValue();
 
-    const where = {
-      trash: null,
-      ...buildMultiFieldSearchCondition(['name', 'code'], search),
-    };
-
-    const [data, total] = await Promise.all([
-      prisma.standart.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { id: 'desc' },
-        include: {
-          category: {
-            select: {
-              id: true,
-              name: true
-            }
-          },
-          customer: {
-            select: {
-              id: true,
-              customer_name: true,
-              code: true
-            }
-          },
-          standartDetails: {
-            include: {
-              service: {
-                select: {
-                  id: true,
-                  code: true,
-                  name: true
-                }
-              }
-            }
-          }
-        }
-      }),
-      prisma.standart.count({ where })
-    ]);
-
-    const response: ApiResponse = {
-      success: true,
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
-    };
-
-    res.json(response);
+    // Select mode returns array directly, standard mode returns paginated data
+    if (isSelect) {
+      res.json({
+        success: true,
+        data
+      });
+    } else {
+      const response: ApiResponse = {
+        success: true,
+        data: data.data,
+        pagination: data.pagination,
+      };
+      res.json(response);
+    }
   } catch (error) {
     console.error('getAll standards error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -170,45 +72,19 @@ export const getStandardById = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const data = await prisma.standart.findFirst({
-      where: { id, trash: null },
-      include: {
-        category: {
-          select: {
-            id: true,
-            name: true
-          }
-        },
-        customer: {
-          select: {
-            id: true,
-            customer_name: true,
-            code: true
-          }
-        },
-        standartDetails: {
-          include: {
-            service: {
-              select: {
-                id: true,
-                code: true,
-                name: true
-              }
-            }
-          }
-        }
-      }
-    });
+    // Call repository
+    const result = await standartRepo.findById(id);
 
-    if (!data) {
+    // Handle repository result
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Standard not found'
+        message: result.error,
       });
       return;
     }
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: result.getValue() });
   } catch (error) {
     console.error('getStandardById error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -242,13 +118,9 @@ export const createStandard = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if code already exists
-    const existingCode = await checkDuplicateCaseInsensitive(
-      prisma.standart,
-      'code',
-      code
-    );
-    if (existingCode) {
+    // Check if code already exists via repository
+    const codeResult = await standartRepo.findByCode(code);
+    if (codeResult.isSuccess() && codeResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Code already exists'
@@ -256,13 +128,9 @@ export const createStandard = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if name already exists
-    const existingName = await checkDuplicateCaseInsensitive(
-      prisma.standart,
-      'name',
-      name
-    );
-    if (existingName) {
+    // Check if name already exists via repository
+    const nameResult = await standartRepo.findByName(name);
+    if (nameResult.isSuccess() && nameResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Name already exists'
@@ -270,12 +138,10 @@ export const createStandard = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Validate foreign keys if provided
+    // Validate foreign keys if provided via repository
     if (category_id) {
-      const category = await prisma.category.findFirst({
-        where: { id: category_id }
-      });
-      if (!category) {
+      const categoryValid = await standartRepo.validateCategoryExists(category_id);
+      if (categoryValid.isFailure() || !categoryValid.getValue()) {
         res.status(404).json({
           success: false,
           message: 'Category not found'
@@ -285,10 +151,8 @@ export const createStandard = async (req: Request, res: Response): Promise<void>
     }
 
     if (customer_id) {
-      const customer = await prisma.customer.findFirst({
-        where: { id: customer_id, trash: null }
-      });
-      if (!customer) {
+      const customerValid = await standartRepo.validateCustomerExists(customer_id);
+      if (customerValid.isFailure() || !customerValid.getValue()) {
         res.status(404).json({
           success: false,
           message: 'Customer not found'
@@ -331,11 +195,9 @@ export const createStandard = async (req: Request, res: Response): Promise<void>
         return;
       }
 
-      // Check if service exists
-      const service = await prisma.service.findFirst({
-        where: { id: detail.service_id, trash: null }
-      });
-      if (!service) {
+      // Check if service exists via repository
+      const serviceValid = await standartRepo.validateServiceExists(detail.service_id);
+      if (serviceValid.isFailure() || !serviceValid.getValue()) {
         res.status(404).json({
           success: false,
           message: `Service with id ${detail.service_id} not found`
@@ -359,52 +221,28 @@ export const createStandard = async (req: Request, res: Response): Promise<void>
       };
     });
 
-    // Create standard with nested standartDetails using transaction for atomicity
-    const data = await prisma.$transaction(async (tx) => {
-      return await tx.standart.create({
-        data: {
-          code,
-          name,
-          category_id: category_id || null,
-          customer_id: customer_id || null,
-          created_by: createdBy,
-          standartDetails: {
-            create: standartDetailsData
-          }
-        },
-        include: {
-          category: {
-            select: {
-              id: true,
-              name: true
-            }
-          },
-          customer: {
-            select: {
-              id: true,
-              customer_name: true,
-              code: true
-            }
-          },
-          standartDetails: {
-            include: {
-              service: {
-                select: {
-                  id: true,
-                  code: true,
-                  name: true
-                }
-              }
-            }
-          }
-        }
-      });
+    // Create standard via repository (handles transaction internally)
+    const result = await standartRepo.create({
+      code,
+      name,
+      category_id: category_id || null,
+      customer_id: customer_id || null,
+      created_by: createdBy,
+      standartDetails: standartDetailsData
     });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,
       message: 'Standard created successfully',
-      data
+      data: result.getValue(),
     });
   } catch (error) {
     console.error('createStandard error:', error);
@@ -431,18 +269,17 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if standard exists
-    const existingStandard = await prisma.standart.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!existingStandard) {
+    // Check if standard exists via repository
+    const existingResult = await standartRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Standard not found'
+        message: 'Standard not found',
       });
       return;
     }
+
+    const existingStandard = existingResult.getValue();
 
     const {
       code,
@@ -454,13 +291,8 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
 
     // Check if code is being changed and if it already exists
     if (code && code !== existingStandard.code) {
-      const codeExists = await checkDuplicateCaseInsensitive(
-        prisma.standart,
-        'code',
-        code,
-        id
-      );
-      if (codeExists) {
+      const codeResult = await standartRepo.findByCode(code, id);
+      if (codeResult.isSuccess() && codeResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Code already exists'
@@ -471,13 +303,8 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
 
     // Check if name is being changed and if it already exists
     if (name && name !== existingStandard.name) {
-      const nameExists = await checkDuplicateCaseInsensitive(
-        prisma.standart,
-        'name',
-        name,
-        id
-      );
-      if (nameExists) {
+      const nameResult = await standartRepo.findByName(name, id);
+      if (nameResult.isSuccess() && nameResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Name already exists'
@@ -486,13 +313,11 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
       }
     }
 
-    // Validate foreign keys if provided
+    // Validate foreign keys if provided via repository
     if (category_id !== undefined) {
       if (category_id !== null) {
-        const category = await prisma.category.findFirst({
-          where: { id: category_id }
-        });
-        if (!category) {
+        const categoryValid = await standartRepo.validateCategoryExists(category_id);
+        if (categoryValid.isFailure() || !categoryValid.getValue()) {
           res.status(404).json({
             success: false,
             message: 'Category not found'
@@ -504,10 +329,8 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
 
     if (customer_id !== undefined) {
       if (customer_id !== null) {
-        const customer = await prisma.customer.findFirst({
-          where: { id: customer_id, trash: null }
-        });
-        if (!customer) {
+        const customerValid = await standartRepo.validateCustomerExists(customer_id);
+        if (customerValid.isFailure() || !customerValid.getValue()) {
           res.status(404).json({
             success: false,
             message: 'Customer not found'
@@ -543,11 +366,9 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
           return;
         }
 
-        // Check if service exists
-        const service = await prisma.service.findFirst({
-          where: { id: detail.service_id, trash: null }
-        });
-        if (!service) {
+        // Check if service exists via repository
+        const serviceValid = await standartRepo.validateServiceExists(detail.service_id);
+        if (serviceValid.isFailure() || !serviceValid.getValue()) {
           res.status(404).json({
             success: false,
             message: `Service with id ${detail.service_id} not found`
@@ -571,15 +392,13 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
     }
 
     // Prepare standartDetails data with parsed min/max values
-    let standartDetailsData: any[] | undefined;
     if (standartDetails && Array.isArray(standartDetails)) {
       try {
-        standartDetailsData = standartDetails.map((detail: any) => {
+        updateData.standartDetails = standartDetails.map((detail: any) => {
           // Parse min/max values (already validated above, but parse again to ensure consistency)
           const parsedMin = parseMinMaxValue(detail.min);
           const parsedMax = parseMinMaxValue(detail.max);
           return {
-            standart_id: id,
             service_id: detail.service_id,
             min: parsedMin,
             max: parsedMax,
@@ -596,63 +415,21 @@ export const updateStandard = async (req: Request, res: Response): Promise<void>
       }
     }
 
-    // Use transaction to update standard and standartDetails
-    const result = await prisma.$transaction(async (tx) => {
-      // Update standard
-      await tx.standart.update({
-        where: { id },
-        data: updateData
+    // Update standard via repository (handles transaction internally)
+    const result = await standartRepo.update(id, updateData);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
       });
-
-      // Handle standartDetails if provided
-      if (standartDetailsData && standartDetailsData.length > 0) {
-        // Delete existing standartDetails
-        await tx.standartDetail.deleteMany({
-          where: { standart_id: id }
-        });
-
-        // Create new standartDetails
-        await tx.standartDetail.createMany({
-          data: standartDetailsData
-        });
-      }
-
-      // Return updated standard with relations
-      return await tx.standart.findFirst({
-        where: { id },
-        include: {
-          category: {
-            select: {
-              id: true,
-              name: true
-            }
-          },
-          customer: {
-            select: {
-              id: true,
-              customer_name: true,
-              code: true
-            }
-          },
-          standartDetails: {
-            include: {
-              service: {
-                select: {
-                  id: true,
-                  code: true,
-                  name: true
-                }
-              }
-            }
-          }
-        }
-      });
-    });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'Standard updated successfully',
-      data: result
+      data: result.getValue(),
     });
   } catch (error) {
     console.error('updateStandard error:', error);
@@ -679,24 +456,26 @@ export const deleteStandard = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if standard exists
-    const existingStandard = await prisma.standart.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!existingStandard) {
+    // Check if standard exists via repository
+    const existingResult = await standartRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Standard not found'
+        message: 'Standard not found',
       });
       return;
     }
 
-    // Soft delete
-    await prisma.standart.update({
-      where: { id },
-      data: { trash: 1 }
-    });
+    // Delete via repository
+    const result = await standartRepo.delete(id);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -723,49 +502,31 @@ export const getStandardsJson = async (req: Request, res: Response): Promise<voi
     const searchQuery = sanitizeSearchQuery(typeof req.query.q === 'string' ? req.query.q : undefined);
     const isDataTable = parseBooleanParam(req.query.dataTable as string | string[] | undefined);
 
-    // Build where condition
-    const where: any = {
-      trash: null
-    };
-
-    // Search filter (name or code)
-    if (searchQuery) {
-      where.OR = [
-        { name: { contains: searchQuery } },
-        { code: { contains: searchQuery } }
-      ];
-    }
-
     // Customer role filtering: if user is Customer role (role_id 16), filter by their customer_id
+    let customerId: number | undefined;
     if ((req as any).user?.role_id === 16 && (req as any).user?.customer_id) {
-      where.customer_id = (req as any).user.customer_id;
+      customerId = (req as any).user.customer_id;
     }
 
-    const standards = await prisma.standart.findMany({
-      where,
-      select: {
-        id: true,
-        name: true,
-        code: true
+    // Call repository with customer filtering
+    const result = await standartRepo.findForJson(
+      {
+        search: searchQuery,
+        customer_id: customerId,
       },
-      orderBy: {
-        name: 'asc'
-      }
-    });
+      isDataTable
+    );
 
-    const response: any = {
-      total_count: standards.length,
-      incomplete_results: false
-    };
-
-    // Use 'data' key if dataTable flag is set, otherwise use 'items'
-    if (isDataTable) {
-      response.data = standards;
-    } else {
-      response.items = standards;
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    res.json(response);
+    res.json(result.getValue());
   } catch (error) {
     console.error('getStandardsJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -785,50 +546,27 @@ export const getStandardsFetchJson = async (req: Request, res: Response): Promis
   try {
     const perPage = Math.min(parseQueryParam(req.query.per_page, 20), 100);
     const page = parseQueryParam(req.query.page, 1);
-    const skip = (page - 1) * perPage;
     const searchQuery = sanitizeSearchQuery(typeof req.query.search === 'string' ? req.query.search : undefined);
+    const orderBy = typeof req.query.order_by === 'string' ? req.query.order_by : undefined;
 
-    // Build where condition
-    const where: any = {
-      trash: null,
-      ...buildMultiFieldSearchCondition(['name', 'code'], searchQuery)
-    };
+    // Call repository
+    const result = await standartRepo.findForFetchJson({
+      search: searchQuery,
+      perPage,
+      page,
+      orderBy,
+    });
 
-    // Handle order_by if provided (basic implementation)
-    let orderBy: any = { id: 'desc' };
-    if (typeof req.query.order_by === 'string' && req.query.order_by.trim()) {
-      const orderParts = req.query.order_by.trim().split(' ');
-      if (orderParts.length === 2) {
-        const field = orderParts[0];
-        const direction = orderParts[1].toLowerCase() === 'asc' ? 'asc' : 'desc';
-        orderBy = { [field]: direction };
-      }
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    const [standards, total] = await Promise.all([
-      prisma.standart.findMany({
-        where,
-        skip,
-        take: perPage,
-        orderBy,
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          customer: {
-            select: {
-              id: true
-            }
-          }
-        }
-      }),
-      prisma.standart.count({ where })
-    ]);
-
-    res.json({
-      total_count: total,
-      items: standards
-    });
+    res.json(result.getValue());
   } catch (error) {
     console.error('getStandardsFetchJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -839,4 +577,3 @@ export const getStandardsFetchJson = async (req: Request, res: Response): Promis
     });
   }
 };
-

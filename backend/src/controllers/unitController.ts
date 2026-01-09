@@ -1,7 +1,10 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildSearchCondition, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { UnitRepository } from '../repositories/implementations/UnitRepository';
 import { parseId, parseQueryParam, ApiResponse } from '../types';
+
+// Initialize repository
+const unitRepo = new UnitRepository(prisma);
 
 /**
  * GET /api/units - List dengan search & pagination
@@ -10,40 +13,27 @@ export const getAllUnits = async (req: Request, res: Response): Promise<void> =>
   try {
     const page = parseQueryParam(req.query.page, 1);
     const limit = parseQueryParam(req.query.limit, 20);
-    const skip = (page - 1) * limit;
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    const where = {
-      ...buildSearchCondition('name', search),
-    };
+    // Call repository
+    const result = await unitRepo.findAll({ search, page, limit });
 
-    const [data, total] = await Promise.all([
-      prisma.unit.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { id: 'desc' },
-        include: {
-          lab: {
-            select: {
-              id: true,
-              name: true
-            }
-          }
-        }
-      }),
-      prisma.unit.count({ where })
-    ]);
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
+    const data = result.getValue();
+
+    // Return formatted response
     const response: ApiResponse = {
       success: true,
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
+      data: data.data,
+      pagination: data.pagination,
     };
 
     res.json(response);
@@ -72,27 +62,19 @@ export const getUnitById = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const data = await prisma.unit.findFirst({
-      where: { id },
-      include: {
-        lab: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Call repository
+    const result = await unitRepo.findById(id);
 
-    if (!data) {
+    // Handle repository result
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Unit not found'
+        message: result.error,
       });
       return;
     }
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: result.getValue() });
   } catch (error) {
     console.error('getById unit error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -111,7 +93,7 @@ export const createUnit = async (req: Request, res: Response): Promise<void> => 
   try {
     const { name, description, lab_id } = req.body;
 
-    // BR-003: Validate required fields
+    // BR-003: HTTP validation stays in controller
     if (!name || typeof name !== 'string' || name.trim() === '') {
       res.status(400).json({
         success: false,
@@ -148,10 +130,17 @@ export const createUnit = async (req: Request, res: Response): Promise<void> => 
         return;
       }
 
-      const labExists = await prisma.lab.findFirst({
-        where: { id: labIdNum, trash: null }
-      });
-      if (!labExists) {
+      // Validate lab exists via repository
+      const labValidation = await unitRepo.validateLabExists(labIdNum);
+      if (labValidation.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: labValidation.error,
+        });
+        return;
+      }
+
+      if (!labValidation.getValue()) {
         res.status(404).json({
           success: false,
           message: 'Lab not found'
@@ -160,14 +149,9 @@ export const createUnit = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
-    // BR-001: Check name uniqueness (case-insensitive)
-    // Note: Unit model doesn't have trash field, so we check all records
-    const duplicateName = await checkDuplicateCaseInsensitive(
-      prisma.unit,
-      'name',
-      name.trim()
-    );
-    if (duplicateName) {
+    // BR-001: Check name uniqueness via repository
+    const duplicateResult = await unitRepo.findByName(name.trim());
+    if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Unit with this name already exists'
@@ -175,28 +159,25 @@ export const createUnit = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const createData: any = {
+    // Create unit
+    const result = await unitRepo.create({
       name: name.trim(),
       description: description.trim(),
       lab_id: lab_id ? parseId(String(lab_id)) : null,
-    };
-
-    const data = await prisma.unit.create({
-      data: createData,
-      include: {
-        lab: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
     });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,
       message: 'Unit created successfully',
-      data
+      data: result.getValue()
     });
   } catch (error) {
     console.error('create unit error:', error);
@@ -225,17 +206,17 @@ export const updateUnit = async (req: Request, res: Response): Promise<void> => 
 
     const { name, description, lab_id } = req.body;
 
-    // Check if unit exists
-    const existing = await prisma.unit.findFirst({
-      where: { id }
-    });
-    if (!existing) {
+    // Check if unit exists using repository
+    const unitResult = await unitRepo.findById(id);
+    if (unitResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Unit not found'
+        message: 'Unit not found',
       });
       return;
     }
+
+    const existing = unitResult.getValue();
 
     // Validate name if provided
     if (name !== undefined) {
@@ -257,13 +238,8 @@ export const updateUnit = async (req: Request, res: Response): Promise<void> => 
 
       // BR-001: Check name uniqueness (exclude current ID)
       if (name.trim() !== existing.name) {
-        const duplicateName = await checkDuplicateCaseInsensitive(
-          prisma.unit,
-          'name',
-          name.trim(),
-          id
-        );
-        if (duplicateName) {
+        const duplicateResult = await unitRepo.findByName(name.trim(), id);
+        if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
           res.status(409).json({
             success: false,
             message: 'Unit with this name already exists'
@@ -295,10 +271,17 @@ export const updateUnit = async (req: Request, res: Response): Promise<void> => 
         return;
       }
 
-      const labExists = await prisma.lab.findFirst({
-        where: { id: labIdNum, trash: null }
-      });
-      if (!labExists) {
+      // Validate lab exists via repository
+      const labValidation = await unitRepo.validateLabExists(labIdNum);
+      if (labValidation.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: labValidation.error,
+        });
+        return;
+      }
+
+      if (!labValidation.getValue()) {
         res.status(404).json({
           success: false,
           message: 'Lab not found'
@@ -314,23 +297,21 @@ export const updateUnit = async (req: Request, res: Response): Promise<void> => 
       updateData.lab_id = lab_id ? parseId(String(lab_id)) : null;
     }
 
-    const data = await prisma.unit.update({
-      where: { id },
-      data: updateData,
-      include: {
-        lab: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Update unit
+    const result = await unitRepo.update(id, updateData);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'Unit updated successfully',
-      data
+      data: result.getValue()
     });
   } catch (error) {
     console.error('update unit error:', error);
@@ -359,22 +340,26 @@ export const deleteUnit = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const existing = await prisma.unit.findFirst({
-      where: { id }
-    });
-    if (!existing) {
+    // Check if unit exists using repository
+    const unitResult = await unitRepo.findById(id);
+    if (unitResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Unit not found'
+        message: 'Unit not found',
       });
       return;
     }
 
-    // BR-002: Hard delete (Unit model doesn't have trash field in current schema)
-    // TODO: Add trash field to Unit model for soft delete consistency
-    await prisma.unit.delete({
-      where: { id }
-    });
+    // BR-002: Hard delete via repository (Unit model doesn't have trash field)
+    const result = await unitRepo.delete(id);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -396,52 +381,24 @@ export const deleteUnit = async (req: Request, res: Response): Promise<void> => 
  */
 export const getUnitsJson = async (req: Request, res: Response): Promise<void> => {
   try {
-    const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const labId = typeof req.query.lab_id === 'string' ? parseId(req.query.lab_id) : undefined;
+    const search = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const labIdParam = typeof req.query.lab_id === 'string' ? parseId(req.query.lab_id) : null;
+    const labId = labIdParam !== null ? labIdParam : undefined;
     const isDataTable = req.query.dataTable !== undefined;
 
-    // Filter out bizarre domain check from spec
-    const q = searchTerm && 
-      !['lab.tuv-nord.co.id', 'dev.tuv-nord.co.id'].includes(searchTerm)
-        ? searchTerm
-        : undefined;
+    // Call repository
+    const result = await unitRepo.findForAutocomplete(search, labId, isDataTable);
 
-    const where: any = {
-      ...(q && buildSearchCondition('name', q)),
-      ...(labId && { lab_id: labId })
-    };
-
-    // Page size: 20 (standard) or 1000 (dataTable mode)
-    const pageSize = isDataTable ? 1000 : 20;
-
-    const units = await prisma.unit.findMany({
-      where,
-      take: pageSize,
-      orderBy: { id: 'asc' },
-      select: {
-        id: true,
-        name: true
-      }
-    });
-
-    // FIX BUG: Return actual ID, not name (original PHP bug)
-    const items = units.map(unit => ({
-      id: unit.id,  // Fixed: was returning name in original PHP
-      name: unit.name
-    }));
-
-    const response: any = {
-      total_count: items.length,
-      incomplete_results: false
-    };
-
-    if (isDataTable) {
-      response.data = items;
-    } else {
-      response.items = items;
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    res.json(response);
+    res.json(result.getValue());
   } catch (error) {
     console.error('getUnitsJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -461,7 +418,7 @@ export const getUnitsReport = async (req: Request, res: Response): Promise<void>
     const start = typeof req.query.start === 'string' ? req.query.start : undefined;
     const end = typeof req.query.end === 'string' ? req.query.end : undefined;
 
-    // Validate date format (YYYY-MM-DD)
+    // Validate date format (YYYY-MM-DD) - HTTP validation in controller
     if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
       res.status(400).json({
         success: false,
@@ -478,35 +435,20 @@ export const getUnitsReport = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const where: any = {};
+    // Repository provides data
+    const result = await unitRepo.findAllForReport();
 
-    // Note: Unit model doesn't have created_at field in current schema
-    // Date filters are included for future compatibility
-    // TODO: Add created_at field to Unit model if date filtering is needed
-    if (start || end) {
-      // If schema has created_at, uncomment and use:
-      // const startDate = start ? new Date(start) : undefined;
-      // const endDate = end ? new Date(end) : undefined;
-      // if (startDate) {
-      //   startDate.setHours(0, 0, 0, 0);
-      //   where.created_at = { ...where.created_at, gte: startDate };
-      // }
-      // if (endDate) {
-      //   endDate.setHours(23, 59, 59, 999);
-      //   where.created_at = { ...where.created_at, lte: endDate };
-      // }
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    const units = await prisma.unit.findMany({
-      where,
-      orderBy: { id: 'asc' },
-      select: {
-        name: true,
-        description: true
-      }
-    });
+    const units = result.getValue();
 
-    // Generate CSV
+    // CSV formatting logic stays in controller (presentation layer)
     const escapeCSV = (value: string | null | undefined): string => {
       if (!value) return '';
       const str = String(value);
@@ -518,7 +460,7 @@ export const getUnitsReport = async (req: Request, res: Response): Promise<void>
     };
 
     const header = 'UNIT NAME,DESCRIPTION\r\n';
-    const rows = units.map(u =>
+    const rows = units.map((u: any) =>
       `${escapeCSV(u.name)},${escapeCSV(u.description || '')}`
     ).join('\r\n');
 

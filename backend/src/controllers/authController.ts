@@ -1,9 +1,12 @@
 import { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../config/database';
+import { AuthRepository } from '../repositories/implementations/AuthRepository';
 import { generatePassword6Letters } from '../utils/otpGenerator';
 import { parseId } from '../types';
+
+// Initialize repository
+const authRepo = new AuthRepository(prisma);
 
 /**
  * POST /api/auth/register
@@ -21,11 +24,16 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if email already exists
-    const existingEmail = await prisma.users.findFirst({
-      where: { email, trash: null }
-    });
-    if (existingEmail) {
+    // Check if email already exists via repository
+    const emailResult = await authRepo.findByEmail(email);
+    if (emailResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: emailResult.error
+      });
+      return;
+    }
+    if (emailResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Email already exists'
@@ -33,11 +41,16 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if username already exists
-    const existingUsername = await prisma.users.findFirst({
-      where: { username, trash: null }
-    });
-    if (existingUsername) {
+    // Check if username already exists via repository
+    const usernameResult = await authRepo.findByUsername(username);
+    if (usernameResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: usernameResult.error
+      });
+      return;
+    }
+    if (usernameResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Username already exists'
@@ -45,11 +58,16 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if role exists
-    const role = await prisma.roles.findFirst({
-      where: { id: role_id }
-    });
-    if (!role) {
+    // Check if role exists via repository
+    const roleValid = await authRepo.validateRoleExists(role_id);
+    if (roleValid.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: roleValid.error
+      });
+      return;
+    }
+    if (!roleValid.getValue()) {
       res.status(404).json({
         success: false,
         message: 'Role not found'
@@ -59,39 +77,34 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     // Generate password (6 letters)
     const generatedPassword = generatePassword6Letters();
-    
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(generatedPassword, salt);
 
-    // Create user
-    // Note: created_by is required in schema, but we'll use a default value (1) or from req.user if available
+    // Hash password via repository
+    const hashedPassword = await authRepo.hashPassword(generatedPassword);
+
+    // Create user via repository
     const createdBy = req.user?.id || 1;
-    
-    const user = await prisma.users.create({
-      data: {
-        email,
-        username,
-        display_name,
-        role_id,
-        password: hashedPassword,
-        created_by: createdBy
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        display_name: true,
-        role_id: true,
-        created_at: true
-      }
+    const result = await authRepo.createUser({
+      email,
+      username,
+      display_name,
+      role_id,
+      password: hashedPassword,
+      created_by: createdBy
     });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
       data: {
-        user,
+        user: result.getValue(),
         password: generatedPassword // Return generated password
       }
     });
@@ -122,22 +135,17 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find user by email
-    const user = await prisma.users.findFirst({
-      where: {
-        email,
-        trash: null
-      },
-      include: {
-        role: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Find user by email via repository
+    const userResult = await authRepo.findByEmail(email);
+    if (userResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: userResult.error
+      });
+      return;
+    }
 
+    const user = userResult.getValue();
     if (!user) {
       res.status(401).json({
         success: false,
@@ -146,8 +154,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    // Verify password via repository
+    const isPasswordValid = await authRepo.comparePassword(password, user.password);
     if (!isPasswordValid) {
       res.status(401).json({
         success: false,
@@ -166,7 +174,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Generate JWT token
+    // Generate JWT token (stays in controller - presentation layer)
     const tokenPayload = {
       userId: user.id
     };
@@ -175,11 +183,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       expiresIn: process.env.JWT_EXPIRE || '7d'
     } as jwt.SignOptions);
 
-    // Update last_login
-    await prisma.users.update({
-      where: { id: user.id },
-      data: { last_login: new Date() }
-    });
+    // Update last_login via repository
+    const lastLoginResult = await authRepo.updateLastLogin(user.id);
+    if (lastLoginResult.isFailure()) {
+      console.error('Failed to update last login:', lastLoginResult.error);
+      // Don't fail the login request, just log the error
+    }
 
     // Prepare user data (exclude password)
     const { password: _, ...userData } = user;
@@ -217,33 +226,17 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Get full user data from database
-    const user = await prisma.users.findFirst({
-      where: {
-        id: req.user.id,
-        trash: null
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        display_name: true,
-        role_id: true,
-        customer_id: true,
-        contact_id: true,
-        profile_picture: true,
-        department: true,
-        created_at: true,
-        updated_at: true,
-        role: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Get full user data from database via repository
+    const result = await authRepo.findById(req.user.id);
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error
+      });
+      return;
+    }
 
+    const user = result.getValue();
     if (!user) {
       res.status(404).json({
         success: false,
@@ -333,12 +326,17 @@ export const generatePassword = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Check if user exists
-    const user = await prisma.users.findFirst({
-      where: { id: userId, trash: null }
-    });
+    // Check if user exists via repository
+    const userResult = await authRepo.findById(userId);
+    if (userResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: userResult.error
+      });
+      return;
+    }
 
-    if (!user) {
+    if (!userResult.getValue()) {
       res.status(404).json({
         success: false,
         message: 'User not found'
@@ -348,16 +346,19 @@ export const generatePassword = async (req: Request, res: Response): Promise<voi
 
     // Generate new password (6 letters)
     const newPassword = generatePassword6Letters();
-    
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    // Update password
-    await prisma.users.update({
-      where: { id: userId },
-      data: { password: hashedPassword }
-    });
+    // Hash password via repository
+    const hashedPassword = await authRepo.hashPassword(newPassword);
+
+    // Update password via repository
+    const updateResult = await authRepo.updatePassword(userId, hashedPassword);
+    if (updateResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: updateResult.error
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -402,14 +403,17 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Get current user with password
-    const user = await prisma.users.findFirst({
-      where: {
-        id: req.user.id,
-        trash: null
-      }
-    });
+    // Get current user with password via repository
+    const userResult = await authRepo.findByIdWithPassword(req.user.id);
+    if (userResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: userResult.error
+      });
+      return;
+    }
 
+    const user = userResult.getValue();
     if (!user) {
       res.status(404).json({
         success: false,
@@ -418,8 +422,8 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Verify old password
-    const isOldPasswordValid = await bcrypt.compare(old_password, user.password);
+    // Verify old password via repository
+    const isOldPasswordValid = await authRepo.comparePassword(old_password, user.password);
     if (!isOldPasswordValid) {
       res.status(401).json({
         success: false,
@@ -428,15 +432,18 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Hash new password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(new_password, salt);
+    // Hash new password via repository
+    const hashedPassword = await authRepo.hashPassword(new_password);
 
-    // Update password
-    await prisma.users.update({
-      where: { id: user.id },
-      data: { password: hashedPassword }
-    });
+    // Update password via repository
+    const updateResult = await authRepo.updatePassword(user.id, hashedPassword);
+    if (updateResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: updateResult.error
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -477,14 +484,17 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Find user by email
-    const user = await prisma.users.findFirst({
-      where: {
-        email,
-        trash: null
-      }
-    });
+    // Find user by email via repository
+    const userResult = await authRepo.findByEmail(email);
+    if (userResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: userResult.error
+      });
+      return;
+    }
 
+    const user = userResult.getValue();
     if (!user) {
       // Don't reveal if user exists or not (security best practice)
       res.json({
@@ -494,15 +504,20 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Hash new password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(new_password, salt);
+    // Hash new password via repository
+    const hashedPassword = await authRepo.hashPassword(new_password);
 
-    // Update password
-    await prisma.users.update({
-      where: { id: user.id },
-      data: { password: hashedPassword }
-    });
+    // Update password via repository
+    const updateResult = await authRepo.updatePassword(user.id, hashedPassword);
+    if (updateResult.isFailure()) {
+      console.error('Failed to update password:', updateResult.error);
+      // Don't reveal specific error (security best practice)
+      res.json({
+        success: true,
+        message: 'If the email exists, password has been reset'
+      });
+      return;
+    }
 
     res.json({
       success: true,

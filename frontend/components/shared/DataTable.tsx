@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -34,6 +34,18 @@ interface DataTableProps<T> {
   addNewLabel?: string;
   searchPlaceholder?: string;
   itemsPerPage?: number;
+
+  // Server-side mode props (all optional)
+  loading?: boolean;
+  searchValue?: string;
+  onSearchChange?: (query: string) => void;
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  onPageChange?: (page: number) => void;
 }
 
 export function DataTable<T extends { id: string | number }>({
@@ -44,32 +56,66 @@ export function DataTable<T extends { id: string | number }>({
   addNewLabel = "Add New",
   searchPlaceholder = "Search...",
   itemsPerPage = 10,
+  loading = false,
+  searchValue,
+  onSearchChange,
+  pagination,
+  onPageChange,
 }: DataTableProps<T>) {
-  const [currentPage, setCurrentPage] = React.useState(1);
-  const [searchQuery, setSearchQuery] = React.useState("");
+  const [internalPage, setInternalPage] = React.useState(1);
+  const [internalSearch, setInternalSearch] = React.useState("");
+
+  // Determine if using server-side mode
+  const isServerSide = !!(pagination && onPageChange);
+
+  // Use external or internal values
+  const currentPage = isServerSide ? pagination.page : internalPage;
+  const searchQuery = searchValue !== undefined ? searchValue : internalSearch;
 
   const filteredData = React.useMemo(() => {
+    // Skip filtering if server-side (data already filtered by backend)
+    if (isServerSide) return data;
     if (!searchQuery.trim()) return data;
     return data.filter((item) =>
       Object.values(item).some((value) =>
         String(value).toLowerCase().includes(searchQuery.toLowerCase())
       )
     );
-  }, [data, searchQuery]);
+  }, [data, searchQuery, isServerSide]);
 
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const totalPages = isServerSide ? pagination.totalPages : Math.ceil(filteredData.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedData = filteredData.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedData = isServerSide ? data : filteredData.slice(startIndex, startIndex + itemsPerPage);
+  const totalItems = isServerSide ? pagination.total : filteredData.length;
 
-  const handlePageChange = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
+  const handlePageChangeInternal = (page: number) => {
+    if (onPageChange) {
+      // Server-side mode
+      onPageChange(page);
+    } else {
+      // Client-side mode
+      if (page >= 1 && page <= totalPages) {
+        setInternalPage(page);
+      }
+    }
+  };
+
+  const handleSearchChangeInternal = (value: string) => {
+    if (onSearchChange) {
+      // Server-side mode
+      onSearchChange(value);
+    } else {
+      // Client-side mode
+      setInternalSearch(value);
     }
   };
 
   React.useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
+    // Only reset page in client-side mode
+    if (!isServerSide) {
+      setInternalPage(1);
+    }
+  }, [searchQuery, isServerSide]);
 
   const getVisiblePages = () => {
     const pages: (number | "ellipsis")[] = [];
@@ -89,30 +135,34 @@ export function DataTable<T extends { id: string | number }>({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
-        {onAddNew && (
-          <Button onClick={onAddNew} className="gap-2">
-            <Plus className="h-4 w-4" />
-            {addNewLabel}
-          </Button>
-        )}
-      </div>
+      {(title || onAddNew) && (
+        <div className="flex items-center justify-between">
+          {title && <h1 className="text-2xl font-semibold text-foreground">{title}</h1>}
+          {onAddNew && (
+            <Button onClick={onAddNew} className="gap-2">
+              <Plus className="h-4 w-4" />
+              {addNewLabel}
+            </Button>
+          )}
+        </div>
+      )}
 
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={searchPlaceholder}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
+      {searchPlaceholder && (
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={searchPlaceholder}
+              value={searchQuery}
+              onChange={(e) => handleSearchChangeInternal(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {totalItems} items
+          </div>
         </div>
-        <div className="text-sm text-muted-foreground">
-          {filteredData.length} items
-        </div>
-      </div>
+      )}
 
       <div className="rounded-lg border bg-card">
         <Table>
@@ -126,7 +176,13 @@ export function DataTable<T extends { id: string | number }>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedData.length === 0 ? (
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-32 text-center">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+                </TableCell>
+              </TableRow>
+            ) : paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-32 text-center text-muted-foreground">
                   No data found
@@ -154,7 +210,7 @@ export function DataTable<T extends { id: string | number }>({
           <PaginationContent>
             <PaginationItem>
               <PaginationPrevious
-                onClick={() => handlePageChange(currentPage - 1)}
+                onClick={() => handlePageChangeInternal(currentPage - 1)}
                 className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
               />
             </PaginationItem>
@@ -166,7 +222,7 @@ export function DataTable<T extends { id: string | number }>({
               ) : (
                 <PaginationItem key={page}>
                   <PaginationLink
-                    onClick={() => handlePageChange(page)}
+                    onClick={() => handlePageChangeInternal(page)}
                     isActive={currentPage === page}
                     className="cursor-pointer"
                   >
@@ -177,7 +233,7 @@ export function DataTable<T extends { id: string | number }>({
             )}
             <PaginationItem>
               <PaginationNext
-                onClick={() => handlePageChange(currentPage + 1)}
+                onClick={() => handlePageChangeInternal(currentPage + 1)}
                 className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
               />
             </PaginationItem>

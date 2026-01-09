@@ -1,9 +1,12 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildMultiFieldSearchCondition, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { PackageRepository } from '../repositories/implementations/PackageRepository';
 import { parseId, parseQueryParam, parseBooleanParam, ApiResponse } from '../types';
 import { parseServiceList, formatServiceList, calculateTotalPrice, parseDateDMY } from '../utils/packageHelper';
 import { getBatchPricing } from '../utils/contractPricingHelper';
+
+// Initialize repository
+const packageRepo = new PackageRepository(prisma);
 
 /**
  * GET /api/packages - List with search & pagination
@@ -11,74 +14,39 @@ import { getBatchPricing } from '../utils/contractPricingHelper';
  */
 export const getAllPackages = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Check if this is a select/dropdown request
     const isSelect = parseBooleanParam(req.query.select as string | string[] | undefined);
+    const page = parseQueryParam(req.query.page, 1);
+    const limit = parseQueryParam(req.query.limit, 20);
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    if (isSelect) {
-      // Return simplified data for dropdown/select
-      const packages = await (prisma as any).package.findMany({
-        where: {
-          trash: null
-        },
-        select: {
-          id: true,
-          code: true,
-          name: true
-        },
-        orderBy: {
-          name: 'asc'
-        }
-      });
+    // Call repository
+    const result = await packageRepo.findAll({ search, page, limit, select: isSelect });
 
-      res.json({
-        success: true,
-        data: packages
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
       });
       return;
     }
 
-    // Standard list with pagination
-    const page = parseQueryParam(req.query.page, 1);
-    const limit = parseQueryParam(req.query.limit, 20);
-    const skip = (page - 1) * limit;
-    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const data = result.getValue();
 
-    const where = {
-      trash: null,
-      ...buildMultiFieldSearchCondition(['name', 'code'], search),
-    };
-
-    const [data, total] = await Promise.all([
-      (prisma as any).package.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { id: 'desc' },
-        include: {
-          customer: {
-            select: {
-              id: true,
-              code: true,
-              customer_name: true
-            }
-          }
-        }
-      }),
-      (prisma as any).package.count({ where })
-    ]);
-
-    const response: ApiResponse = {
-      success: true,
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
-    };
-
-    res.json(response);
+    // Select mode returns array directly, standard mode returns paginated data
+    if (isSelect) {
+      res.json({
+        success: true,
+        data
+      });
+    } else {
+      const response: ApiResponse = {
+        success: true,
+        data: data.data,
+        pagination: data.pagination,
+      };
+      res.json(response);
+    }
   } catch (error) {
     console.error('getAll packages error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -104,26 +72,19 @@ export const getPackageById = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const data = await (prisma as any).package.findFirst({
-      where: { id, trash: null },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            code: true,
-            customer_name: true
-          }
-        }
-      }
-    });
+    // Call repository
+    const result = await packageRepo.findById(id);
 
-    if (!data) {
+    // Handle repository result
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Package not found'
+        message: result.error,
       });
       return;
     }
+
+    const data = result.getValue();
 
     // Parse service list for easier consumption
     const serviceIds = parseServiceList(data.listService);
@@ -180,13 +141,9 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check if code already exists
-    const existingCode = await checkDuplicateCaseInsensitive(
-      (prisma as any).package,
-      'code',
-      code
-    );
-    if (existingCode) {
+    // Check if code already exists via repository
+    const codeResult = await packageRepo.findByCode(code);
+    if (codeResult.isSuccess() && codeResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Code already exists'
@@ -194,13 +151,9 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check if name already exists
-    const existingName = await checkDuplicateCaseInsensitive(
-      (prisma as any).package,
-      'name',
-      name
-    );
-    if (existingName) {
+    // Check if name already exists via repository
+    const nameResult = await packageRepo.findByName(name);
+    if (nameResult.isSuccess() && nameResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Name already exists'
@@ -239,7 +192,7 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
     // Calculate total price if group is not 1
     let finalTotalPrice = total_price;
     const isGroup = group === 1 || group === '1';
-    
+
     if (!isGroup) {
       try {
         finalTotalPrice = await calculateTotalPrice(serviceIds, prisma);
@@ -264,43 +217,48 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
     // Format service list
     const listService = formatServiceList(serviceIds);
 
-    // Create package using transaction
-    const data = await prisma.$transaction(async (tx: any) => {
-      return await (tx as any).package.create({
-        data: {
-          code: code.trim(),
-          name: name.trim(),
-          description: description?.trim() || null,
-          totalPrice: finalTotalPrice,
-          promotionFrom: promotionFromDate,
-          promotionTo: promotionToDate,
-          percentDiscount: percent_discount || 0,
-          listService,
-          customerId: customer_id || null,
-          group: isGroup ? 1 : 0,
-          createdBy
-        },
-        include: {
-          customer: {
-            select: {
-              id: true,
-              code: true,
-              customer_name: true
-            }
-          }
-        }
-      });
+    // Create package via repository
+    const result = await packageRepo.create({
+      code: code.trim(),
+      name: name.trim(),
+      description: description?.trim() || null,
+      totalPrice: finalTotalPrice,
+      promotionFrom: promotionFromDate,
+      promotionTo: promotionToDate,
+      percentDiscount: percent_discount || 0,
+      listService,
+      customerId: customer_id || null,
+      group: isGroup ? 1 : 0,
+      createdBy
     });
+
+    if (result.isFailure()) {
+      // Handle Prisma unique constraint errors
+      const errorMsg = result.error || 'Unknown error';
+      if (errorMsg.includes('Unique constraint') || errorMsg.includes('code')) {
+        res.status(409).json({
+          success: false,
+          message: 'Code already exists'
+        });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        message: errorMsg,
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,
       message: 'Package created successfully',
-      data
+      data: result.getValue(),
     });
   } catch (error) {
     console.error('createPackage error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     // Handle Prisma unique constraint errors
     if (errorMessage.includes('Unique constraint') || errorMessage.includes('code')) {
       res.status(409).json({
@@ -332,18 +290,17 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check if package exists
-    const existingPackage = await (prisma as any).package.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!existingPackage) {
+    // Check if package exists via repository
+    const existingResult = await packageRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Package not found'
+        message: 'Package not found',
       });
       return;
     }
+
+    const existingPackage = existingResult.getValue();
 
     const {
       code,
@@ -360,13 +317,8 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
 
     // Check if code is being changed and if it already exists
     if (code && code !== existingPackage.code) {
-      const codeExists = await checkDuplicateCaseInsensitive(
-        (prisma as any).package,
-        'code',
-        code,
-        id
-      );
-      if (codeExists) {
+      const codeResult = await packageRepo.findByCode(code, id);
+      if (codeResult.isSuccess() && codeResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Code already exists'
@@ -377,13 +329,8 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
 
     // Check if name is being changed and if it already exists
     if (name && name !== existingPackage.name) {
-      const nameExists = await checkDuplicateCaseInsensitive(
-        (prisma as any).package,
-        'name',
-        name,
-        id
-      );
-      if (nameExists) {
+      const nameResult = await packageRepo.findByName(name, id);
+      if (nameResult.isSuccess() && nameResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Name already exists'
@@ -455,7 +402,7 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
     // Recalculate total price if group is not 1 and services changed
     if (!isGroup) {
       const serviceIdsToUse = serviceIds !== undefined ? serviceIds : parseServiceList(existingPackage.listService);
-      
+
       if (serviceIdsToUse.length > 0) {
         try {
           const calculatedPrice = await calculateTotalPrice(serviceIdsToUse, prisma);
@@ -485,30 +432,36 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
       updateData.updatedBy = (req as any).user.id;
     }
 
-    // Update package
-    const data = await (prisma as any).package.update({
-      where: { id },
-      data: updateData,
-      include: {
-        customer: {
-          select: {
-            id: true,
-            code: true,
-            customer_name: true
-          }
-        }
+    // Update package via repository
+    const result = await packageRepo.update(id, updateData);
+
+    if (result.isFailure()) {
+      // Handle Prisma unique constraint errors
+      const errorMsg = result.error || 'Unknown error';
+      if (errorMsg.includes('Unique constraint') || errorMsg.includes('code')) {
+        res.status(409).json({
+          success: false,
+          message: 'Code already exists'
+        });
+        return;
       }
-    });
+
+      res.status(500).json({
+        success: false,
+        message: errorMsg,
+      });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'Package updated successfully',
-      data
+      data: result.getValue(),
     });
   } catch (error) {
     console.error('updatePackage error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     // Handle Prisma unique constraint errors
     if (errorMessage.includes('Unique constraint') || errorMessage.includes('code')) {
       res.status(409).json({
@@ -540,24 +493,26 @@ export const deletePackage = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check if package exists
-    const existingPackage = await (prisma as any).package.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!existingPackage) {
+    // Check if package exists via repository
+    const existingResult = await packageRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Package not found'
+        message: 'Package not found',
       });
       return;
     }
 
-    // Soft delete
-    await (prisma as any).package.update({
-      where: { id },
-      data: { trash: 1 }
-    });
+    // Delete via repository
+    const result = await packageRepo.delete(id);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -586,31 +541,23 @@ export const getPackagesJson = async (req: Request, res: Response): Promise<void
     const dataTable = parseBooleanParam(req.query.dataTable as string | string[] | undefined);
     const limit = dataTable ? undefined : 20; // No limit for dataTable mode
 
-    // Build where condition
-    const where: any = {
-      trash: null,
-      ...buildMultiFieldSearchCondition(['name', 'code'], search),
-    };
+    // Load packages via repository
+    const result = await packageRepo.findForJson({
+      search,
+      groupOnly,
+      limit,
+    });
 
-    if (groupOnly) {
-      where.group = 1;
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    // Load packages with eager loading
-    const packages = await (prisma as any).package.findMany({
-      where,
-      take: limit,
-      orderBy: { name: 'asc' },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            code: true,
-            customer_name: true
-          }
-        }
-      }
-    });
+    const packages = result.getValue();
 
     // Parse service IDs for each package
     const packagesWithServices = packages.map((pkg: any) => ({

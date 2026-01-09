@@ -1,7 +1,10 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildSearchCondition, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { SubcontractorRepository } from '../repositories/implementations/SubcontractorRepository';
 import { parseId, parseQueryParam, ApiResponse } from '../types';
+
+// Initialize repository
+const subcontractorRepo = new SubcontractorRepository(prisma);
 
 /**
  * GET /api/subcontractors - List dengan search & pagination
@@ -10,33 +13,26 @@ export const getAllSubcontractors = async (req: Request, res: Response): Promise
   try {
     const page = parseQueryParam(req.query.page, 1);
     const limit = parseQueryParam(req.query.limit, 20);
-    const skip = (page - 1) * limit;
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    const where = {
-      trash: null,
-      ...buildSearchCondition('lab_name', search),
-    };
+    // Call repository
+    const result = await subcontractorRepo.findAll({ search, page, limit });
 
-    const [data, total] = await Promise.all([
-      prisma.subcontractor.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { id: 'desc' }
-      }),
-      prisma.subcontractor.count({ where })
-    ]);
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
+
+    const data = result.getValue();
 
     const response: ApiResponse = {
       success: true,
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
+      data: data.data,
+      pagination: data.pagination,
     };
 
     res.json(response);
@@ -65,19 +61,19 @@ export const getSubcontractorById = async (req: Request, res: Response): Promise
       return;
     }
 
-    const data = await prisma.subcontractor.findFirst({
-      where: { id, trash: null }
-    });
+    // Call repository
+    const result = await subcontractorRepo.findById(id);
 
-    if (!data) {
+    // Handle repository result
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Subcontractor not found'
+        message: result.error,
       });
       return;
     }
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: result.getValue() });
   } catch (error) {
     console.error('getById subcontractor error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -201,13 +197,9 @@ export const createSubcontractor = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // Check duplicate
-    const existing = await checkDuplicateCaseInsensitive(
-      prisma.subcontractor,
-      'lab_name',
-      lab_name.trim()
-    );
-    if (existing) {
+    // Check duplicate via repository
+    const duplicateResult = await subcontractorRepo.findByLabName(lab_name.trim());
+    if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Lab name already exists'
@@ -215,21 +207,28 @@ export const createSubcontractor = async (req: Request, res: Response): Promise<
       return;
     }
 
-    const data = await prisma.subcontractor.create({
-      data: {
-        lab_name: lab_name.trim(),
-        address_name: address_name.trim(),
-        phone: phone.trim(),
-        fax: fax.trim(),
-        contact: contact.trim(),
-        email: email.trim()
-      }
+    // Create subcontractor via repository
+    const result = await subcontractorRepo.create({
+      lab_name: lab_name.trim(),
+      address_name: address_name.trim(),
+      phone: phone.trim(),
+      fax: fax.trim(),
+      contact: contact.trim(),
+      email: email.trim(),
     });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,
       message: 'Subcontractor created successfully',
-      data
+      data: result.getValue(),
     });
   } catch (error) {
     console.error('create subcontractor error:', error);
@@ -258,14 +257,12 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // Check exists
-    const existing = await prisma.subcontractor.findFirst({
-      where: { id, trash: null }
-    });
-    if (!existing) {
+    // Check exists via repository
+    const existingResult = await subcontractorRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Subcontractor not found'
+        message: 'Subcontractor not found',
       });
       return;
     }
@@ -422,12 +419,10 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // Check duplicate
+    // Check duplicate via repository
     if (updateData.lab_name) {
-      const duplicate = await checkDuplicateCaseInsensitive(
-        prisma.subcontractor, 'lab_name', updateData.lab_name, id
-      );
-      if (duplicate) {
+      const duplicateResult = await subcontractorRepo.findByLabName(updateData.lab_name, id);
+      if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Lab name already exists'
@@ -436,15 +431,21 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
       }
     }
 
-    const data = await prisma.subcontractor.update({
-      where: { id },
-      data: updateData
-    });
+    // Update via repository
+    const result = await subcontractorRepo.update(id, updateData);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'Subcontractor updated successfully',
-      data
+      data: result.getValue(),
     });
   } catch (error) {
     console.error('update subcontractor error:', error);
@@ -472,22 +473,26 @@ export const deleteSubcontractor = async (req: Request, res: Response): Promise<
       return;
     }
 
-    const existing = await prisma.subcontractor.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!existing) {
+    // Check exists via repository
+    const existingResult = await subcontractorRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Subcontractor not found'
+        message: 'Subcontractor not found',
       });
       return;
     }
 
-    await prisma.subcontractor.update({
-      where: { id },
-      data: { trash: 1 }
-    });
+    // Delete via repository
+    const result = await subcontractorRepo.delete(id);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -510,38 +515,20 @@ export const deleteSubcontractor = async (req: Request, res: Response): Promise<
 export const getSubcontractorsJson = async (req: Request, res: Response): Promise<void> => {
   try {
     const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
-    
-    // Filter out specific domains if needed (per spec note, optional workaround)
-    // For now, we'll just use the search term as-is
-    const where = {
-      trash: null,
-      ...buildSearchCondition('lab_name', searchTerm),
-    };
 
-    const [items, total] = await Promise.all([
-      prisma.subcontractor.findMany({
-        where,
-        select: {
-          id: true,
-          lab_name: true
-        },
-        take: 20,
-        orderBy: { lab_name: 'asc' }
-      }),
-      prisma.subcontractor.count({ where })
-    ]);
+    // Call repository
+    const result = await subcontractorRepo.findForAutocomplete(searchTerm);
 
-    // JSON API Response Format
-    const response = {
-      total_count: total,
-      incomplete_results: total > 20,
-      items: items.map(item => ({
-        id: item.id,
-        name: item.lab_name
-      }))
-    };
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
-    res.json(response);
+    res.json(result.getValue());
   } catch (error) {
     console.error('getSubcontractorsJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -552,16 +539,3 @@ export const getSubcontractorsJson = async (req: Request, res: Response): Promis
     });
   }
 };
-
-
-
-
-
-
-
-
-
-
-
-
-

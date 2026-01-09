@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Edit, Trash2, Building2, MapPin, User, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, Building2, MapPin, User, ChevronRight, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +53,7 @@ interface AddressDialogData {
 
 interface ContactDialogData {
   id: number;
+  addressId: number;
   title: string;
   firstName: string;
   surname: string;
@@ -80,6 +81,7 @@ const transformAddress = (addr: Address): AddressDialogData => ({
 // Transform API contact to dialog format
 const transformContact = (contact: Contact): ContactDialogData => ({
   id: contact.id,
+  addressId: contact.address?.id || 0,
   title: contact.title,
   firstName: contact.first_name,
   surname: contact.surname,
@@ -127,25 +129,29 @@ export default function CustomerDetailPage() {
     if (!editingAddress || !customer) return;
     try {
       setIsAddressSaving(true);
+
+      const action = editingAddress.id === 0 ? 'create' : 'update';
+
       await customerService.manageAddress({
-        action: 'update',
-        id: editingAddress.id,
+        action,
+        id: editingAddress.id === 0 ? undefined : editingAddress.id,
+        customer_id: customer.id,
         address_type: data.addressType,
         address: data.address,
         phone: data.phone,
-        fax: data.fax,
+        fax: data.fax || undefined,
         city: data.city,
-        state: data.state,
+        state: data.state || undefined,
         country: data.country,
-        postal_code: data.postalCode,
+        postal_code: data.postalCode || undefined,
         status: data.status,
       });
-      toast.success("Address updated successfully");
+      toast.success(action === 'create' ? 'Address created successfully' : 'Address updated successfully');
       setEditingAddress(null);
       fetchCustomer(); // Refresh data
     } catch (error: any) {
-      console.error('Error updating address:', error);
-      toast.error(error.response?.data?.message || 'Failed to update address');
+      console.error('Error saving address:', error);
+      toast.error(error.response?.data?.message || 'Failed to save address');
     } finally {
       setIsAddressSaving(false);
     }
@@ -155,24 +161,29 @@ export default function CustomerDetailPage() {
     if (!editingContact || !customer) return;
     try {
       setIsContactSaving(true);
+
+      const action = editingContact.id === 0 ? 'create' : 'update';
+
       await customerService.manageContact({
-        action: 'update',
-        id: editingContact.id,
-        title: data.title,
+        action,
+        id: editingContact.id === 0 ? undefined : editingContact.id,
+        customer_id: customer.id,
+        address_id: editingContact.addressId,
+        title: data.title || undefined,
         first_name: data.firstName,
         surname: data.surname,
-        job_title: data.jobTitle,
-        department: data.department,
+        job_title: data.jobTitle || undefined,
+        department: data.department || undefined,
         email: data.email,
         phone: data.phone,
         status: data.status,
       });
-      toast.success("Contact updated successfully");
+      toast.success(action === 'create' ? 'Contact created successfully' : 'Contact updated successfully');
       setEditingContact(null);
       fetchCustomer(); // Refresh data
     } catch (error: any) {
-      console.error('Error updating contact:', error);
-      toast.error(error.response?.data?.message || 'Failed to update contact');
+      console.error('Error saving contact:', error);
+      toast.error(error.response?.data?.message || 'Failed to save contact');
     } finally {
       setIsContactSaving(false);
     }
@@ -393,12 +404,35 @@ export default function CustomerDetailPage() {
         <TabsContent value="addresses">
           <Card className="overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
-              <CardTitle className="flex items-center gap-2">
-                <div className="p-1.5 rounded-md bg-primary/10">
-                  <MapPin className="h-4 w-4 text-primary" />
-                </div>
-                Addresses
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-md bg-primary/10">
+                    <MapPin className="h-4 w-4 text-primary" />
+                  </div>
+                  Addresses
+                </CardTitle>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setEditingAddress({
+                      id: 0,
+                      addressType: "",
+                      address: "",
+                      phone: "",
+                      fax: "",
+                      postalCode: null,
+                      city: "",
+                      state: "",
+                      country: "",
+                      status: "Active",
+                    });
+                  }}
+                  className="gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Address
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -450,12 +484,42 @@ export default function CustomerDetailPage() {
         <TabsContent value="contacts">
           <Card className="overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
-              <CardTitle className="flex items-center gap-2">
-                <div className="p-1.5 rounded-md bg-primary/10">
-                  <User className="h-4 w-4 text-primary" />
-                </div>
-                Contacts
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-md bg-primary/10">
+                    <User className="h-4 w-4 text-primary" />
+                  </div>
+                  Contacts
+                </CardTitle>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    // Check if customer has addresses
+                    if (!customer.addresses || customer.addresses.length === 0) {
+                      toast.error("Please add an address first before adding contacts");
+                      setActiveTab("addresses");
+                      return;
+                    }
+
+                    setEditingContact({
+                      id: 0,
+                      addressId: customer.addresses[0].id,
+                      title: "",
+                      firstName: "",
+                      surname: "",
+                      jobTitle: "",
+                      department: "",
+                      email: "",
+                      phone: "",
+                      status: "Active",
+                    });
+                  }}
+                  className="gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Contact
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -696,6 +760,7 @@ export default function CustomerDetailPage() {
         open={!!editingContact}
         onOpenChange={(open) => !open && setEditingContact(null)}
         contact={editingContact}
+        addresses={customer.addresses || []}
         onSave={handleContactSave}
         isSubmitting={isContactSaving}
       />

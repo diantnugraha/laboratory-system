@@ -1,79 +1,11 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildMultiFieldSearchCondition, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { MethodRepository } from '../repositories/implementations/MethodRepository';
 import { parseId, parseQueryParam, ApiResponse } from '../types';
+import { generateMethodPath } from '../utils/methodHelper';
 
-/**
- * Helper: Generate method code in MTD.XXXXX format
- */
-const generateMethodCode = async (): Promise<string> => {
-  const lastMethod = await prisma.method.findFirst({
-    where: { trash: null },
-    orderBy: { code: 'desc' },
-    select: { code: true }
-  });
-
-  if (!lastMethod || !lastMethod.code) {
-    return 'MTD.00001';
-  }
-
-  const match = lastMethod.code.match(/^MTD\.(\d+)$/);
-  if (!match) {
-    return 'MTD.00001';
-  }
-
-  const lastNumber = parseInt(match[1], 10);
-  const nextNumber = lastNumber + 1;
-  
-  return `MTD.${nextNumber.toString().padStart(5, '0')}`;
-};
-
-/**
- * Helper: Generate hierarchical file path from ID
- * Format: /{milyar}/{juta}/{ribu}/{ratus}/
- * Example: id=1234567 → /00/001/234/567/
- * Note: This function will be used when file upload is implemented
- */
-export const generateMethodPath = (id: number): string => {
-  const idStr = id.toString();
-  
-  // Extract digit groups from right to left
-  const ratus = idStr.slice(-3).padStart(3, '0');
-  const ribu = idStr.length > 3
-    ? idStr.slice(-6, -3).padStart(3, '0')
-    : '000';
-  const juta = idStr.length > 6
-    ? idStr.slice(-9, -6).padStart(3, '0')
-    : '000';
-  const milyar = idStr.length > 9
-    ? idStr.slice(-12, -9).padStart(2, '0')
-    : '00';
-
-  return `/${milyar}/${juta}/${ribu}/${ratus}/`;
-};
-
-/**
- * Helper: Handle method documents with ";;" delimiter
- */
-const handleMethodDocuments = (
-  existingDocuments: string | null | undefined,
-  documentsToRemove: string[] | undefined,
-  newDocument: string | null | undefined
-): string | null => {
-  let documents = existingDocuments ? existingDocuments.split(';;') : [];
-  
-  // Remove documents
-  if (documentsToRemove && documentsToRemove.length > 0) {
-    documents = documents.filter(doc => !documentsToRemove.includes(doc));
-  }
-  
-  // Add new document
-  if (newDocument) {
-    documents.push(newDocument);
-  }
-  
-  return documents.length > 0 ? documents.join(';;') : null;
-};
+// Initialize repository
+const methodRepo = new MethodRepository(prisma);
 
 /**
  * GET /api/methods - List dengan search & pagination
@@ -82,41 +14,27 @@ export const getAllMethods = async (req: Request, res: Response): Promise<void> 
   try {
     const page = parseQueryParam(req.query.page, 1);
     const limit = parseQueryParam(req.query.limit, 20);
-    const skip = (page - 1) * limit;
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    const where = {
-      trash: null,
-      ...buildMultiFieldSearchCondition(['name', 'code'], search),
-    };
+    // Call repository
+    const result = await methodRepo.findAll({ search, page, limit });
 
-    const [data, total] = await Promise.all([
-      prisma.method.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { id: 'desc' },
-        include: {
-          matrix: {
-            select: {
-              id: true,
-              name: true
-            }
-          }
-        }
-      }),
-      prisma.method.count({ where })
-    ]);
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
+    const data = result.getValue();
+
+    // Return formatted response
     const response: ApiResponse = {
       success: true,
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
+      data: data.data,
+      pagination: data.pagination,
     };
 
     res.json(response);
@@ -145,27 +63,19 @@ export const getMethodById = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const data = await prisma.method.findFirst({
-      where: { id, trash: null },
-      include: {
-        matrix: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    // Call repository
+    const result = await methodRepo.findById(id);
 
-    if (!data) {
+    // Handle repository result
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Method not found'
+        message: result.error,
       });
       return;
     }
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: result.getValue() });
   } catch (error) {
     console.error('getById method error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -185,7 +95,7 @@ export const createMethod = async (req: Request, res: Response): Promise<void> =
     const { name, matrix_id, category_name, status, description, instruction } = req.body;
     const userId = (req as any).user?.id;
 
-    // Validate required fields
+    // HTTP validation stays in controller
     if (!name || typeof name !== 'string' || name.trim() === '') {
       res.status(400).json({
         success: false,
@@ -219,11 +129,17 @@ export const createMethod = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Check matrix exists
-    const matrix = await prisma.matrix.findFirst({
-      where: { id: matrixIdNum, trash: null }
-    });
-    if (!matrix) {
+    // Validate matrix exists via repository
+    const matrixValidation = await methodRepo.validateMatrixExists(matrixIdNum);
+    if (matrixValidation.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: matrixValidation.error,
+      });
+      return;
+    }
+
+    if (!matrixValidation.getValue()) {
       res.status(404).json({
         success: false,
         message: 'Matrix not found'
@@ -231,13 +147,9 @@ export const createMethod = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Check name uniqueness (BR-001)
-    const duplicateName = await checkDuplicateCaseInsensitive(
-      prisma.method,
-      'name',
-      name.trim()
-    );
-    if (duplicateName) {
+    // Check name uniqueness via repository
+    const duplicateName = await methodRepo.findByName(name.trim());
+    if (duplicateName.isSuccess() && duplicateName.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Name already exists'
@@ -245,30 +157,38 @@ export const createMethod = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Generate code automatically (BR-002)
-    const code = await generateMethodCode();
+    // Generate code automatically via repository
+    const codeResult = await methodRepo.generateNextCode();
+    if (codeResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: codeResult.error,
+      });
+      return;
+    }
 
-    // Create method
-    const data = await prisma.method.create({
-      data: {
-        code,
-        name: name.trim(),
-        matrix_id: matrixIdNum,
-        category_name: category_name ? String(category_name).trim() : null,
-        status: status.trim(),
-        description: description ? String(description).trim() : null,
-        instruction: instruction ? String(instruction).trim() : null,
-        created_by: userId || null
-      },
-      include: {
-        matrix: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    const code = codeResult.getValue();
+
+    // Create method via repository
+    const result = await methodRepo.create({
+      code,
+      name: name.trim(),
+      matrix_id: matrixIdNum,
+      category_name: category_name ? String(category_name).trim() : null,
+      status: status.trim(),
+      description: description ? String(description).trim() : null,
+      instruction: instruction ? String(instruction).trim() : null,
+    }, userId);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
+
+    const data = result.getValue();
 
     // TODO: Handle file upload if multer is configured
     // const file = (req as any).file;
@@ -310,27 +230,29 @@ export const updateMethod = async (req: Request, res: Response): Promise<void> =
     const { name, code, matrix_id, category_name, status, description, instruction, delete: deleteFlag, document_file } = req.body;
     const userId = (req as any).user?.id;
 
-    // Check exists
-    const existing = await prisma.method.findFirst({
-      where: { id }
-    });
-    if (!existing) {
+    // Check if method exists using repository
+    const existingResult = await methodRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Method not found'
+        message: 'Method not found',
       });
       return;
     }
 
-    // Handle soft delete (BR-003)
+    const existing = existingResult.getValue();
+
+    // Handle soft delete via repository
     if (deleteFlag === true || deleteFlag === '1' || deleteFlag === 1) {
-      await prisma.method.update({
-        where: { id },
-        data: {
-          trash: 1,
-          updated_by: userId || null
-        }
-      });
+      const deleteResult = await methodRepo.delete(id, userId);
+
+      if (deleteResult.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: deleteResult.error,
+        });
+        return;
+      }
 
       res.json({
         success: true,
@@ -413,12 +335,18 @@ export const updateMethod = async (req: Request, res: Response): Promise<void> =
       updateData.instruction = instruction ? String(instruction).trim() : null;
     }
 
-    // Validate matrix exists if updating
+    // Validate matrix exists if updating via repository
     if (updateData.matrix_id) {
-      const matrix = await prisma.matrix.findFirst({
-        where: { id: updateData.matrix_id, trash: null }
-      });
-      if (!matrix) {
+      const matrixValidation = await methodRepo.validateMatrixExists(updateData.matrix_id);
+      if (matrixValidation.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: matrixValidation.error,
+        });
+        return;
+      }
+
+      if (!matrixValidation.getValue()) {
         res.status(404).json({
           success: false,
           message: 'Matrix not found'
@@ -427,15 +355,10 @@ export const updateMethod = async (req: Request, res: Response): Promise<void> =
       }
     }
 
-    // Check name uniqueness (BR-001)
+    // Check name uniqueness via repository
     if (updateData.name) {
-      const duplicateName = await checkDuplicateCaseInsensitive(
-        prisma.method,
-        'name',
-        updateData.name,
-        id
-      );
-      if (duplicateName) {
+      const duplicateName = await methodRepo.findByName(updateData.name, id);
+      if (duplicateName.isSuccess() && duplicateName.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Name already exists'
@@ -444,15 +367,10 @@ export const updateMethod = async (req: Request, res: Response): Promise<void> =
       }
     }
 
-    // Check code uniqueness if code provided (BR-002)
+    // Check code uniqueness via repository
     if (updateData.code) {
-      const duplicateCode = await checkDuplicateCaseInsensitive(
-        prisma.method,
-        'code',
-        updateData.code,
-        id
-      );
-      if (duplicateCode) {
+      const duplicateCode = await methodRepo.findByCode(updateData.code, id);
+      if (duplicateCode.isSuccess() && duplicateCode.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Code already exists'
@@ -461,17 +379,17 @@ export const updateMethod = async (req: Request, res: Response): Promise<void> =
       }
     }
 
-    // Handle document removal and addition (BR-005)
-    const documentsToRemove = Array.isArray(document_file) ? document_file : 
-                              document_file ? [document_file] : [];
-    
+    // Handle document removal and addition via repository
+    const documentsToRemove = Array.isArray(document_file) ? document_file.join(';;') :
+                              document_file ? document_file : null;
+
     // TODO: Handle new file upload if multer is configured
     // const newFile = (req as any).file;
     // const newFileName = newFile ? await saveFile(newFile, generateMethodPath(id)) : null;
-    
-    const updatedDocuments = handleMethodDocuments(
+
+    const updatedDocuments = methodRepo.handleDocuments(
       existing.method_document,
-      documentsToRemove.length > 0 ? documentsToRemove : undefined,
+      documentsToRemove,
       null // newFileName - uncomment when file upload is implemented
     );
 
@@ -479,25 +397,21 @@ export const updateMethod = async (req: Request, res: Response): Promise<void> =
       updateData.method_document = updatedDocuments;
     }
 
-    updateData.updated_by = userId || null;
+    // Update method via repository
+    const result = await methodRepo.update(id, updateData, userId);
 
-    const data = await prisma.method.update({
-      where: { id },
-      data: updateData,
-      include: {
-        matrix: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'Method updated successfully',
-      data
+      data: result.getValue()
     });
   } catch (error) {
     console.error('update method error:', error);
@@ -524,27 +438,28 @@ export const deleteMethod = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const existing = await prisma.method.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!existing) {
+    // Check if method exists using repository
+    const existingResult = await methodRepo.findById(id);
+    if (existingResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Method not found'
+        message: 'Method not found',
       });
       return;
     }
 
     const userId = (req as any).user?.id;
 
-    await prisma.method.update({
-      where: { id },
-      data: {
-        trash: 1,
-        updated_by: userId || null
-      }
-    });
+    // Delete method via repository
+    const result = await methodRepo.delete(id, userId);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -568,58 +483,26 @@ export const getMethodsJson = async (req: Request, res: Response): Promise<void>
   try {
     const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
     const isDataTable = req.query.dataTable !== undefined;
-    
+
     // Filter out bizarre domain check from spec
-    const q = searchTerm && 
+    const search = searchTerm &&
       !['lab.tuv-nord.co.id', 'dev.tuv-nord.co.id'].includes(searchTerm)
         ? searchTerm
         : undefined;
 
-    const where = {
-      trash: null,
-      ...(q && {
-        name: {
-          contains: q
-        }
-      })
-    };
+    // Call repository
+    const result = await methodRepo.findForAutocomplete(search, isDataTable);
 
-    // Page size: 20 (standard) or 1000 (dataTable mode) - fix unlimited issue
-    const pageSize = isDataTable ? 1000 : 20;
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
-    const methods = await prisma.method.findMany({
-      where,
-      take: pageSize,
-      orderBy: { id: 'asc' },
-      include: {
-        matrix: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
-
-    const items = methods.map(method => ({
-      id: method.id,
-      name: method.name,
-      code: method.code,
-      category_name: method.category_name,
-      description: method.description,
-      matrix: {
-        id: method.matrix.id,
-        name: method.matrix.name
-      }
-    }));
-
-    const response = {
-      total_count: items.length,
-      incomplete_results: false,
-      ...(isDataTable ? { data: items } : { items })
-    };
-
-    res.json(response);
+    res.json(result.getValue());
   } catch (error) {
     console.error('getMethodsJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -639,7 +522,7 @@ export const getMethodsReport = async (req: Request, res: Response): Promise<voi
     const start = typeof req.query.start === 'string' ? req.query.start : undefined;
     const end = typeof req.query.end === 'string' ? req.query.end : undefined;
 
-    // Validate date format (YYYY-MM-DD)
+    // Validate date format (YYYY-MM-DD) - HTTP validation in controller
     if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
       res.status(400).json({
         success: false,
@@ -656,28 +539,20 @@ export const getMethodsReport = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const where: any = {
-      trash: null
-    };
+    // Repository provides data
+    const result = await methodRepo.findAllForReport(start, end);
 
-    if (start) {
-      const startDate = new Date(start);
-      startDate.setHours(0, 0, 0, 0);
-      where.created_at = { ...where.created_at, gte: startDate };
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    if (end) {
-      const endDate = new Date(end);
-      endDate.setHours(23, 59, 59, 999);
-      where.created_at = { ...where.created_at, lte: endDate };
-    }
+    const methods = result.getValue();
 
-    const methods = await prisma.method.findMany({
-      where,
-      orderBy: { id: 'asc' }
-    });
-
-    // Generate CSV
+    // CSV formatting logic stays in controller (presentation layer)
     const escapeCSV = (value: string | null | undefined): string => {
       if (!value) return '';
       const str = String(value);
@@ -689,7 +564,7 @@ export const getMethodsReport = async (req: Request, res: Response): Promise<voi
     };
 
     const header = 'METHOD NAME,CODE,CATEGORY,DESCRIPTION\r\n';
-    const rows = methods.map(m => 
+    const rows = methods.map((m: any) =>
       `${escapeCSV(m.name)},${escapeCSV(m.code)},${escapeCSV(m.category_name)},${escapeCSV(m.description)}`
     ).join('\r\n');
 
@@ -708,3 +583,6 @@ export const getMethodsReport = async (req: Request, res: Response): Promise<voi
     });
   }
 };
+
+// Export generateMethodPath utility for external use (e.g., file uploads)
+export { generateMethodPath };

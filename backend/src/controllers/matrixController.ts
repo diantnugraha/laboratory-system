@@ -1,7 +1,10 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { buildSearchCondition, checkDuplicateCaseInsensitive } from '../utils/searchHelper';
+import { MatrixRepository } from '../repositories/implementations/MatrixRepository';
 import { parseId, parseQueryParam, ApiResponse } from '../types';
+
+// Initialize repository
+const matrixRepo = new MatrixRepository(prisma);
 
 /**
  * GET /api/matrices - List dengan search & pagination
@@ -10,33 +13,27 @@ export const getAllMatrices = async (req: Request, res: Response): Promise<void>
   try {
     const page = parseQueryParam(req.query.page, 1);
     const limit = parseQueryParam(req.query.limit, 20);
-    const skip = (page - 1) * limit;
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    const where = {
-      trash: null,
-      ...buildSearchCondition('name', search),
-    };
+    // Call repository
+    const result = await matrixRepo.findAll({ search, page, limit });
 
-    const [data, total] = await Promise.all([
-      prisma.matrix.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { id: 'desc' }
-      }),
-      prisma.matrix.count({ where })
-    ]);
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
+    const data = result.getValue();
+
+    // Return formatted response
     const response: ApiResponse = {
       success: true,
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
+      data: data.data,
+      pagination: data.pagination,
     };
 
     res.json(response);
@@ -65,19 +62,19 @@ export const getMatrixById = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const data = await prisma.matrix.findFirst({
-      where: { id, trash: null }
-    });
+    // Call repository
+    const result = await matrixRepo.findById(id);
 
-    if (!data) {
+    // Handle repository result
+    if (result.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Matrix not found'
+        message: result.error,
       });
       return;
     }
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: result.getValue() });
   } catch (error) {
     console.error('getById matrix error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -96,6 +93,7 @@ export const createMatrix = async (req: Request, res: Response): Promise<void> =
   try {
     const { name } = req.body;
 
+    // HTTP validation stays in controller
     if (!name || typeof name !== 'string' || name.trim() === '') {
       res.status(400).json({
         success: false,
@@ -112,13 +110,9 @@ export const createMatrix = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Check duplicate (case-insensitive, exclude trash) - BR-001
-    const existing = await checkDuplicateCaseInsensitive(
-      prisma.matrix,
-      'name',
-      name.trim()
-    );
-    if (existing) {
+    // Check duplicate via repository
+    const duplicateResult = await matrixRepo.findByName(name.trim());
+    if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
       res.status(409).json({
         success: false,
         message: 'Name already exists'
@@ -126,16 +120,21 @@ export const createMatrix = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const data = await prisma.matrix.create({
-      data: {
-        name: name.trim()
-      }
-    });
+    // Create matrix
+    const result = await matrixRepo.create({ name: name.trim() });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,
       message: 'Matrix created successfully',
-      data
+      data: result.getValue()
     });
   } catch (error) {
     console.error('create matrix error:', error);
@@ -156,6 +155,7 @@ export const updateMatrix = async (req: Request, res: Response): Promise<void> =
     const id = parseId(req.params.id);
     const { name, delete: deleteFlag } = req.body;
 
+    // HTTP validation stays in controller
     if (!id) {
       res.status(400).json({
         success: false,
@@ -164,24 +164,27 @@ export const updateMatrix = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Check exists
-    const existing = await prisma.matrix.findFirst({
-      where: { id, trash: null }
-    });
-    if (!existing) {
+    // Check if matrix exists using repository
+    const matrixResult = await matrixRepo.findById(id);
+    if (matrixResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Matrix not found'
+        message: 'Matrix not found',
       });
       return;
     }
 
     // Support soft delete via delete flag - BR-002
     if (deleteFlag) {
-      await prisma.matrix.update({
-        where: { id },
-        data: { trash: 1 }
-      });
+      const result = await matrixRepo.delete(id);
+
+      if (result.isFailure()) {
+        res.status(500).json({
+          success: false,
+          message: result.error,
+        });
+        return;
+      }
 
       res.json({
         success: true,
@@ -208,14 +211,9 @@ export const updateMatrix = async (req: Request, res: Response): Promise<void> =
         return;
       }
 
-      // Check duplicate (exclude current record) - BR-001
-      const duplicate = await checkDuplicateCaseInsensitive(
-        prisma.matrix,
-        'name',
-        name.trim(),
-        id
-      );
-      if (duplicate) {
+      // Check duplicate via repository
+      const duplicateResult = await matrixRepo.findByName(name.trim(), id);
+      if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
         res.status(409).json({
           success: false,
           message: 'Name already exists'
@@ -224,17 +222,21 @@ export const updateMatrix = async (req: Request, res: Response): Promise<void> =
       }
     }
 
-    const data = await prisma.matrix.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name: name.trim() })
-      }
-    });
+    // Update matrix
+    const result = await matrixRepo.update(id, { name: name !== undefined ? name.trim() : undefined });
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
       message: 'Matrix updated successfully',
-      data
+      data: result.getValue()
     });
   } catch (error) {
     console.error('update matrix error:', error);
@@ -254,6 +256,7 @@ export const deleteMatrix = async (req: Request, res: Response): Promise<void> =
   try {
     const id = parseId(req.params.id);
 
+    // HTTP validation stays in controller
     if (!id) {
       res.status(400).json({
         success: false,
@@ -262,23 +265,26 @@ export const deleteMatrix = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const existing = await prisma.matrix.findFirst({
-      where: { id, trash: null }
-    });
-
-    if (!existing) {
+    // Check if matrix exists using repository
+    const matrixResult = await matrixRepo.findById(id);
+    if (matrixResult.isFailure()) {
       res.status(404).json({
         success: false,
-        message: 'Matrix not found'
+        message: 'Matrix not found',
       });
       return;
     }
 
-    // Soft delete: set trash = 1 - BR-002
-    await prisma.matrix.update({
-      where: { id },
-      data: { trash: 1 }
-    });
+    // Delete matrix
+    const result = await matrixRepo.delete(id);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -302,42 +308,20 @@ export const getMatricesJson = async (req: Request, res: Response): Promise<void
   try {
     const search = typeof req.query.q === 'string' ? req.query.q : undefined;
     const isDataTable = req.query.dataTable !== undefined;
-    
-    // Fix unlimited page size issue - use max 1000 for dataTable mode
-    const limit = isDataTable ? 1000 : 20;
 
-    const where = {
-      trash: null,
-      ...buildSearchCondition('name', search),
-    };
+    // Call repository
+    const result = await matrixRepo.findForAutocomplete(search, isDataTable);
 
-    const [items, total] = await Promise.all([
-      prisma.matrix.findMany({
-        where,
-        select: {
-          id: true,
-          name: true
-        },
-        take: limit,
-        orderBy: { id: 'desc' }
-      }),
-      prisma.matrix.count({ where })
-    ]);
-
-    // BR-005: JSON API Response Format
-    const response: any = {
-      total_count: total,
-      incomplete_results: false
-    };
-
-    // Use 'data' for dataTable mode, 'items' for standard format
-    if (isDataTable) {
-      response.data = items;
-    } else {
-      response.items = items;
+    // Handle repository result
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
     }
 
-    res.json(response);
+    res.json(result.getValue());
   } catch (error) {
     console.error('getMatricesJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

@@ -35,7 +35,7 @@ const Settings = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="labName">Laboratory Name</Label>
-                <Input id="labName" defaultValue="LabFlow Central Laboratory" />
+                <Input id="labName" defaultValue="SIMLAb" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="labCode">Lab Code</Label>
