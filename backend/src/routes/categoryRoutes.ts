@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import {
   getAllCategories,
   getCategoryById,
+  getCategoriesJson,
   createCategory,
   updateCategory,
   deleteCategory
@@ -11,6 +12,9 @@ import { authenticate, authorize } from '../middleware/auth';
 const router: Router = express.Router();
 
 router.use(authenticate);
+
+// JSON endpoint for autocomplete (MUST be before /:id)
+router.get('/json', getCategoriesJson);
 
 // Standard REST endpoints
 router.get('/', authorize(1, 2), getAllCategories);

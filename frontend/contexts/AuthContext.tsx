@@ -22,6 +22,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
 }
@@ -31,16 +32,49 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Check for existing token on mount
+  // Check for existing token on mount - sync with Zustand auth-storage
   useEffect(() => {
+    // First try auth-storage (Zustand store) - this is the primary source
+    const authStorageCookie = getCookie('auth-storage');
+    if (authStorageCookie) {
+      try {
+        const parsed = JSON.parse(authStorageCookie);
+        if (parsed.state?.token && parsed.state?.isAuthenticated) {
+          // Restore user from Zustand store
+          const storedUser = parsed.state.user;
+          if (storedUser) {
+            // Get role name from either role_name field or role.name object
+            const roleName = storedUser.role_name || storedUser.role?.name || '';
+            const user: User = {
+              id: storedUser.id,
+              username: storedUser.username,
+              email: storedUser.email,
+              display_name: storedUser.display_name,
+              role_id: storedUser.role_id,
+              roleObject: storedUser.role,
+              name: storedUser.display_name,
+              role: roleName,
+            };
+            setUser(user);
+          }
+          setIsAuthenticated(true);
+          setIsLoading(false);
+          return;
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+
+    // Fallback to auth-token cookie (legacy)
     const token = getCookie('auth-token');
     if (token) {
-      // Token exists, but user data needs to be fetched from API
-      // For now, just set isAuthenticated - user can be fetched if needed
-      // This will be handled by the API interceptor or can be improved later
       setIsAuthenticated(true);
     }
+
+    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
@@ -82,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -9,7 +9,6 @@ import { customerService, CustomerListItem } from "@/services/customerService";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -53,7 +52,6 @@ export default function CustomerPage() {
   const [customers, setCustomers] = useState<CustomerListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [timeRange, setTimeRange] = useState<'5y' | '10y' | 'all'>('5y');
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 30,
@@ -63,8 +61,6 @@ export default function CustomerPage() {
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
-  const monthsMap = { '5y': 60, '10y': 120, 'all': 0 };
-
   const fetchCustomers = useCallback(async (page: number = 1, search?: string, limit: number = 30) => {
     try {
       setLoading(true);
@@ -72,7 +68,6 @@ export default function CustomerPage() {
         page,
         limit,
         search: search && search.length >= 2 ? search : undefined,
-        months: monthsMap[timeRange],
       });
       setCustomers(response.data);
       setPagination(response.pagination);
@@ -82,7 +77,7 @@ export default function CustomerPage() {
     } finally {
       setLoading(false);
     }
-  }, [timeRange]);
+  }, []);
 
   useEffect(() => {
     fetchCustomers(1, debouncedSearch, pagination.limit);
@@ -109,7 +104,7 @@ export default function CustomerPage() {
         </Button>
       </div>
 
-      {/* Search + Time Range Filter Row */}
+      {/* Search Row */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -120,23 +115,6 @@ export default function CustomerPage() {
             className="pl-9"
           />
         </div>
-
-        <Select
-          value={timeRange}
-          onValueChange={(value: '5y' | '10y' | 'all') => {
-            setTimeRange(value);
-            setPagination(prev => ({ ...prev, page: 1 }));
-          }}
-        >
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="5y">5 Years</SelectItem>
-            <SelectItem value="10y">10 Years</SelectItem>
-            <SelectItem value="all">All Time</SelectItem>
-          </SelectContent>
-        </Select>
 
         <div className="text-sm text-muted-foreground">
           {pagination.total} items

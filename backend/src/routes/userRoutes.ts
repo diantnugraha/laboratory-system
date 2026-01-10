@@ -9,7 +9,8 @@ import {
   deleteUser,
   getUsersJson,
   getUsersFetchJson,
-  resendWelcomeEmail
+  resendWelcomeEmail,
+  createUserFromContact
 } from '../controllers/userController';
 
 const router: Router = express.Router();
@@ -31,6 +32,9 @@ router.post('/', authorize(1, 2), createUser);
 
 // Resend welcome email (requires SuperAdmin or HRDManager)
 router.post('/resendWelcome/:id', authorize(1, 2), resendWelcomeEmail);
+
+// Create user from contact (requires SuperAdmin or HRDManager)
+router.post('/from-contact', authorize(1, 2), createUserFromContact);
 
 // Update user validation
 const updateUserValidation: ValidationChain[] = [

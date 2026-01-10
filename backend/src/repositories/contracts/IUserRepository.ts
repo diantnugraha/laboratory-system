@@ -31,6 +31,9 @@ export interface CreateUserDTO {
   password: string; // Already hashed
   created_by: number;
   analyst_type_id?: number; // For Analyst role (8)
+  // For Agency role (28) - multiple customers/contacts
+  customer_ids?: number[];
+  contact_ids?: number[];
 }
 
 /**
@@ -47,6 +50,9 @@ export interface UpdateUserDTO {
   password?: string; // Already hashed
   updated_by?: number | null;
   analyst_type_id?: number; // For Analyst role (8) management
+  // For Agency role (28) - multiple customers/contacts
+  customer_ids?: number[];
+  contact_ids?: number[];
 }
 
 /**

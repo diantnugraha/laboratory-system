@@ -212,6 +212,36 @@ export const updateCategory = async (req: Request, res: Response): Promise<void>
 };
 
 /**
+ * GET /api/categories/json - JSON endpoint for autocomplete
+ */
+export const getCategoriesJson = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const search = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const dataTable = req.query.dataTable === 'true';
+
+    const result = await categoryRepo.findForAutocomplete(search, dataTable);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error,
+      });
+      return;
+    }
+
+    res.json(result.getValue());
+  } catch (error) {
+    console.error('getCategoriesJson error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch categories for autocomplete',
+      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+    });
+  }
+};
+
+/**
  * DELETE /api/categories/:id
  */
 export const deleteCategory = async (req: Request, res: Response): Promise<void> => {

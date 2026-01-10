@@ -1,9 +1,11 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../config/database';
 import { AuthRepository } from '../repositories/implementations/AuthRepository';
 import { generatePassword6Letters } from '../utils/otpGenerator';
 import { parseId } from '../types';
+import { emailService } from '../services/emailService';
 
 // Initialize repository
 const authRepo = new AuthRepository(prisma);
@@ -462,24 +464,16 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 
 /**
  * POST /api/auth/forgot-password
- * Reset password with email (public endpoint)
+ * Send password reset email (public endpoint)
  */
 export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, new_password, retype_new_password } = req.body;
+    const { email } = req.body;
 
-    if (!email || !new_password || !retype_new_password) {
+    if (!email) {
       res.status(400).json({
         success: false,
-        message: 'Email, new password, and retype new password are required'
-      });
-      return;
-    }
-
-    if (new_password !== retype_new_password) {
-      res.status(400).json({
-        success: false,
-        message: 'New password and retype new password do not match'
+        message: 'Email is required'
       });
       return;
     }
@@ -487,9 +481,10 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     // Find user by email via repository
     const userResult = await authRepo.findByEmail(email);
     if (userResult.isFailure()) {
-      res.status(500).json({
-        success: false,
-        message: userResult.error
+      // Don't reveal specific error (security best practice)
+      res.json({
+        success: true,
+        message: 'If the email exists, a reset link has been sent.'
       });
       return;
     }
@@ -499,37 +494,279 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
       // Don't reveal if user exists or not (security best practice)
       res.json({
         success: true,
-        message: 'If the email exists, password has been reset'
+        message: 'If the email exists, a reset link has been sent.'
       });
       return;
     }
 
-    // Hash new password via repository
-    const hashedPassword = await authRepo.hashPassword(new_password);
+    // Generate reset token
+    const resetToken = uuidv4();
+    const tokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    // Update password via repository
-    const updateResult = await authRepo.updatePassword(user.id, hashedPassword);
-    if (updateResult.isFailure()) {
-      console.error('Failed to update password:', updateResult.error);
-      // Don't reveal specific error (security best practice)
-      res.json({
-        success: true,
-        message: 'If the email exists, password has been reset'
+    // Save token to database
+    await prisma.users.update({
+      where: { id: user.id },
+      data: {
+        reset_password_token: resetToken,
+        reset_token_expires_at: tokenExpiry,
+      },
+    });
+
+    // Send password reset email
+    await emailService.sendPasswordResetEmail(user.email, user.display_name, resetToken);
+
+    res.json({
+      success: true,
+      message: 'If the email exists, a reset link has been sent.'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    // Don't reveal specific error (security best practice)
+    res.json({
+      success: true,
+      message: 'If the email exists, a reset link has been sent.'
+    });
+  }
+};
+
+/**
+ * GET /api/auth/validate-setup-token
+ * Validate setup password token (public endpoint)
+ */
+export const validateSetupToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const token = typeof req.query.token === 'string' ? req.query.token : undefined;
+
+    if (!token) {
+      res.status(400).json({
+        success: false,
+        message: 'Token is required'
+      });
+      return;
+    }
+
+    const user = await prisma.users.findFirst({
+      where: {
+        setup_password_token: token,
+        setup_token_expires_at: { gt: new Date() },
+        trash: null,
+      },
+      select: { id: true, email: true, display_name: true },
+    });
+
+    if (!user) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid or expired token'
       });
       return;
     }
 
     res.json({
       success: true,
-      message: 'Password reset successfully'
+      data: { email: user.email, display_name: user.display_name }
     });
   } catch (error) {
-    console.error('Forgot password error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Validate setup token error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to reset password',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+      message: 'Failed to validate token'
+    });
+  }
+};
+
+/**
+ * POST /api/auth/setup-password
+ * Setup password for new user (public endpoint)
+ */
+export const setupPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token, password, confirm_password } = req.body;
+
+    if (!token || !password || !confirm_password) {
+      res.status(400).json({
+        success: false,
+        message: 'Token, password, and confirm password are required'
+      });
+      return;
+    }
+
+    if (password !== confirm_password) {
+      res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+      return;
+    }
+
+    if (password.length < 8) {
+      res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters'
+      });
+      return;
+    }
+
+    // Find user with valid token
+    const user = await prisma.users.findFirst({
+      where: {
+        setup_password_token: token,
+        setup_token_expires_at: { gt: new Date() },
+        trash: null,
+      },
+    });
+
+    if (!user) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+      return;
+    }
+
+    // Hash password
+    const hashedPassword = await authRepo.hashPassword(password);
+
+    // Update user password and clear token
+    await prisma.users.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        setup_password_token: null,
+        setup_token_expires_at: null,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Password setup successful. You can now login.'
+    });
+  } catch (error) {
+    console.error('Setup password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to setup password'
+    });
+  }
+};
+
+/**
+ * GET /api/auth/validate-reset-token
+ * Validate password reset token (public endpoint)
+ */
+export const validateResetToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const token = typeof req.query.token === 'string' ? req.query.token : undefined;
+
+    if (!token) {
+      res.status(400).json({
+        success: false,
+        message: 'Token is required'
+      });
+      return;
+    }
+
+    const user = await prisma.users.findFirst({
+      where: {
+        reset_password_token: token,
+        reset_token_expires_at: { gt: new Date() },
+        trash: null,
+      },
+      select: { id: true, email: true },
+    });
+
+    if (!user) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: { email: user.email }
+    });
+  } catch (error) {
+    console.error('Validate reset token error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to validate token'
+    });
+  }
+};
+
+/**
+ * POST /api/auth/reset-password
+ * Reset password with token (public endpoint)
+ */
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token, password, confirm_password } = req.body;
+
+    if (!token || !password || !confirm_password) {
+      res.status(400).json({
+        success: false,
+        message: 'Token, password, and confirm password are required'
+      });
+      return;
+    }
+
+    if (password !== confirm_password) {
+      res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+      return;
+    }
+
+    if (password.length < 8) {
+      res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters'
+      });
+      return;
+    }
+
+    // Find user with valid token
+    const user = await prisma.users.findFirst({
+      where: {
+        reset_password_token: token,
+        reset_token_expires_at: { gt: new Date() },
+        trash: null,
+      },
+    });
+
+    if (!user) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+      return;
+    }
+
+    // Hash password
+    const hashedPassword = await authRepo.hashPassword(password);
+
+    // Update user password and clear token
+    await prisma.users.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        reset_password_token: null,
+        reset_token_expires_at: null,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Password reset successful. You can now login.'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password'
     });
   }
 };

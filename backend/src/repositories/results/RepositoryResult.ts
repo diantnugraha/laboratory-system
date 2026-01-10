@@ -51,12 +51,13 @@ export class RepositoryResult<T> {
 
   /**
    * Get data or throw error
+   * Note: null is a valid value for successful operations (e.g., findByUsername returns null if not found)
    */
   getValue(): T {
-    if (!this.success || !this.data) {
+    if (!this.success) {
       throw new Error(this.error || 'Operation failed');
     }
-    return this.data;
+    return this.data as T;
   }
 
   /**

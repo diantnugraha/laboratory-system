@@ -26,8 +26,8 @@ export class MethodRepository implements IMethodRepository {
 
       if (search) {
         where.OR = [
-          { name: { contains: search, mode: 'insensitive' } },
-          { code: { contains: search, mode: 'insensitive' } },
+          { name: { contains: search } },
+          { code: { contains: search } },
         ];
       }
 
@@ -90,7 +90,7 @@ export class MethodRepository implements IMethodRepository {
   async findByName(name: string, excludeId?: number): Promise<RepositoryResult<any | null>> {
     try {
       const where: any = {
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
         trash: null,
       };
 
@@ -109,7 +109,7 @@ export class MethodRepository implements IMethodRepository {
   async findByCode(code: string, excludeId?: number): Promise<RepositoryResult<any | null>> {
     try {
       const where: any = {
-        code: { equals: code, mode: 'insensitive' },
+        code: { equals: code },
         trash: null,
       };
 
@@ -137,8 +137,8 @@ export class MethodRepository implements IMethodRepository {
 
       if (search) {
         where.OR = [
-          { name: { contains: search, mode: 'insensitive' } },
-          { code: { contains: search, mode: 'insensitive' } },
+          { name: { contains: search } },
+          { code: { contains: search } },
         ];
       }
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Edit, Trash2, Building2, MapPin, User, ChevronRight, Loader2, Plus } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, Building2, MapPin, User, ChevronRight, Loader2, Plus, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AddressEditDialog } from "@/components/forms/AddressEditDialog";
 import { ContactEditDialog } from "@/components/forms/ContactEditDialog";
+import { CreateUserFromContactDialog } from "@/components/forms/CreateUserFromContactDialog";
 import { customerService, Customer, Address, Contact } from "@/services/customerService";
 import { toast } from "sonner";
 
@@ -106,6 +107,7 @@ export default function CustomerDetailPage() {
   const [editingContact, setEditingContact] = useState<ContactDialogData | null>(null);
   const [isAddressSaving, setIsAddressSaving] = useState(false);
   const [isContactSaving, setIsContactSaving] = useState(false);
+  const [createUserContact, setCreateUserContact] = useState<Contact | null>(null);
 
   const fetchCustomer = useCallback(async () => {
     if (!id) return;
@@ -719,6 +721,24 @@ export default function CustomerDetailPage() {
               </div>
 
               <div className="flex justify-end gap-2 pt-4 border-t">
+                {selectedContact.email && customer && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      // Find original contact from customer.contacts
+                      const originalContact = customer.contacts?.find(c => c.id === selectedContact.id);
+                      if (originalContact) {
+                        setCreateUserContact(originalContact);
+                        setSelectedContact(null);
+                      }
+                    }}
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    Create User
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -764,6 +784,29 @@ export default function CustomerDetailPage() {
         onSave={handleContactSave}
         isSubmitting={isContactSaving}
       />
+
+      {/* Create User From Contact Dialog */}
+      {createUserContact && customer && (
+        <CreateUserFromContactDialog
+          open={!!createUserContact}
+          onOpenChange={(open) => !open && setCreateUserContact(null)}
+          contact={{
+            id: createUserContact.id,
+            first_name: createUserContact.first_name,
+            surname: createUserContact.surname,
+            email: createUserContact.email,
+            customer_id: customer.id,
+            customer: {
+              id: customer.id,
+              name: customer.customer_name,
+            },
+          }}
+          onSuccess={() => {
+            setCreateUserContact(null);
+            toast.success('User created successfully. Welcome email has been sent.');
+          }}
+        />
+      )}
     </div>
   );
 }

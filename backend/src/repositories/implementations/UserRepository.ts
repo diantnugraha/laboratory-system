@@ -7,7 +7,10 @@ import {
   UpdateUserDTO,
 } from '../contracts/IUserRepository';
 import { RepositoryResult, PaginatedData } from '../results/RepositoryResult';
-import { buildSearchCondition, checkDuplicateCaseInsensitive } from '../../utils/searchHelper';
+import { buildSearchCondition } from '../../utils/searchHelper';
+
+// Agency role ID
+const AGENCY_ROLE_ID = 28;
 
 /**
  * User Repository Implementation (The Worker)
@@ -17,14 +20,55 @@ import { buildSearchCondition, checkDuplicateCaseInsensitive } from '../../utils
 export class UserRepository implements IUserRepository {
   constructor(private prisma: PrismaClient) {}
 
+  /**
+   * Parse list_customer or list_contact field
+   * Supports both JSON array format and comma-separated format
+   */
+  parseListField(listValue: string | null): number[] {
+    if (!listValue || listValue.trim() === '') return [];
+
+    // Try JSON parse first
+    try {
+      const parsed = JSON.parse(listValue);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map(id => typeof id === 'number' ? id : parseInt(id, 10))
+          .filter(id => !isNaN(id));
+      }
+    } catch {
+      // Not JSON, try comma-separated
+    }
+
+    // Fallback to comma-separated
+    return listValue
+      .split(',')
+      .map(id => parseInt(id.trim(), 10))
+      .filter(id => !isNaN(id));
+  }
+
+  /**
+   * Serialize customer/contact IDs to JSON string for storage
+   */
+  serializeListField(ids: number[]): string | null {
+    if (!ids || ids.length === 0) return null;
+    return JSON.stringify(ids);
+  }
+
   async findAll(filter: UserFilter): Promise<RepositoryResult<PaginatedData<any>>> {
     try {
-      const { search, limit = 10, offset = 0 } = filter;
+      const { search, limit = 10, offset = 0, excludeRoles, includeRoles } = filter;
 
       const where: any = {
         trash: null,
         ...buildSearchCondition('display_name', search),
       };
+
+      // Filter by role type (internal/external)
+      if (includeRoles && includeRoles.length > 0) {
+        where.role_id = { in: includeRoles };
+      } else if (excludeRoles && excludeRoles.length > 0) {
+        where.role_id = { notIn: excludeRoles };
+      }
 
       const [data, total] = await Promise.all([
         this.prisma.users.findMany({
@@ -45,6 +89,12 @@ export class UserRepository implements IUserRepository {
               select: {
                 id: true,
                 name: true,
+              },
+            },
+            customer: {
+              select: {
+                id: true,
+                customer_name: true,
               },
             },
           },
@@ -84,6 +134,8 @@ export class UserRepository implements IUserRepository {
           role_id: true,
           customer_id: true,
           contact_id: true,
+          list_customer: true,
+          list_contact: true,
           profile_picture: true,
           department: true,
           created_at: true,
@@ -94,11 +146,76 @@ export class UserRepository implements IUserRepository {
               name: true,
             },
           },
+          customer: {
+            select: {
+              id: true,
+              customer_name: true,
+            },
+          },
+          contact: {
+            select: {
+              id: true,
+              first_name: true,
+              surname: true,
+              email: true,
+            },
+          },
         },
       });
 
       if (!user) {
         return RepositoryResult.fail('User not found');
+      }
+
+      // For Agency role, parse list_customer and list_contact and fetch customer/contact details
+      if (user.role_id === AGENCY_ROLE_ID) {
+        const customerIds = this.parseListField(user.list_customer);
+        const contactIds = this.parseListField(user.list_contact);
+
+        let customers: any[] = [];
+        if (customerIds.length > 0) {
+          customers = await this.prisma.customer.findMany({
+            where: {
+              id: { in: customerIds },
+              trash: null,
+            },
+            select: {
+              id: true,
+              customer_name: true,
+            },
+          });
+        }
+
+        let contacts: any[] = [];
+        if (contactIds.length > 0) {
+          contacts = await this.prisma.contact.findMany({
+            where: {
+              id: { in: contactIds },
+              trash: null,
+            },
+            select: {
+              id: true,
+              first_name: true,
+              surname: true,
+              email: true,
+              customer_id: true,
+              customer: {
+                select: {
+                  id: true,
+                  customer_name: true,
+                },
+              },
+            },
+          });
+        }
+
+        return RepositoryResult.ok({
+          ...user,
+          customer_ids: customerIds,
+          contact_ids: contactIds,
+          customers,
+          contacts,
+        });
       }
 
       return RepositoryResult.ok(user);
@@ -109,14 +226,26 @@ export class UserRepository implements IUserRepository {
 
   async findByUsername(username: string, excludeId?: number): Promise<RepositoryResult<any | null>> {
     try {
-      const existing = await checkDuplicateCaseInsensitive(
-        this.prisma.users,
-        'username',
-        username,
-        excludeId
+      const where: any = {
+        trash: null,
+      };
+
+      if (excludeId) {
+        where.id = { not: excludeId };
+      }
+
+      // Fetch all users and filter case-insensitively (MySQL doesn't support mode: 'insensitive')
+      const users = await this.prisma.users.findMany({
+        where,
+        select: { id: true, username: true },
+      });
+
+      // Find case-insensitive match
+      const existing = users.find(
+        (user: any) => user.username?.toLowerCase() === username.toLowerCase()
       );
 
-      return RepositoryResult.ok(existing);
+      return RepositoryResult.ok(existing || null);
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to check username: ${error.message}`);
     }
@@ -124,14 +253,26 @@ export class UserRepository implements IUserRepository {
 
   async findByEmail(email: string, excludeId?: number): Promise<RepositoryResult<any | null>> {
     try {
-      const existing = await checkDuplicateCaseInsensitive(
-        this.prisma.users,
-        'email',
-        email,
-        excludeId
+      const where: any = {
+        trash: null,
+      };
+
+      if (excludeId) {
+        where.id = { not: excludeId };
+      }
+
+      // Fetch all users and filter case-insensitively (MySQL doesn't support mode: 'insensitive')
+      const users = await this.prisma.users.findMany({
+        where,
+        select: { id: true, email: true },
+      });
+
+      // Find case-insensitive match
+      const existing = users.find(
+        (user: any) => user.email?.toLowerCase() === email.toLowerCase()
       );
 
-      return RepositoryResult.ok(existing);
+      return RepositoryResult.ok(existing || null);
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to check email: ${error.message}`);
     }
@@ -321,19 +462,32 @@ export class UserRepository implements IUserRepository {
     try {
       // Transaction: Create user + optionally create AnalystRules
       const result = await this.prisma.$transaction(async (tx) => {
+        // Prepare create data
+        const createData: any = {
+          username: data.username,
+          email: data.email,
+          display_name: data.display_name,
+          role_id: data.role_id,
+          customer_id: data.customer_id || null,
+          contact_id: data.contact_id || null,
+          department: data.department || null,
+          password: data.password,
+          created_by: data.created_by,
+        };
+
+        // For Agency role (28), handle list_customer and list_contact
+        if (data.role_id === AGENCY_ROLE_ID) {
+          if (data.customer_ids && data.customer_ids.length > 0) {
+            createData.list_customer = this.serializeListField(data.customer_ids);
+          }
+          if (data.contact_ids && data.contact_ids.length > 0) {
+            createData.list_contact = this.serializeListField(data.contact_ids);
+          }
+        }
+
         // Create user
         const user = await tx.users.create({
-          data: {
-            username: data.username,
-            email: data.email,
-            display_name: data.display_name,
-            role_id: data.role_id,
-            customer_id: data.customer_id || null,
-            contact_id: data.contact_id || null,
-            department: data.department || null,
-            password: data.password,
-            created_by: data.created_by,
-          },
+          data: createData,
           include: {
             role: {
               select: {
@@ -395,11 +549,32 @@ export class UserRepository implements IUserRepository {
         if (data.password !== undefined) updateData.password = data.password;
         if (data.updated_by !== undefined) updateData.updated_by = data.updated_by;
 
+        // For Agency role (28), handle list_customer and list_contact
+        const newRoleId = data.role_id !== undefined ? data.role_id : existingRoleId;
+        if (newRoleId === AGENCY_ROLE_ID) {
+          if (data.customer_ids !== undefined) {
+            updateData.list_customer = this.serializeListField(data.customer_ids);
+          }
+          if (data.contact_ids !== undefined) {
+            updateData.list_contact = this.serializeListField(data.contact_ids);
+          }
+        }
+
         // Update user
         const user = await tx.users.update({
           where: { id },
           data: updateData,
-          include: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            display_name: true,
+            role_id: true,
+            customer_id: true,
+            contact_id: true,
+            list_customer: true,
+            list_contact: true,
+            department: true,
             role: {
               select: {
                 id: true,
@@ -416,7 +591,6 @@ export class UserRepository implements IUserRepository {
         });
 
         // BR-005: Handle AnalystRules
-        const newRoleId = data.role_id !== undefined ? data.role_id : existingRoleId;
         const oldRoleId = existingRoleId;
 
         // If role changed to Analyst (8) and analyst_type_id provided

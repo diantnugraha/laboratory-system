@@ -173,9 +173,10 @@ export class CustomerRepository implements ICustomerRepository {
       const where: any = { trash: null };
 
       if (search) {
+        // MySQL default collation is case-insensitive, no need for mode option
         where.OR = [
-          { code: { contains: search, mode: 'insensitive' } },
-          { customer_name: { contains: search, mode: 'insensitive' } },
+          { code: { contains: search } },
+          { customer_name: { contains: search } },
         ];
       }
 
@@ -251,7 +252,7 @@ export class CustomerRepository implements ICustomerRepository {
         }
       }
 
-      const address = await this.prisma.cust_address.create({
+      const address = await this.prisma.address.create({
         data: {
           customer_id: customerId,
           address_type: data.address_type!,
@@ -302,7 +303,7 @@ export class CustomerRepository implements ICustomerRepository {
       if (data.npwp !== undefined) updateData.npwp = data.npwp;
       if (data.status) updateData.status = data.status;
 
-      const address = await this.prisma.cust_address.update({
+      const address = await this.prisma.address.update({
         where: { id },
         data: updateData,
       });
@@ -315,7 +316,7 @@ export class CustomerRepository implements ICustomerRepository {
 
   async deleteAddress(id: number): Promise<RepositoryResult<boolean>> {
     try {
-      await this.prisma.cust_address.update({
+      await this.prisma.address.update({
         where: { id },
         data: { trash: 1 },
       });
@@ -342,7 +343,7 @@ export class CustomerRepository implements ICustomerRepository {
         where.id = { not: excludeId };
       }
 
-      const existing = await this.prisma.cust_address.findFirst({ where });
+      const existing = await this.prisma.address.findFirst({ where });
 
       return RepositoryResult.ok(!!existing);
     } catch (error: any) {
@@ -365,7 +366,7 @@ export class CustomerRepository implements ICustomerRepository {
         }
       }
 
-      const contact = await this.prisma.cust_contact.create({
+      const contact = await this.prisma.contact.create({
         data: {
           customer_id: customerId,
           address_id: data.address_id!,
@@ -420,7 +421,7 @@ export class CustomerRepository implements ICustomerRepository {
 
       // Update username if name changed
       if (data.first_name || data.surname) {
-        const contact = await this.prisma.cust_contact.findUnique({ where: { id } });
+        const contact = await this.prisma.contact.findUnique({ where: { id } });
         if (contact) {
           const firstName = data.first_name || contact.first_name;
           const surname = data.surname || contact.surname;
@@ -428,7 +429,7 @@ export class CustomerRepository implements ICustomerRepository {
         }
       }
 
-      const contact = await this.prisma.cust_contact.update({
+      const contact = await this.prisma.contact.update({
         where: { id },
         data: updateData,
       });
@@ -441,7 +442,7 @@ export class CustomerRepository implements ICustomerRepository {
 
   async deleteContact(id: number): Promise<RepositoryResult<boolean>> {
     try {
-      await this.prisma.cust_contact.update({
+      await this.prisma.contact.update({
         where: { id },
         data: { trash: 1 },
       });
@@ -457,7 +458,7 @@ export class CustomerRepository implements ICustomerRepository {
     customerId: number
   ): Promise<RepositoryResult<boolean>> {
     try {
-      const address = await this.prisma.cust_address.findFirst({
+      const address = await this.prisma.address.findFirst({
         where: {
           id: addressId,
           customer_id: customerId,

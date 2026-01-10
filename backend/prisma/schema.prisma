@@ -30,6 +30,12 @@ model Users {
   list_contact     String?   @map("list_contact") @db.Text
   central_pic_id   String?   @map("central_pic_id") @db.VarChar(255)
 
+  // Password setup & reset tokens
+  setup_password_token   String?   @map("setup_password_token") @db.VarChar(255)
+  setup_token_expires_at DateTime? @map("setup_token_expires_at") @db.DateTime(0)
+  reset_password_token   String?   @map("reset_password_token") @db.VarChar(255)
+  reset_token_expires_at DateTime? @map("reset_token_expires_at") @db.DateTime(0)
+
   role             Roles     @relation(fields: [role_id], references: [id])
   customer         Customer? @relation(fields: [customer_id], references: [id])
   contact          Contact?  @relation(fields: [contact_id], references: [id])

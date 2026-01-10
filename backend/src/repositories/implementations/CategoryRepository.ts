@@ -68,7 +68,7 @@ export class CategoryRepository implements ICategoryRepository {
   async findByName(name: string, excludeId?: number): Promise<RepositoryResult<any | null>> {
     try {
       const where: any = {
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
         trash: null,
       };
 
@@ -124,6 +124,41 @@ export class CategoryRepository implements ICategoryRepository {
       return RepositoryResult.ok(true);
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to delete category: ${error.message}`);
+    }
+  }
+
+  async findForAutocomplete(search?: string, dataTable: boolean = false): Promise<RepositoryResult<any>> {
+    try {
+      const pageSize = dataTable ? 1000 : 20;
+
+      const where: any = {
+        trash: null,
+      };
+
+      if (search) {
+        where.name = { contains: search };
+      }
+
+      const categories = await this.prisma.category.findMany({
+        where,
+        take: pageSize,
+        orderBy: { name: 'asc' },
+      });
+
+      const items = categories.map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+      }));
+
+      const response = {
+        total_count: items.length,
+        incomplete_results: false,
+        ...(dataTable ? { data: items } : { items }),
+      };
+
+      return RepositoryResult.ok(response);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch categories for autocomplete: ${error.message}`);
     }
   }
 }

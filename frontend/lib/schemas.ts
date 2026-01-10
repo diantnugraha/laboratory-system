@@ -122,6 +122,25 @@ export const analystTypeSchema = z.object({
   status: statusSchema.optional().default("Active"),
 });
 
+// Internal User Schema
+export const internalUserSchema = z.object({
+  username: z.string().min(1, "Username is required").max(50, "Username must be less than 50 characters"),
+  email: z.string().min(1, "Email is required").email("Invalid email address"),
+  display_name: z.string().min(1, "Display name is required").max(100, "Display name must be less than 100 characters"),
+  role_id: z.string().min(1, "Role is required"),
+  department: z.string().max(100, "Department must be less than 100 characters").optional(),
+  analyst_type_id: z.string().optional(),
+});
+
+// External User Schema
+export const externalUserSchema = z.object({
+  username: z.string().min(1, "Username is required").max(50, "Username must be less than 50 characters"),
+  email: z.string().min(1, "Email is required").email("Invalid email address"),
+  display_name: z.string().min(1, "Display name is required").max(100, "Display name must be less than 100 characters"),
+  customer_id: z.string().min(1, "Customer is required"),
+  contact_id: z.string().optional(),
+});
+
 // Type exports
 export type MethodFormData = z.infer<typeof methodSchema>;
 export type MatrixFormData = z.infer<typeof matrixSchema>;
@@ -136,3 +155,5 @@ export type StandardFormData = z.infer<typeof standardSchema>;
 export type CustomerFormData = z.infer<typeof customerSchema>;
 export type ContactFormData = z.infer<typeof contactSchema>;
 export type AnalystTypeFormData = z.infer<typeof analystTypeSchema>;
+export type InternalUserFormData = z.infer<typeof internalUserSchema>;
+export type ExternalUserFormData = z.infer<typeof externalUserSchema>;

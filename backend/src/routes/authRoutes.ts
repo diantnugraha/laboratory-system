@@ -1,6 +1,6 @@
 import express, { Router, Request, Response, NextFunction } from 'express';
 import { body, validationResult, ValidationChain } from 'express-validator';
-import { login, register, getProfile, logout, generatePassword, changePassword, forgotPassword } from '../controllers/authController';
+import { login, register, getProfile, logout, generatePassword, changePassword, forgotPassword, validateSetupToken, setupPassword, validateResetToken, resetPassword } from '../controllers/authController';
 import { authenticate } from '../middleware/auth';
 
 const router: Router = express.Router();
@@ -51,7 +51,7 @@ const changePasswordValidation: ValidationChain[] = [
     .withMessage('New password must be at least 6 characters')
 ];
 
-// Forgot password validation
+// Forgot password validation (only email for sending reset link)
 const forgotPasswordValidation: ValidationChain[] = [
   body('email')
     .trim()
@@ -59,18 +59,48 @@ const forgotPasswordValidation: ValidationChain[] = [
     .withMessage('Email is required')
     .isEmail()
     .withMessage('Email must be a valid email address')
-    .normalizeEmail(),
-  body('new_password')
+    .normalizeEmail()
+];
+
+// Setup password validation
+const setupPasswordValidation: ValidationChain[] = [
+  body('token')
+    .trim()
     .notEmpty()
-    .withMessage('New password is required')
-    .isLength({ min: 6 })
-    .withMessage('New password must be at least 6 characters'),
-  body('retype_new_password')
+    .withMessage('Token is required'),
+  body('password')
     .notEmpty()
-    .withMessage('Retype new password is required')
+    .withMessage('Password is required')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters'),
+  body('confirm_password')
+    .notEmpty()
+    .withMessage('Confirm password is required')
     .custom((value, { req }) => {
-      if (value !== req.body.new_password) {
-        throw new Error('New password and retype new password do not match');
+      if (value !== req.body.password) {
+        throw new Error('Passwords do not match');
+      }
+      return true;
+    })
+];
+
+// Reset password validation
+const resetPasswordValidation: ValidationChain[] = [
+  body('token')
+    .trim()
+    .notEmpty()
+    .withMessage('Token is required'),
+  body('password')
+    .notEmpty()
+    .withMessage('Password is required')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters'),
+  body('confirm_password')
+    .notEmpty()
+    .withMessage('Confirm password is required')
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error('Passwords do not match');
       }
       return true;
     })
@@ -102,8 +132,20 @@ router.post('/generate-password', authenticate, generatePasswordValidation, hand
 // Change password (user membuat password sendiri) - requires authentication
 router.post('/change-password', authenticate, changePasswordValidation, handleValidationErrors, changePassword);
 
-// Forgot password (reset password dengan email) - public endpoint
+// Forgot password (send reset email) - public endpoint
 router.post('/forgot-password', forgotPasswordValidation, handleValidationErrors, forgotPassword);
+
+// Setup password token validation - public endpoint
+router.get('/validate-setup-token', validateSetupToken);
+
+// Setup password - public endpoint
+router.post('/setup-password', setupPasswordValidation, handleValidationErrors, setupPassword);
+
+// Reset password token validation - public endpoint
+router.get('/validate-reset-token', validateResetToken);
+
+// Reset password - public endpoint
+router.post('/reset-password', resetPasswordValidation, handleValidationErrors, resetPassword);
 
 export default router;
 

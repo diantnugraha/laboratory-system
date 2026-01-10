@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FlaskConical, Loader2, Mail, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/services/api';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -18,7 +19,7 @@ export default function ForgotPassword() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email) {
       toast({
         title: "Error",
@@ -40,17 +41,27 @@ export default function ForgotPassword() {
     }
 
     setIsLoading(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setIsLoading(false);
-    setIsSubmitted(true);
-    
-    toast({
-      title: "Email Sent",
-      description: "Check your inbox for password reset instructions.",
-    });
+
+    try {
+      // Call the forgot-password API
+      await api.post('/auth/forgot-password', { email });
+
+      setIsSubmitted(true);
+
+      toast({
+        title: "Email Sent",
+        description: "If the email exists, you will receive password reset instructions.",
+      });
+    } catch (error: any) {
+      // Even on error, show success message for security (prevent email enumeration)
+      setIsSubmitted(true);
+      toast({
+        title: "Email Sent",
+        description: "If the email exists, you will receive password reset instructions.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -70,8 +81,8 @@ export default function ForgotPassword() {
             <div className="space-y-1">
               <CardTitle className="text-2xl font-bold">Reset Password</CardTitle>
               <CardDescription className="text-muted-foreground">
-                {isSubmitted 
-                  ? "Check your email for reset instructions" 
+                {isSubmitted
+                  ? "Check your email for reset instructions"
                   : "Enter your email to receive a password reset link"
                 }
               </CardDescription>
@@ -87,23 +98,29 @@ export default function ForgotPassword() {
                   <div className="text-center space-y-2">
                     <p className="font-medium text-foreground">Email Sent Successfully</p>
                     <p className="text-sm text-muted-foreground max-w-xs">
-                      We've sent a password reset link to <strong>{email}</strong>. 
-                      Please check your inbox and follow the instructions.
+                      If an account exists for <strong>{email}</strong>,
+                      you will receive a password reset link shortly. Please check your inbox.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      The link will expire in 1 hour.
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="space-y-3">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="w-full h-11"
-                    onClick={() => setIsSubmitted(false)}
+                    onClick={() => {
+                      setIsSubmitted(false);
+                      setEmail('');
+                    }}
                   >
                     Try another email
                   </Button>
-                  <Button 
+                  <Button
                     asChild
-                    variant="ghost" 
+                    variant="ghost"
                     className="w-full h-11"
                   >
                     <Link href="/login" className="flex items-center justify-center">
@@ -134,8 +151,8 @@ export default function ForgotPassword() {
                     </div>
                   </div>
 
-                  <Button 
-                    type="submit" 
+                  <Button
+                    type="submit"
                     className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-lg shadow-primary/25 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
                     disabled={isLoading}
                   >
@@ -154,9 +171,9 @@ export default function ForgotPassword() {
                 </form>
 
                 <div className="flex items-center justify-center">
-                  <Button 
+                  <Button
                     asChild
-                    variant="ghost" 
+                    variant="ghost"
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
                     <Link href="/login" className="flex items-center">
@@ -173,5 +190,3 @@ export default function ForgotPassword() {
     </div>
   );
 }
-
-

@@ -1,39 +1,74 @@
 import { Request, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../config/database';
 import { UserRepository } from '../repositories/implementations/UserRepository';
 import { handleDepartmentArray } from '../utils/userHelper';
 import { parseId, parseQueryParam, ApiResponse } from '../types';
 import { generateSecurePassword } from '../utils/otpGenerator';
+import { emailService } from '../services/emailService';
 
 // Initialize repository
 const userRepo = new UserRepository(prisma);
 
 /**
- * Helper: Send welcome email (placeholder - requires email service)
- * TODO: Implement email service integration
+ * Helper: Generate setup password token and send welcome email
  */
-const sendWelcomeEmail = async (email: string, _username: string, temporaryPassword: string, _displayName: string): Promise<void> => {
-  // TODO: Implement email service
-  // This should send an email with:
-  // - Username
-  // - Temporary password
-  // - Login URL
-  // - Instructions to change password on first login
-  console.log(`[EMAIL] Welcome email would be sent to ${email} with password: ${temporaryPassword}`);
+const generateSetupTokenAndSendEmail = async (userId: number, email: string, displayName: string): Promise<boolean> => {
+  try {
+    const setupToken = uuidv4();
+    const tokenExpiry = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+
+    // Update user with setup token
+    await prisma.users.update({
+      where: { id: userId },
+      data: {
+        setup_password_token: setupToken,
+        setup_token_expires_at: tokenExpiry,
+      },
+    });
+
+    // Send welcome email
+    const emailSent = await emailService.sendWelcomeEmail(email, displayName, setupToken);
+    return emailSent;
+  } catch (error) {
+    console.error('Failed to generate setup token or send email:', error);
+    return false;
+  }
 };
 
 /**
- * GET /api/users - Get list of users with search
+ * GET /api/users - Get list of users with search and role filtering
  * Requires SuperAdmin (role_id: 1) or Admin (role_id: 2)
+ *
+ * Query params:
+ * - limit: number (default 30)
+ * - offset: number (default 0)
+ * - search: string (search by display_name)
+ * - exclude_roles: string (comma-separated role IDs to exclude, e.g. "16,28")
+ * - include_roles: string (comma-separated role IDs to include, e.g. "16,28")
  */
 export const getPublicUsers = async (req: Request, res: Response): Promise<void> => {
   try {
-    const limit = Math.min(parseQueryParam(req.query.limit, 10), 100);
+    const limit = parseQueryParam(req.query.limit, 30);
     const offset = parseQueryParam(req.query.offset, 0);
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    // Call repository
-    const result = await userRepo.findAll({ search, limit, offset });
+    // Parse exclude_roles (comma-separated: "16,28")
+    const excludeRolesParam = typeof req.query.exclude_roles === 'string' ? req.query.exclude_roles : undefined;
+    let excludeRoles: number[] | undefined;
+    if (excludeRolesParam) {
+      excludeRoles = excludeRolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
+    }
+
+    // Parse include_roles (comma-separated: "16,28")
+    const includeRolesParam = typeof req.query.include_roles === 'string' ? req.query.include_roles : undefined;
+    let includeRoles: number[] | undefined;
+    if (includeRolesParam) {
+      includeRoles = includeRolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
+    }
+
+    // Call repository with filters
+    const result = await userRepo.findAll({ search, limit, offset, excludeRoles, includeRoles });
 
     if (result.isFailure()) {
       res.status(500).json({
@@ -109,9 +144,12 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
  * POST /api/users - Create new user
  * Requires SuperAdmin (role_id: 1) or HRDManager (role_id: 2)
  */
+// Agency role ID
+const AGENCY_ROLE_ID = 28;
+
 export const createUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { username, email, display_name, role_id, customer_id, contact_id, department, analyst_type_id } = req.body;
+    const { username, email, display_name, role_id, customer_id, contact_id, department, analyst_type_id, customer_ids, contact_ids } = req.body;
     const userId = (req as any).user?.id;
 
     // Validate required fields
@@ -152,6 +190,15 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       res.status(400).json({
         success: false,
         message: 'Customer ID is required for Customer role'
+      });
+      return;
+    }
+
+    // Business Rule: customer_ids required if role_id=28 (Agency) - BR-006
+    if (role_id === AGENCY_ROLE_ID && (!customer_ids || !Array.isArray(customer_ids) || customer_ids.length === 0)) {
+      res.status(400).json({
+        success: false,
+        message: 'At least one customer is required for Agency role'
       });
       return;
     }
@@ -221,8 +268,8 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     // Handle department array
     const departmentStr = handleDepartmentArray(department);
 
-    // Create user via repository (handles transaction internally)
-    const result = await userRepo.create({
+    // Prepare create data
+    const createData: any = {
       username: username.trim(),
       email: email.trim(),
       display_name: display_name.trim(),
@@ -232,8 +279,38 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       department: departmentStr,
       password: hashedPassword,
       created_by: userId || 1,
-      analyst_type_id: analyst_type_id || undefined
-    });
+      analyst_type_id: analyst_type_id || undefined,
+    };
+
+    // For Agency role, add customer_ids and auto-fetch contact_ids
+    if (role_id === AGENCY_ROLE_ID) {
+      createData.customer_ids = customer_ids.map((id: any) => Number(id));
+
+      // Auto-fetch all active contacts for the selected customers
+      const customerIdNumbers = customer_ids.map((id: any) => Number(id));
+      const contacts = await prisma.contact.findMany({
+        where: {
+          customer_id: { in: customerIdNumbers },
+          trash: null, // Only active contacts (trash is null means not deleted)
+        },
+        select: { id: true },
+      });
+
+      // Combine provided contact_ids with auto-fetched contact_ids
+      let allContactIds: number[] = contacts.map(c => c.id);
+      if (contact_ids && Array.isArray(contact_ids)) {
+        const providedContactIds = contact_ids.map((id: any) => Number(id));
+        // Merge and deduplicate
+        allContactIds = [...new Set([...allContactIds, ...providedContactIds])];
+      }
+
+      if (allContactIds.length > 0) {
+        createData.contact_ids = allContactIds;
+      }
+    }
+
+    // Create user via repository (handles transaction internally)
+    const result = await userRepo.create(createData);
 
     if (result.isFailure()) {
       res.status(500).json({
@@ -245,18 +322,15 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
     const createdUser = result.getValue();
 
-    // Send welcome email (async, don't wait)
-    sendWelcomeEmail(createdUser.email, createdUser.username, generatedPassword, createdUser.display_name).catch(err => {
+    // Generate setup token and send welcome email (async, don't wait)
+    generateSetupTokenAndSendEmail(createdUser.id, createdUser.email, createdUser.display_name).catch(err => {
       console.error('Failed to send welcome email:', err);
     });
 
     res.status(201).json({
       success: true,
-      message: 'User created successfully',
-      data: {
-        ...createdUser,
-        password: generatedPassword // Return generated password (only in response, not stored)
-      }
+      message: 'User created successfully. Welcome email has been sent.',
+      data: createdUser
     });
   } catch (error) {
     console.error('Create user error:', error);
@@ -284,7 +358,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const { username, email, display_name, role_id, customer_id, contact_id, department, analyst_type_id, delete: deleteFlag, password } = req.body;
+    const { username, email, display_name, role_id, customer_id, contact_id, department, analyst_type_id, delete: deleteFlag, password, customer_ids, contact_ids } = req.body;
     const userId = (req as any).user?.id;
     const isAdmin = (req as any).user?.role_id === 1; // SuperAdmin
 
@@ -412,6 +486,45 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
           message: 'Customer ID is required for Customer role'
         });
         return;
+      }
+
+      // Business Rule: customer_ids required if role_id=28 (Agency)
+      if (updateData.role_id === AGENCY_ROLE_ID) {
+        // Check if customer_ids provided in update or existing user has list_customer
+        if (!customer_ids || !Array.isArray(customer_ids) || customer_ids.length === 0) {
+          res.status(400).json({
+            success: false,
+            message: 'At least one customer is required for Agency role'
+          });
+          return;
+        }
+      }
+    }
+
+    // Handle customer_ids and contact_ids for Agency role
+    const effectiveRoleId = updateData.role_id || existingUser.role_id;
+
+    if (effectiveRoleId === AGENCY_ROLE_ID) {
+      // Handle customer_ids
+      if (customer_ids !== undefined && Array.isArray(customer_ids)) {
+        updateData.customer_ids = customer_ids.map((id: any) => Number(id));
+      }
+
+      // Handle contact_ids - use provided contact_ids directly if available
+      if (contact_ids !== undefined && Array.isArray(contact_ids)) {
+        // User explicitly selected contacts, use those directly
+        updateData.contact_ids = contact_ids.map((id: any) => Number(id));
+      } else if (customer_ids !== undefined && Array.isArray(customer_ids)) {
+        // No contact_ids provided but customer_ids changed, auto-fetch contacts
+        const customerIdNumbers = customer_ids.map((id: any) => Number(id));
+        const contacts = await prisma.contact.findMany({
+          where: {
+            customer_id: { in: customerIdNumbers },
+            trash: null,
+          },
+          select: { id: true },
+        });
+        updateData.contact_ids = contacts.map(c => c.id);
       }
     }
 
@@ -680,7 +793,181 @@ export const getUsersFetchJson = async (req: Request, res: Response): Promise<vo
 };
 
 /**
- * POST /api/users/resendWelcome/:id - Resend welcome email
+ * Helper: Generate username from first name
+ * Format: firstname-randomstring (e.g., iqbal-as494c)
+ */
+const generateUsername = (firstName: string): string => {
+  const cleanName = firstName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const randomString = Math.random().toString(36).substring(2, 8);
+  return `${cleanName}-${randomString}`;
+};
+
+// Customer role ID
+const CUSTOMER_ROLE_ID = 16;
+
+/**
+ * POST /api/users/from-contact - Create user from contact
+ * Creates a new user with Customer role using contact data
+ * Requires SuperAdmin (role_id: 1) or HRDManager (role_id: 2)
+ */
+export const createUserFromContact = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { contact_id } = req.body;
+    const userId = (req as any).user?.id;
+
+    if (!contact_id) {
+      res.status(400).json({
+        success: false,
+        message: 'Contact ID is required'
+      });
+      return;
+    }
+
+    // 1. Get contact data
+    const contact = await prisma.contact.findFirst({
+      where: {
+        id: Number(contact_id),
+        trash: null
+      },
+      include: {
+        customer: true
+      }
+    });
+
+    if (!contact) {
+      res.status(404).json({
+        success: false,
+        message: 'Contact not found'
+      });
+      return;
+    }
+
+    if (!contact.email) {
+      res.status(400).json({
+        success: false,
+        message: 'Contact does not have an email address'
+      });
+      return;
+    }
+
+    if (!contact.customer_id) {
+      res.status(400).json({
+        success: false,
+        message: 'Contact is not linked to a customer'
+      });
+      return;
+    }
+
+    // 2. Check if user already exists for this contact
+    const existingUserByContact = await prisma.users.findFirst({
+      where: {
+        contact_id: contact.id,
+        trash: null
+      }
+    });
+
+    if (existingUserByContact) {
+      res.status(400).json({
+        success: false,
+        message: 'User already exists for this contact'
+      });
+      return;
+    }
+
+    // 3. Check if email already used
+    const emailResult = await userRepo.findByEmail(contact.email);
+    if (emailResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: emailResult.error
+      });
+      return;
+    }
+    if (emailResult.getValue() !== null) {
+      res.status(409).json({
+        success: false,
+        message: 'Email already registered to another user'
+      });
+      return;
+    }
+
+    // 4. Generate username
+    const username = generateUsername(contact.first_name);
+
+    // 5. Check username uniqueness
+    const usernameResult = await userRepo.findByUsername(username);
+    if (usernameResult.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: usernameResult.error
+      });
+      return;
+    }
+    // If username exists, regenerate with different random suffix
+    let finalUsername = username;
+    if (usernameResult.getValue() !== null) {
+      finalUsername = generateUsername(contact.first_name);
+    }
+
+    // 6. Generate display name
+    const displayName = `${contact.first_name} ${contact.surname || ''}`.trim();
+
+    // 7. Generate random placeholder password
+    const generatedPassword = uuidv4();
+    const hashedPassword = await userRepo.hashPassword(generatedPassword);
+
+    // 8. Create user via repository
+    const createData: any = {
+      username: finalUsername,
+      email: contact.email,
+      display_name: displayName,
+      role_id: CUSTOMER_ROLE_ID,
+      customer_id: contact.customer_id,
+      contact_id: contact.id,
+      password: hashedPassword,
+      created_by: userId || 1,
+    };
+
+    const result = await userRepo.create(createData);
+
+    if (result.isFailure()) {
+      res.status(500).json({
+        success: false,
+        message: result.error
+      });
+      return;
+    }
+
+    const createdUser = result.getValue();
+
+    // 9. Generate setup token and send welcome email
+    generateSetupTokenAndSendEmail(createdUser.id, createdUser.email, createdUser.display_name).catch(err => {
+      console.error('Failed to send welcome email:', err);
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully. Welcome email has been sent.',
+      data: {
+        id: createdUser.id,
+        username: createdUser.username,
+        email: createdUser.email,
+        display_name: createdUser.display_name,
+      }
+    });
+  } catch (error) {
+    console.error('Create user from contact error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create user from contact',
+      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+    });
+  }
+};
+
+/**
+ * POST /api/users/resendWelcome/:id - Resend welcome email with new setup token
  * Requires SuperAdmin (role_id: 1) or HRDManager (role_id: 2)
  */
 export const resendWelcomeEmail = async (req: Request, res: Response): Promise<void> => {
@@ -706,30 +993,20 @@ export const resendWelcomeEmail = async (req: Request, res: Response): Promise<v
 
     const user = userResult.getValue();
 
-    // Generate new temporary password
-    const generatedPassword = generateSecurePassword(12);
+    // Generate new setup token and send email
+    const emailSent = await generateSetupTokenAndSendEmail(user.id, user.email, user.display_name);
 
-    // Update user password via repository
-    const passwordResult = await userRepo.updatePasswordAndGet(id, generatedPassword);
-    if (passwordResult.isFailure()) {
+    if (!emailSent) {
       res.status(500).json({
         success: false,
-        message: passwordResult.error
+        message: 'Failed to send welcome email. Please try again.'
       });
       return;
     }
 
-    // Send welcome email (async, don't wait)
-    sendWelcomeEmail(user.email, user.username, generatedPassword, user.display_name).catch(err => {
-      console.error('Failed to send welcome email:', err);
-    });
-
     res.json({
       success: true,
-      message: 'Welcome email sent successfully',
-      data: {
-        password: generatedPassword // Return generated password (only in response)
-      }
+      message: 'Welcome email sent successfully'
     });
   } catch (error) {
     console.error('Resend welcome email error:', error);

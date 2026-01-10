@@ -491,9 +491,14 @@ export default function ServiceDetailPage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="text-2xl font-semibold text-foreground">
-                <RenderHTML html={service.name} />
-              </h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-semibold text-foreground">
+                  <RenderHTML html={service.name} />
+                </h1>
+                <Badge variant={service.status === "Active" ? "default" : "secondary"}>
+                  <RenderHTML html={service.status || "N/A"} />
+                </Badge>
+              </div>
               <p className="text-sm text-muted-foreground mt-1">
                 Code: <RenderHTML html={service.code} />
               </p>
@@ -544,8 +549,8 @@ export default function ServiceDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-6 space-y-6">
-            {/* Row 1: Code, Name, Status */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {/* Row 1: Code, Name Service */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   Code
@@ -561,14 +566,6 @@ export default function ServiceDetailPage() {
                 <p className="text-sm font-medium">
                   <RenderHTML html={service.name} />
                 </p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Status
-                </Label>
-                <Badge variant={service.status === "Active" ? "default" : "secondary"}>
-                  <RenderHTML html={service.status || "N/A"} />
-                </Badge>
               </div>
             </div>
 
@@ -831,6 +828,11 @@ export default function ServiceDetailPage() {
                         className="h-10 bg-muted/30 hover:bg-muted/50 focus:bg-background transition-colors border-muted"
                       />
                     </FormControl>
+                    {field.value && (
+                      <div className="text-sm text-muted-foreground">
+                        Preview: <RenderHTML html={field.value} className="text-foreground" />
+                      </div>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -879,7 +881,7 @@ export default function ServiceDetailPage() {
                             )}
                           >
                             {selectedCategory
-                              ? selectedCategory.name
+                              ? <RenderHTML html={selectedCategory.name} />
                               : 'Search category...'}
                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
@@ -921,7 +923,7 @@ export default function ServiceDetailPage() {
                                     }}
                                     className="cursor-pointer"
                                   >
-                                    {category.name}
+                                    <RenderHTML html={category.name} />
                                   </CommandItem>
                                 ))}
                               </CommandGroup>
@@ -955,7 +957,7 @@ export default function ServiceDetailPage() {
                             )}
                           >
                             {selectedParameter
-                              ? selectedParameter.name
+                              ? <RenderHTML html={selectedParameter.name} />
                               : 'Search parameter...'}
                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
@@ -997,7 +999,7 @@ export default function ServiceDetailPage() {
                                     }}
                                     className="cursor-pointer"
                                   >
-                                    {parameter.name}
+                                    <RenderHTML html={parameter.name} />
                                   </CommandItem>
                                 ))}
                               </CommandGroup>
@@ -1034,9 +1036,11 @@ export default function ServiceDetailPage() {
                               !field.value && 'text-muted-foreground'
                             )}
                           >
-                            {selectedMethod
-                              ? `${selectedMethod.code || ''} - ${selectedMethod.name}`
-                              : 'Search method...'}
+                            <span className="truncate">
+                              {selectedMethod
+                                ? <><span>{selectedMethod.code || ''} - </span><RenderHTML html={selectedMethod.name} /></>
+                                : 'Search method...'}
+                            </span>
                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </FormControl>
@@ -1077,7 +1081,7 @@ export default function ServiceDetailPage() {
                                     }}
                                     className="cursor-pointer"
                                   >
-                                    {method.code ? `${method.code} - ${method.name}` : method.name}
+                                    {method.code ? <><span>{method.code} - </span><RenderHTML html={method.name} /></> : <RenderHTML html={method.name} />}
                                   </CommandItem>
                                 ))}
                               </CommandGroup>
