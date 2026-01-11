@@ -1,5 +1,4 @@
 import { prisma } from '../config/database';
-import { ContractStatusService } from '@prisma/client';
 
 export interface PricingInfo {
   discount: number;
@@ -21,7 +20,7 @@ export async function findActiveContract(customerId: number) {
   return prisma.contract.findFirst({
     where: {
       customerId,
-      deletedAt: null,
+      trash: null,
       periodFrom: { lte: now },
       periodTo: { gte: now },
     },
@@ -105,7 +104,7 @@ export async function getBatchPricing(
   // Resolve each service
   for (const serviceId of serviceIds) {
     const key = `service:${serviceId}`;
-    if (contract.statusService === ContractStatusService.SELECTED) {
+    if (contract.statusService === 'selected') {
       const detail = detailMap.get(key);
       if (detail) {
         result.set(key, {
@@ -125,7 +124,7 @@ export async function getBatchPricing(
   // Resolve each package
   for (const packageId of packageIds) {
     const key = `package:${packageId}`;
-    if (contract.statusService === ContractStatusService.SELECTED) {
+    if (contract.statusService === 'selected') {
       const detail = detailMap.get(key);
       if (detail) {
         result.set(key, {
@@ -164,7 +163,7 @@ function resolvePricing(
     },
   };
 
-  if (contract.statusService === ContractStatusService.ALL) {
+  if (contract.statusService === 'all') {
     return basePricing;
   }
 

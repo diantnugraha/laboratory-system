@@ -2,9 +2,9 @@
 
 import { useMemo } from 'react';
 import { usePathname } from 'next/navigation';
-import { 
-  LayoutDashboard, 
-  FlaskConical, 
+import {
+  LayoutDashboard,
+  FlaskConical,
   ChevronDown,
   Beaker,
   Grid3X3,
@@ -18,7 +18,6 @@ import {
   Award,
   Users,
   Contact,
-  Settings,
   FileText,
   ClipboardList,
   UserCog,
@@ -448,22 +447,6 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-4 border-t border-sidebar-border">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild className="h-10">
-              <NavLink 
-                to="/settings" 
-                className="flex items-center gap-3 px-3 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-                activeClassName="bg-primary text-primary-foreground hover:bg-primary"
-              >
-                <Settings className="h-4 w-4" />
-                <span className="font-medium">Settings</span>
-              </NavLink>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
     </Sidebar>
   );
 }

@@ -41,7 +41,7 @@ export const unitSchema = z.object({
 
 // Service Schema
 export const serviceSchema = z.object({
-  code: z.string().min(1, "Code is required").max(255, "Code must be less than 255 characters"),
+  code: z.string().max(255, "Code must be less than 255 characters").optional(),
   name: z.string().min(1, "Name is required").max(255, "Name must be less than 255 characters"),
   categoryId: z.string().min(1, "Category is required"),
   parameterId: z.string().min(1, "Parameter is required"),
@@ -79,20 +79,26 @@ export const subcontractorSchema = z.object({
 // Package Schema
 export const packageSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
-  customerId: z.string().min(1, "Customer is required"),
-  groupPrice: z.boolean().default(false),
+  customerId: z.number().nullable().optional(),
+  group: z.boolean().default(false),
   description: z.string().max(500, "Description must be less than 500 characters").optional(),
-  services: z.coerce.number().min(0, "Services count must be at least 0"),
-  price: z.coerce.number().min(0, "Price must be positive"),
 });
 
-// Standard Schema
+// Standard Detail Item Schema
+export const standardDetailSchema = z.object({
+  serviceId: z.coerce.number().min(1, "Service is required"),
+  min: z.string().min(1, "Min value is required"),
+  max: z.string().min(1, "Max value is required"),
+  unit: z.string().min(1, "Unit is required"),
+});
+
+// Standard Schema (aligned with backend)
 export const standardSchema = z.object({
-  code: z.string().min(1, "Code is required").max(20, "Code must be less than 20 characters"),
-  name: z.string().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
-  version: z.string().min(1, "Version is required").max(20, "Version must be less than 20 characters"),
-  effectiveDate: z.string().min(1, "Effective date is required"),
-  status: statusSchema,
+  code: z.string().min(1, "Code is required").max(50, "Code must be less than 50 characters"),
+  name: z.string().min(1, "Name is required").max(255, "Name must be less than 255 characters"),
+  categoryId: z.coerce.number().optional().nullable(),
+  customerId: z.coerce.number().optional().nullable(),
+  standartDetails: z.array(standardDetailSchema).min(1, "At least one service is required"),
 });
 
 // Customer Schema
@@ -141,7 +147,39 @@ export const externalUserSchema = z.object({
   contact_id: z.string().optional(),
 });
 
+// Contract Detail Schema (for services/packages in SELECTED mode)
+export const contractDetailSchema = z.object({
+  serviceId: z.coerce.number().optional().nullable(),
+  packageId: z.coerce.number().optional().nullable(),
+  discountNormal: z.coerce.number().min(0).max(100).default(0),
+  discountUrgent: z.coerce.number().min(0).max(100).default(50),
+  discountVeryUrgent: z.coerce.number().min(0).max(100).default(100),
+}).refine((data) => data.serviceId || data.packageId, {
+  message: "Either service or package must be selected",
+});
+
+// Contract Schema
+export const contractSchema = z.object({
+  code: z.string().min(1, "Code is required").max(255, "Code must be less than 255 characters"),
+  customerId: z.coerce.number().min(1, "Customer is required"),
+  period: z.string().min(1, "Period is required").max(255, "Period must be less than 255 characters"),
+  periodFrom: z.string().min(1, "Period From is required"),
+  periodTo: z.string().min(1, "Period To is required"),
+  periodAlias: z.string().max(255).optional(),
+  normalDay: z.coerce.number().min(1, "Normal day is required"),
+  urgentDay: z.coerce.number().min(1, "Urgent day is required"),
+  veryUrgentDay: z.coerce.number().min(1, "Very urgent day is required"),
+  statusService: z.enum(["ALL", "SELECTED"]).default("ALL"),
+  discount: z.coerce.number().min(0).max(100).optional().default(0),
+  discountUrgent: z.coerce.number().min(0).max(100).optional().default(50),
+  discountVeryUrgent: z.coerce.number().min(0).max(100).optional().default(100),
+  remarks: z.string().max(255).optional(),
+  details: z.array(contractDetailSchema).optional(),
+});
+
 // Type exports
+export type ContractDetailFormData = z.infer<typeof contractDetailSchema>;
+export type ContractFormData = z.infer<typeof contractSchema>;
 export type MethodFormData = z.infer<typeof methodSchema>;
 export type MatrixFormData = z.infer<typeof matrixSchema>;
 export type ParameterFormData = z.infer<typeof parameterSchema>;
@@ -151,6 +189,7 @@ export type ServiceFormData = z.infer<typeof serviceSchema>;
 export type CategoryServiceFormData = z.infer<typeof categoryServiceSchema>;
 export type SubcontractorFormData = z.infer<typeof subcontractorSchema>;
 export type PackageFormData = z.infer<typeof packageSchema>;
+export type StandardDetailFormData = z.infer<typeof standardDetailSchema>;
 export type StandardFormData = z.infer<typeof standardSchema>;
 export type CustomerFormData = z.infer<typeof customerSchema>;
 export type ContactFormData = z.infer<typeof contactSchema>;

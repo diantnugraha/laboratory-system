@@ -9,6 +9,27 @@ import { getBatchPricing } from '../utils/contractPricingHelper';
 const packageRepo = new PackageRepository(prisma);
 
 /**
+ * Generate auto-incrementing package code (PKG-0001, PKG-0002, etc.)
+ */
+async function generatePackageCode(): Promise<string> {
+  const lastPackage = await (prisma as any).package.findFirst({
+    where: { trash: null },
+    orderBy: { id: 'desc' },
+    select: { code: true },
+  });
+
+  let nextNumber = 1;
+  if (lastPackage?.code) {
+    const match = lastPackage.code.match(/PKG-(\d+)/);
+    if (match) {
+      nextNumber = parseInt(match[1], 10) + 1;
+    }
+  }
+
+  return `PKG-${String(nextNumber).padStart(4, '0')}`;
+}
+
+/**
  * GET /api/packages - List with search & pagination
  * Supports query parameter ?select=true for dropdown/select options
  */
@@ -124,13 +145,16 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
     } = req.body;
 
     // Validate required fields
-    if (!code || !name) {
+    if (!name) {
       res.status(400).json({
         success: false,
-        message: 'Code and name are required'
+        message: 'Name is required'
       });
       return;
     }
+
+    // Auto-generate code if not provided
+    const finalCode = code || await generatePackageCode();
 
     // Validate service list
     if (!Array.isArray(serviceIds) || serviceIds.length === 0) {
@@ -141,9 +165,9 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check if code already exists via repository
-    const codeResult = await packageRepo.findByCode(code);
-    if (codeResult.isSuccess() && codeResult.getValue() !== null) {
+    // Check if code already exists via repository (returns boolean)
+    const codeResult = await packageRepo.findByCode(finalCode);
+    if (codeResult.isSuccess() && codeResult.getValue() === true) {
       res.status(409).json({
         success: false,
         message: 'Code already exists'
@@ -151,9 +175,9 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check if name already exists via repository
+    // Check if name already exists via repository (returns boolean)
     const nameResult = await packageRepo.findByName(name);
-    if (nameResult.isSuccess() && nameResult.getValue() !== null) {
+    if (nameResult.isSuccess() && nameResult.getValue() === true) {
       res.status(409).json({
         success: false,
         message: 'Name already exists'
@@ -219,7 +243,7 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
 
     // Create package via repository
     const result = await packageRepo.create({
-      code: code.trim(),
+      code: finalCode.trim(),
       name: name.trim(),
       description: description?.trim() || null,
       totalPrice: finalTotalPrice,
@@ -318,7 +342,7 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
     // Check if code is being changed and if it already exists
     if (code && code !== existingPackage.code) {
       const codeResult = await packageRepo.findByCode(code, id);
-      if (codeResult.isSuccess() && codeResult.getValue() !== null) {
+      if (codeResult.isSuccess() && codeResult.getValue() === true) {
         res.status(409).json({
           success: false,
           message: 'Code already exists'
@@ -330,7 +354,7 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
     // Check if name is being changed and if it already exists
     if (name && name !== existingPackage.name) {
       const nameResult = await packageRepo.findByName(name, id);
-      if (nameResult.isSuccess() && nameResult.getValue() !== null) {
+      if (nameResult.isSuccess() && nameResult.getValue() === true) {
         res.status(409).json({
           success: false,
           message: 'Name already exists'
@@ -577,7 +601,7 @@ export const getPackagesJson = async (req: Request, res: Response): Promise<void
       contract = await (prisma as any).contract.findFirst({
         where: {
           id: contractId,
-          deletedAt: null
+          trash: null
         },
         include: {
           details: true

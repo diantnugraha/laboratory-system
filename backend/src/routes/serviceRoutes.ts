@@ -12,6 +12,7 @@ import {
   getServiceStatistics,
   getServicesFetch,
   exportServiceReport,
+  getGeneratedCode,
 } from '../controllers/serviceController';
 import { authenticate, authorize } from '../middleware/auth';
 
@@ -26,6 +27,9 @@ router.get('/json-env', getServicesJsonEnv);
 router.get('/json2', getServicesDataTable);
 router.get('/json-top', getServiceStatistics);
 router.get('/fetch-json', getServicesFetch);
+
+// Generate code endpoint - for creating new services
+router.get('/generate-code', authorize(1, 2, 3), getGeneratedCode);
 
 // Report endpoint - SuperAdmin only
 router.get('/report', authorize(1), exportServiceReport);

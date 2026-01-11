@@ -189,8 +189,8 @@ export function DataTable<T extends { id: string | number }>({
                 </TableCell>
               </TableRow>
             ) : (
-              paginatedData.map((item) => (
-                <TableRow key={item.id}>
+              paginatedData.map((item, index) => (
+                <TableRow key={`${item.id}-${index}`}>
                   {columns.map((column) => (
                     <TableCell key={String(column.key)}>
                       {column.render

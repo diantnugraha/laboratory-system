@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from "react";
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -53,19 +53,19 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { RenderHTML } from "@/components/shared/RenderHTML";
-import { standardService } from "@/services/standardService";
+import { standardService, Standard } from "@/services/standardService";
 import { serviceService } from "@/services/serviceService";
 import { customerService } from "@/services/customerService";
 import { unitService } from "@/services/unitService";
 
 // Schema for Standard form
-const standardNewSchema = z.object({
+const standardEditSchema = z.object({
   code: z.string().min(1, "Code is required").max(50, "Code must be less than 50 characters"),
   name: z.string().min(1, "Name is required").max(255, "Name must be less than 255 characters"),
   customerId: z.string().optional(),
 });
 
-type StandardNewFormData = z.infer<typeof standardNewSchema>;
+type StandardEditFormData = z.infer<typeof standardEditSchema>;
 
 interface StandardItem {
   id: string;
@@ -98,10 +98,15 @@ interface UnitJsonItem {
   name: string;
 }
 
-export default function StandardNewPage() {
+export default function StandardEditPage() {
+  const params = useParams();
   const router = useRouter();
+  const id = typeof params.id === 'string' ? params.id : '';
+
+  const [loading, setLoading] = useState(true);
   const [standardItems, setStandardItems] = useState<StandardItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [initialCustomer, setInitialCustomer] = useState<CustomerJsonItem | null>(null);
 
   // Units
   const [units, setUnits] = useState<UnitJsonItem[]>([]);
@@ -119,8 +124,8 @@ export default function StandardNewPage() {
   const [filteredCustomers, setFilteredCustomers] = useState<CustomerJsonItem[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
 
-  const form = useForm<StandardNewFormData>({
-    resolver: zodResolver(standardNewSchema),
+  const form = useForm<StandardEditFormData>({
+    resolver: zodResolver(standardEditSchema),
     defaultValues: {
       code: "",
       name: "",
@@ -128,28 +133,83 @@ export default function StandardNewPage() {
     },
   });
 
-  // Fetch units on mount
+  // Fetch existing standard data and units on mount
   useEffect(() => {
-    const fetchUnits = async () => {
+    const fetchData = async () => {
+      if (!id) return;
       try {
+        setLoading(true);
         setLoadingUnits(true);
-        const response = await unitService.getJson({});
-        setUnits(response.items || response.data || []);
-      } catch (error) {
-        console.error('Error fetching units:', error);
-        toast.error('Failed to load units');
+
+        // Fetch standard and units in parallel
+        const [standardResponse, unitsResponse] = await Promise.all([
+          standardService.getById(id),
+          unitService.getJson({}),
+        ]);
+
+        const standard = standardResponse.data;
+
+        // Populate form
+        form.reset({
+          code: standard.code,
+          name: standard.name,
+          customerId: standard.customer_id ? String(standard.customer_id) : "",
+        });
+
+        // Set initial customer for display
+        if (standard.customer) {
+          const customerData: CustomerJsonItem = {
+            id: standard.customer_id!,
+            code: standard.customer.code,
+            customer_name: standard.customer.customer_name,
+          };
+          setInitialCustomer(customerData);
+          setFilteredCustomers([customerData]);
+        }
+
+        // Convert standartDetails to StandardItem format
+        const items: StandardItem[] = standard.standartDetails.map((detail, index) => ({
+          id: `existing-${detail.id || index}`,
+          serviceId: detail.service_id,
+          serviceName: detail.service?.name || '',
+          serviceCode: detail.service?.code || '',
+          parameter: detail.service?.parameter?.name || '',
+          method: detail.service?.method?.name || '',
+          min: detail.min,
+          max: detail.max,
+          unit: detail.unit,
+        }));
+        setStandardItems(items);
+
+        // Set units
+        setUnits(unitsResponse.items || unitsResponse.data || []);
+
+      } catch (error: any) {
+        console.error('Error fetching standard:', error);
+        if (error.response?.status === 404) {
+          toast.error('Standard not found');
+          router.push('/master/standard');
+        } else {
+          toast.error(error.response?.data?.message || 'Failed to fetch standard');
+        }
       } finally {
+        setLoading(false);
         setLoadingUnits(false);
       }
     };
-    fetchUnits();
-  }, []);
+    fetchData();
+  }, [id, form, router]);
 
   // Fetch customers on search
   useEffect(() => {
     const fetchCustomers = async () => {
       if (customerSearchQuery.length < 2) {
-        setFilteredCustomers([]);
+        // Keep initial customer in list if exists
+        if (initialCustomer) {
+          setFilteredCustomers([initialCustomer]);
+        } else {
+          setFilteredCustomers([]);
+        }
         return;
       }
 
@@ -172,7 +232,7 @@ export default function StandardNewPage() {
 
     const timeoutId = setTimeout(fetchCustomers, 300);
     return () => clearTimeout(timeoutId);
-  }, [customerSearchQuery]);
+  }, [customerSearchQuery, initialCustomer]);
 
   // Fetch services on search
   useEffect(() => {
@@ -202,8 +262,8 @@ export default function StandardNewPage() {
   const selectedCustomer = useMemo(() => {
     const customerId = form.watch("customerId");
     if (!customerId) return null;
-    return filteredCustomers.find((c) => String(c.id) === customerId);
-  }, [form.watch("customerId"), filteredCustomers]);
+    return filteredCustomers.find((c) => String(c.id) === customerId) || initialCustomer;
+  }, [form.watch("customerId"), filteredCustomers, initialCustomer]);
 
   const handleAddService = (service: ServiceJsonItem) => {
     // Check if service already added
@@ -243,7 +303,7 @@ export default function StandardNewPage() {
     );
   };
 
-  const onSubmit = async (data: StandardNewFormData) => {
+  const onSubmit = async (data: StandardEditFormData) => {
     if (standardItems.length === 0) {
       toast.error("Please add at least one service");
       return;
@@ -259,7 +319,7 @@ export default function StandardNewPage() {
 
     try {
       setIsSubmitting(true);
-      await standardService.create({
+      await standardService.update(id, {
         code: data.code,
         name: data.name,
         customerId: data.customerId ? parseInt(data.customerId) : null,
@@ -271,15 +331,23 @@ export default function StandardNewPage() {
           unit: item.unit,
         })),
       });
-      toast.success("Standard created successfully");
-      router.push("/master/standard");
+      toast.success("Standard updated successfully");
+      router.push(`/master/standard/${id}`);
     } catch (error: any) {
-      console.error('Error creating standard:', error);
-      toast.error(error.response?.data?.message || 'Failed to create standard');
+      console.error('Error updating standard:', error);
+      toast.error(error.response?.data?.message || 'Failed to update standard');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <Form {...form}>
@@ -291,21 +359,21 @@ export default function StandardNewPage() {
               type="button"
               variant="ghost"
               size="icon"
-              onClick={() => router.push("/master/standard")}
+              onClick={() => router.push(`/master/standard/${id}`)}
               className="h-9 w-9 hover:bg-muted transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="text-2xl font-semibold text-foreground">Add New Standard</h1>
-              <p className="text-sm text-muted-foreground mt-1">Create a new standard with services</p>
+              <h1 className="text-2xl font-semibold text-foreground">Edit Standard</h1>
+              <p className="text-sm text-muted-foreground mt-1">Update standard information</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push("/master/standard")}
+              onClick={() => router.push(`/master/standard/${id}`)}
               className="gap-2"
               disabled={isSubmitting}
             >
@@ -321,7 +389,7 @@ export default function StandardNewPage() {
               ) : (
                 <>
                   <Save className="h-4 w-4" />
-                  Save Standard
+                  Update Standard
                 </>
               )}
             </Button>
@@ -427,20 +495,35 @@ export default function StandardNewPage() {
                               </div>
                             ) : customerSearchQuery.length < 2 ? (
                               <>
-                                {field.value && (
+                                <CommandItem
+                                  value=""
+                                  onSelect={() => {
+                                    field.onChange("");
+                                    setCustomerSearchOpen(false);
+                                    setCustomerSearchQuery("");
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  None (No Customer)
+                                </CommandItem>
+                                {initialCustomer && (
                                   <CommandItem
-                                    value=""
+                                    key={initialCustomer.id}
+                                    value={String(initialCustomer.id)}
                                     onSelect={() => {
-                                      field.onChange("");
+                                      field.onChange(String(initialCustomer.id));
                                       setCustomerSearchOpen(false);
                                       setCustomerSearchQuery("");
                                     }}
                                     className="cursor-pointer"
                                   >
-                                    None (No Customer)
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">{initialCustomer.code} - {initialCustomer.customer_name}</span>
+                                      <span className="text-xs text-muted-foreground">Current selection</span>
+                                    </div>
                                   </CommandItem>
                                 )}
-                                <div className="py-6 text-center text-sm text-muted-foreground">
+                                <div className="py-4 text-center text-sm text-muted-foreground">
                                   Type at least 2 characters to search
                                 </div>
                               </>

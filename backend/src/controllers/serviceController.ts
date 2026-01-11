@@ -7,6 +7,45 @@ import { parseId, parseQueryParam, ApiResponse } from '../types';
 const serviceRepo = new ServiceRepository(prisma);
 
 /**
+ * Generate auto-incrementing service code (SVC.00001, SVC.00002, etc.)
+ */
+async function generateServiceCode(): Promise<string> {
+  const lastService = await (prisma as any).service.findFirst({
+    where: { trash: null },
+    orderBy: { id: 'desc' },
+    select: { code: true },
+  });
+
+  let nextNumber = 1;
+  if (lastService?.code) {
+    const match = lastService.code.match(/SVC\.(\d+)/);
+    if (match) {
+      nextNumber = parseInt(match[1], 10) + 1;
+    }
+  }
+
+  return `SVC.${String(nextNumber).padStart(5, '0')}`;
+}
+
+/**
+ * GET /api/services/generate-code - Get next auto-generated code
+ */
+export const getGeneratedCode = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const code = await generateServiceCode();
+    res.json({ success: true, data: { code } });
+  } catch (error) {
+    console.error('generateCode error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate code',
+      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
+    });
+  }
+};
+
+/**
  * GET /api/services - List dengan search & pagination
  */
 export const getAllServices = async (req: Request, res: Response): Promise<void> => {
@@ -545,7 +584,7 @@ export const _getContractPricing = async (serviceId: number, contractId: number)
   try {
     // @ts-ignore - Contract may not exist
     const contract = await prisma.contract.findFirst({
-      where: { id: contractId, deletedAt: null },
+      where: { id: contractId, trash: null },
       include: {
         // @ts-ignore
         contractDetails: {
@@ -682,7 +721,7 @@ const getContractPricingBatch = async (serviceIds: number[], contractId: number)
   try {
     // @ts-ignore - Contract may not exist
     const contract = await prisma.contract.findFirst({
-      where: { id: contractId, deletedAt: null },
+      where: { id: contractId, trash: null },
       include: {
         // @ts-ignore
         contractDetails: {

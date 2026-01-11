@@ -1,11 +1,13 @@
 'use client';
 
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Edit, Trash2, Package, DollarSign, ListChecks } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, Package, DollarSign, ListChecks, Loader2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -26,14 +28,30 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { packages, services, customers } from "@/data/masterData";
+import { packageService, Package as PackageType } from "@/services/packageService";
+import { serviceService, Service } from "@/services/serviceService";
 
-const formatCurrency = (value: number) => {
+const formatCurrency = (value: number | null | undefined) => {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(value);
+  }).format(value || 0);
+};
+
+// Helper to parse service list
+const parseServiceList = (listService: string | null | undefined): number[] => {
+  if (!listService || typeof listService !== 'string') {
+    return [];
+  }
+  const trimmed = listService.trim().replace(/^,+|,+$/g, '');
+  if (!trimmed) {
+    return [];
+  }
+  return trimmed
+    .split(',')
+    .map((id) => parseInt(id.trim(), 10))
+    .filter((id) => !isNaN(id) && id > 0);
 };
 
 export default function PackageDetailPage() {
@@ -41,12 +59,71 @@ export default function PackageDetailPage() {
   const router = useRouter();
   const id = typeof params.id === 'string' ? params.id : '';
 
-  const pkg = packages.find((p) => p.id === id);
+  const [pkg, setPkg] = useState<PackageType | null>(null);
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
-  const handleDelete = () => {
-    toast.success("Package deleted successfully");
-    router.push("/master/package");
+  const fetchPackage = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await packageService.getById(id);
+      if (response.success && response.data) {
+        setPkg(response.data);
+
+        // Parse service IDs and fetch service details
+        const serviceIds = response.data.serviceIds || parseServiceList(response.data.listService);
+        if (serviceIds.length > 0) {
+          // Fetch services in batch
+          const servicesPromises = serviceIds.map(async (serviceId) => {
+            try {
+              const serviceResponse = await serviceService.getById(serviceId);
+              return serviceResponse.data;
+            } catch {
+              return null;
+            }
+          });
+          const fetchedServices = await Promise.all(servicesPromises);
+          setServices(fetchedServices.filter((s): s is Service => s !== null));
+        }
+      }
+    } catch (error: any) {
+      console.error('Error fetching package:', error);
+      toast.error(error.response?.data?.message || 'Failed to fetch package');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (id) {
+      fetchPackage();
+    }
+  }, [id, fetchPackage]);
+
+  const handleDelete = async () => {
+    try {
+      setDeleting(true);
+      const response = await packageService.delete(id);
+      if (response.success) {
+        toast.success("Package deleted successfully");
+        router.push("/master/package");
+      }
+    } catch (error: any) {
+      console.error('Error deleting package:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete package');
+    } finally {
+      setDeleting(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!pkg) {
     return (
@@ -55,10 +132,6 @@ export default function PackageDetailPage() {
       </div>
     );
   }
-
-  // Mock customer and services
-  const customer = customers[0];
-  const mockServices = services.slice(0, pkg.services);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -91,8 +164,12 @@ export default function PackageDetailPage() {
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive" className="gap-2">
-                <Trash2 className="h-4 w-4" />
+              <Button variant="destructive" className="gap-2" disabled={deleting}>
+                {deleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
                 Delete
               </Button>
             </AlertDialogTrigger>
@@ -126,35 +203,50 @@ export default function PackageDetailPage() {
         <CardContent className="pt-6 space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Code</label>
+              <Input value={pkg.code} disabled className="h-10 bg-muted/50 border-muted" />
+            </div>
+            <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Name Package</label>
               <Input value={pkg.name} disabled className="h-10 bg-muted/50 border-muted" />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Customer</label>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                <Users className="h-3.5 w-3.5" />
+                Customer
+              </label>
               <Input
-                value={customer ? `${customer.code} - ${customer.name}` : "-"}
+                value={pkg.customer ? `${pkg.customer.code} - ${pkg.customer.customer_name}` : "-"}
                 disabled
                 className="h-10 bg-muted/50 border-muted"
               />
             </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Group Price</label>
+              <div className="h-10 flex items-center">
+                <Badge variant={pkg.group === 1 ? "default" : "secondary"}>
+                  {pkg.group === 1 ? "Yes" : "No"}
+                </Badge>
+              </div>
+            </div>
             <div className="space-y-2 sm:col-span-2">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</label>
               <Textarea
-                value={`Description for ${pkg.name}`}
+                value={pkg.description || "-"}
                 disabled
                 rows={3}
                 className="bg-muted/50 border-muted resize-none"
               />
             </div>
           </div>
-          
+
           <div className="p-4 rounded-lg bg-primary/5 hover:bg-primary/10 transition-colors border border-primary/20 inline-flex items-center gap-4">
             <div className="p-2 rounded-md bg-primary/10">
               <DollarSign className="h-5 w-5 text-primary" />
             </div>
             <div className="space-y-0.5">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Price</p>
-              <p className="text-xl font-bold text-primary">{formatCurrency(pkg.price)}</p>
+              <p className="text-xl font-bold text-primary">{formatCurrency(pkg.totalPrice || 0)}</p>
             </div>
           </div>
         </CardContent>
@@ -169,7 +261,7 @@ export default function PackageDetailPage() {
             </div>
             Services
             <span className="text-sm font-normal text-muted-foreground">
-              ({mockServices.length} items)
+              ({services.length} items)
             </span>
           </CardTitle>
         </CardHeader>
@@ -186,7 +278,7 @@ export default function PackageDetailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mockServices.length === 0 ? (
+                {services.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="h-32 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground py-8">
@@ -195,13 +287,13 @@ export default function PackageDetailPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  mockServices.map((service, index) => (
+                  services.map((service, index) => (
                     <TableRow key={service.id} className="border-b hover:bg-muted/50 transition-colors">
                       <TableCell className="text-center px-2 py-3 font-medium text-muted-foreground">{index + 1}</TableCell>
                       <TableCell className="font-semibold px-2 py-3 text-primary">{service.code}</TableCell>
-                      <TableCell className="px-2 py-3">{service.name}</TableCell>
-                      <TableCell className="px-2 py-3 text-muted-foreground">{service.parameter}</TableCell>
-                      <TableCell className="text-right px-2 py-3 font-medium">{formatCurrency(service.price)}</TableCell>
+                      <TableCell className="px-2 py-3" dangerouslySetInnerHTML={{ __html: service.name }} />
+                      <TableCell className="px-2 py-3 text-muted-foreground" dangerouslySetInnerHTML={{ __html: service.parameter?.name || '-' }} />
+                      <TableCell className="text-right px-2 py-3 font-medium">{formatCurrency(service.price || 0)}</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -215,12 +307,12 @@ export default function PackageDetailPage() {
               <div className="flex items-center gap-6">
                 <div className="space-y-0.5">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Services</p>
-                  <p className="text-lg font-semibold">{mockServices.length}</p>
+                  <p className="text-lg font-semibold">{services.length}</p>
                 </div>
                 <div className="h-8 w-px bg-border" />
                 <div className="space-y-0.5">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Price</p>
-                  <p className="text-lg font-bold text-primary">{formatCurrency(pkg.price)}</p>
+                  <p className="text-lg font-bold text-primary">{formatCurrency(pkg.totalPrice || 0)}</p>
                 </div>
               </div>
             </div>
@@ -230,11 +322,3 @@ export default function PackageDetailPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

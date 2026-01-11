@@ -493,11 +493,11 @@ model Contract {
   periodFrom        DateTime             @map("periode_from") @db.Date
   periodTo          DateTime             @map("periode_to") @db.Date
   periodAlias       String?              @map("period_alias") @db.VarChar(255)
-  documents         Json?                @map("contract_document")
+  documents         String?              @map("contract_document") @db.Text
   normalDay         Int                  @map("normal_day")
   urgentDay         Int                  @map("urgent_day")
   veryUrgentDay     Int                  @map("very_urgent_day")
-  statusService     ContractStatusService @default(ALL) @map("status_service")
+  statusService     String               @map("status_service")
   discount          Float?               @default(0)
   discountUrgent    Int?                 @default(50) @map("dsc_urgent")
   discountVeryUrgent Int?                @default(100) @map("dsc_very_urgent")
@@ -507,14 +507,14 @@ model Contract {
   updatedAt         DateTime?           @updatedAt @map("updated_at") @db.DateTime(0)
   createdBy         Int?                 @map("created_by")
   updatedBy         Int?                 @map("updated_by")
-  deletedAt         DateTime?            @map("deleted_at") @db.DateTime(0)
+  trash             Int?
 
   customer          Customer             @relation(fields: [customerId], references: [id])
   details           ContractDetail[]
 
   @@index([customerId])
   @@index([periodTo])
-  @@index([deletedAt])
+  @@index([trash])
   @@index([code])
   @@map("contract")
 }

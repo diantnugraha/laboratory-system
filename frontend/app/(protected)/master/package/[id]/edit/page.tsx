@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,6 +18,7 @@ import {
   Users,
   ToggleLeft,
   Search,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,7 +48,6 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { packageSchema, PackageFormData } from "@/lib/schemas";
-import { services, packages, customers, Service } from "@/data/masterData";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -68,26 +68,70 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { packageService, Package as PackageType } from "@/services/packageService";
+import { customerService } from "@/services/customerService";
+import { serviceService } from "@/services/serviceService";
 
-interface PackageService {
+// Simplified service type for search results from getJson
+interface ServiceSearchItem {
+  id: number;
+  code: string;
+  name: string;
+  parameter?: { id: number; name: string } | null;
+  price: { value: number; currency: string } | number;
+}
+
+// Helper to extract price value from service (handles both object and number formats)
+const getServicePrice = (price: unknown): number => {
+  if (price === null || price === undefined) return 0;
+  if (typeof price === 'number') return price;
+  if (typeof price === 'object' && price !== null && 'value' in price) {
+    const val = (price as { value: number }).value;
+    return typeof val === 'number' ? val : 0;
+  }
+  return 0;
+};
+
+interface PackageServiceItem {
   id: string;
-  serviceId: string;
+  serviceId: number;
   code: string;
   name: string;
   parameter: string;
   price: number;
 }
 
-const formatCurrency = (value: number) => {
+interface CustomerOption {
+  id: number;
+  code: string;
+  customer_name: string;
+}
+
+const formatCurrency = (value: number | null | undefined) => {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(value);
+  }).format(value || 0);
+};
+
+// Helper to parse service list
+const parseServiceList = (listService: string | null | undefined): number[] => {
+  if (!listService || typeof listService !== 'string') {
+    return [];
+  }
+  const trimmed = listService.trim().replace(/^,+|,+$/g, '');
+  if (!trimmed) {
+    return [];
+  }
+  return trimmed
+    .split(',')
+    .map((id) => parseInt(id.trim(), 10))
+    .filter((id) => !isNaN(id) && id > 0);
 };
 
 interface SortableRowProps {
-  service: PackageService;
+  service: PackageServiceItem;
   index: number;
   onRemove: (id: string) => void;
 }
@@ -129,9 +173,9 @@ const SortableRow = React.forwardRef<HTMLTableRowElement, SortableRowProps>(
         </td>
         <td className="text-center px-2 py-3 font-medium text-muted-foreground">{index + 1}</td>
         <td className="font-semibold px-2 py-3 text-primary">{service.code}</td>
-        <td className="px-2 py-3">{service.name}</td>
-        <td className="px-2 py-3 text-muted-foreground">{service.parameter}</td>
-        <td className="text-right px-2 py-3 font-medium">{formatCurrency(service.price)}</td>
+        <td className="px-2 py-3" dangerouslySetInnerHTML={{ __html: service.name }} />
+        <td className="px-2 py-3 text-muted-foreground" dangerouslySetInnerHTML={{ __html: service.parameter }} />
+        <td className="text-right px-2 py-3 font-medium">{formatCurrency(service.price || 0)}</td>
         <td className="w-10 px-2 py-3">
           <Button
             type="button"
@@ -153,25 +197,151 @@ export default function PackageEditPage() {
   const params = useParams();
   const router = useRouter();
   const id = typeof params.id === 'string' ? params.id : '';
-  const [packageServices, setPackageServices] = useState<PackageService[]>([]);
+
+  const [pkg, setPkg] = useState<PackageType | null>(null);
+  const [packageServices, setPackageServices] = useState<PackageServiceItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Customer search state
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
 
-  // Find package data
-  const pkg = packages.find((p) => p.id === id);
+  // Service search state
+  const [availableServices, setAvailableServices] = useState<ServiceSearchItem[]>([]);
+  const [loadingServices, setLoadingServices] = useState(false);
 
   const form = useForm<PackageFormData>({
     resolver: zodResolver(packageSchema),
     defaultValues: {
       name: "",
-      customerId: "",
-      groupPrice: false,
+      customerId: null,
+      group: false,
       description: "",
-      services: 0,
-      price: 0,
     },
   });
+
+  // Fetch package data
+  const fetchPackage = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await packageService.getById(id);
+      if (response.success && response.data) {
+        const packageData = response.data;
+        setPkg(packageData);
+
+        // Set form values
+        form.reset({
+          name: packageData.name,
+          customerId: packageData.customerId,
+          group: packageData.group === 1,
+          description: packageData.description || "",
+        });
+
+        // If customer exists, add to customers list for display
+        if (packageData.customer) {
+          setCustomers([{
+            id: packageData.customer.id,
+            code: packageData.customer.code,
+            customer_name: packageData.customer.customer_name,
+          }]);
+        }
+
+        // Parse service IDs and fetch service details
+        const serviceIds = packageData.serviceIds || parseServiceList(packageData.listService);
+        if (serviceIds.length > 0) {
+          const servicesPromises = serviceIds.map(async (serviceId, index) => {
+            try {
+              const serviceResponse = await serviceService.getById(serviceId);
+              const service = serviceResponse.data;
+              return {
+                id: `pkg-svc-${index}`,
+                serviceId: service.id,
+                code: service.code,
+                name: service.name,
+                parameter: service.parameter?.name || '-',
+                price: service.price || 0,
+              };
+            } catch {
+              return null;
+            }
+          });
+          const fetchedServices = await Promise.all(servicesPromises);
+          setPackageServices(fetchedServices.filter((s): s is PackageServiceItem => s !== null));
+        }
+      }
+    } catch (error: any) {
+      console.error('Error fetching package:', error);
+      toast.error(error.response?.data?.message || 'Failed to fetch package');
+    } finally {
+      setLoading(false);
+    }
+  }, [id, form]);
+
+  useEffect(() => {
+    if (id) {
+      fetchPackage();
+    }
+  }, [id, fetchPackage]);
+
+  // Fetch customers when search query changes
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      if (customerSearchQuery.length < 2) {
+        return;
+      }
+
+      try {
+        setLoadingCustomers(true);
+        const response = await customerService.getJson({ q: customerSearchQuery });
+        const items = response.items || response.data || [];
+        setCustomers(items.map((c: any) => ({
+          id: c.id,
+          code: c.code,
+          customer_name: c.customer_name,
+        })));
+      } catch (error) {
+        console.error('Error fetching customers:', error);
+      } finally {
+        setLoadingCustomers(false);
+      }
+    };
+
+    const debounce = setTimeout(fetchCustomers, 300);
+    return () => clearTimeout(debounce);
+  }, [customerSearchQuery]);
+
+  // Fetch services when search query changes
+  useEffect(() => {
+    const fetchServices = async () => {
+      if (searchQuery.length < 2) {
+        setAvailableServices([]);
+        return;
+      }
+
+      try {
+        setLoadingServices(true);
+        const response = await serviceService.getJson({ q: searchQuery });
+        const items = response.items || response.data || [];
+        setAvailableServices(items);
+      } catch (error) {
+        console.error('Error fetching services:', error);
+      } finally {
+        setLoadingServices(false);
+      }
+    };
+
+    const debounce = setTimeout(fetchServices, 300);
+    return () => clearTimeout(debounce);
+  }, [searchQuery]);
+
+  const selectedCustomer = useMemo(() => {
+    const customerId = form.watch("customerId");
+    return customers.find((c) => c.id === customerId);
+  }, [form.watch("customerId"), customers]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -181,77 +351,15 @@ export default function PackageEditPage() {
   );
 
   // Filter available services (not already added)
-  const availableServices = useMemo(() => {
-    const addedIds = new Set(packageServices.map((ps) => ps.serviceId));
-    return services.filter((s) => s.status === "Active" && !addedIds.has(s.id));
-  }, [packageServices]);
-
-  // Filter by search query
   const filteredServices = useMemo(() => {
-    if (!searchQuery) return availableServices;
-    const query = searchQuery.toLowerCase();
-    return availableServices.filter(
-      (s) =>
-        s.code.toLowerCase().includes(query) ||
-        s.name.toLowerCase().includes(query) ||
-        s.parameter.toLowerCase().includes(query)
-    );
-  }, [availableServices, searchQuery]);
-
-  // Customer search
-  const filteredCustomers = useMemo(() => {
-    if (customerSearchQuery.length < 2) return [];
-    const query = customerSearchQuery.toLowerCase();
-    return customers.filter(
-      (c) =>
-        c.status === "Contract" &&
-        (c.code.toLowerCase().includes(query) ||
-          c.name.toLowerCase().includes(query))
-    );
-  }, [customerSearchQuery]);
-
-  const selectedCustomer = useMemo(() => {
-    const customerId = form.watch("customerId");
-    return customers.find((c) => c.id === customerId);
-  }, [form.watch("customerId")]);
+    const addedIds = new Set(packageServices.map((ps) => ps.serviceId));
+    return availableServices.filter((s) => !addedIds.has(s.id));
+  }, [packageServices, availableServices]);
 
   // Calculate totals
   const totalPrice = useMemo(() => {
     return packageServices.reduce((sum, s) => sum + s.price, 0);
   }, [packageServices]);
-
-  useEffect(() => {
-    form.setValue("services", packageServices.length);
-    form.setValue("price", totalPrice);
-  }, [packageServices, totalPrice, form]);
-
-  // Initialize mock data
-  useEffect(() => {
-    if (pkg) {
-      const mockCustomerId = customers[0]?.id || "";
-      
-      form.reset({
-        name: pkg.name,
-        customerId: mockCustomerId,
-        groupPrice: false,
-        description: `Description for ${pkg.name}`,
-        services: pkg.services,
-        price: pkg.price,
-      });
-
-      const mockServices: PackageService[] = services
-        .slice(0, pkg.services)
-        .map((s, idx) => ({
-          id: `pkg-svc-${idx}`,
-          serviceId: s.id,
-          code: s.code,
-          name: s.name,
-          parameter: s.parameter,
-          price: s.price,
-        }));
-      setPackageServices(mockServices);
-    }
-  }, [pkg, form]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -264,14 +372,14 @@ export default function PackageEditPage() {
     }
   };
 
-  const handleAddService = (service: Service) => {
-    const newPackageService: PackageService = {
+  const handleAddService = (service: ServiceSearchItem) => {
+    const newPackageService: PackageServiceItem = {
       id: `pkg-svc-${Date.now()}`,
       serviceId: service.id,
       code: service.code,
       name: service.name,
-      parameter: service.parameter,
-      price: service.price,
+      parameter: service.parameter?.name || '-',
+      price: getServicePrice(service.price),
     };
     setPackageServices((prev) => [...prev, newPackageService]);
     setSearchQuery("");
@@ -281,11 +389,46 @@ export default function PackageEditPage() {
     setPackageServices((prev) => prev.filter((s) => s.id !== id));
   };
 
-  const onSubmit = (data: PackageFormData) => {
-    console.log("Form data:", { ...data, packageServices });
-    toast.success("Package updated successfully");
-    router.push(`/master/package/${id}`);
+  const onSubmit = async (data: PackageFormData) => {
+    // Validate services
+    if (packageServices.length === 0) {
+      toast.error("At least one service is required");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      const payload = {
+        name: data.name,
+        description: data.description || null,
+        serviceIds: packageServices.map((s) => s.serviceId),
+        customer_id: data.customerId || null,
+        group: data.group ? 1 : 0,
+      };
+
+      const response = await packageService.update(id, payload);
+
+      if (response.success) {
+        toast.success("Package updated successfully");
+        router.push(`/master/package/${id}`);
+      }
+    } catch (error: any) {
+      console.error('Error updating package:', error);
+      const message = error.response?.data?.message || 'Failed to update package';
+      toast.error(message);
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!pkg) {
     return (
@@ -323,12 +466,17 @@ export default function PackageEditPage() {
               variant="outline"
               onClick={() => router.push(`/master/package/${id}`)}
               className="gap-2"
+              disabled={submitting}
             >
               <X className="h-4 w-4" />
               Cancel
             </Button>
-            <Button type="submit" className="gap-2">
-              <Save className="h-4 w-4" />
+            <Button type="submit" className="gap-2" disabled={submitting}>
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
               Save Changes
             </Button>
           </div>
@@ -375,7 +523,7 @@ export default function PackageEditPage() {
                   <FormItem className="space-y-2">
                     <FormLabel className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                       <Users className="h-3.5 w-3.5" />
-                      Customer
+                      Customer (Optional)
                     </FormLabel>
                     <Popover open={customerSearchOpen} onOpenChange={setCustomerSearchOpen}>
                       <PopoverTrigger asChild>
@@ -389,7 +537,7 @@ export default function PackageEditPage() {
                             )}
                           >
                             {selectedCustomer
-                              ? `${selectedCustomer.code} - ${selectedCustomer.name}`
+                              ? `${selectedCustomer.code} - ${selectedCustomer.customer_name}`
                               : "Search customer..."}
                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
@@ -412,14 +560,19 @@ export default function PackageEditPage() {
                               <div className="py-6 text-center text-sm text-muted-foreground">
                                 Type at least 2 characters to search
                               </div>
-                            ) : filteredCustomers.length === 0 ? (
+                            ) : loadingCustomers ? (
+                              <div className="py-6 text-center text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
+                                Searching...
+                              </div>
+                            ) : customers.length === 0 ? (
                               <CommandEmpty>No customer found</CommandEmpty>
                             ) : (
                               <CommandGroup>
-                                {filteredCustomers.map((customer) => (
+                                {customers.map((customer) => (
                                   <CommandItem
                                     key={customer.id}
-                                    value={customer.id}
+                                    value={String(customer.id)}
                                     onSelect={() => {
                                       field.onChange(customer.id);
                                       setCustomerSearchOpen(false);
@@ -428,8 +581,7 @@ export default function PackageEditPage() {
                                     className="cursor-pointer"
                                   >
                                     <div className="flex flex-col">
-                                      <span className="font-medium">{customer.code} - {customer.name}</span>
-                                      <span className="text-xs text-muted-foreground">{customer.industry}</span>
+                                      <span className="font-medium">{customer.code} - {customer.customer_name}</span>
                                     </div>
                                   </CommandItem>
                                 ))}
@@ -448,7 +600,7 @@ export default function PackageEditPage() {
             {/* Group Price Checkbox */}
             <FormField
               control={form.control}
-              name="groupPrice"
+              name="group"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 bg-muted/20">
                   <FormControl>
@@ -492,7 +644,7 @@ export default function PackageEditPage() {
                 </FormItem>
               )}
             />
-            
+
             <div className="p-4 rounded-lg bg-primary/5 hover:bg-primary/10 transition-colors border border-primary/20 inline-flex items-center gap-4">
               <div className="p-2 rounded-md bg-primary/10">
                 <DollarSign className="h-5 w-5 text-primary" />
@@ -588,9 +740,14 @@ export default function PackageEditPage() {
                       className="flex h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                     />
                   </div>
-                  {searchQuery && (
+                  {searchQuery.length >= 2 && (
                     <CommandList className="max-h-[200px] border-b">
-                      {filteredServices.length === 0 ? (
+                      {loadingServices ? (
+                        <div className="py-6 text-center text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
+                          Searching...
+                        </div>
+                      ) : filteredServices.length === 0 ? (
                         <CommandEmpty>No services found.</CommandEmpty>
                       ) : (
                         <CommandGroup>
@@ -605,10 +762,10 @@ export default function PackageEditPage() {
                                 <div className="min-w-0 flex-1">
                                   <span className="font-medium text-primary">{service.code}</span>
                                   <span className="mx-2">-</span>
-                                  <span className="truncate">{service.name}</span>
+                                  <span className="truncate" dangerouslySetInnerHTML={{ __html: service.name }} />
                                 </div>
                                 <span className="text-muted-foreground text-sm whitespace-nowrap">
-                                  {formatCurrency(service.price)}
+                                  {formatCurrency(getServicePrice(service.price))}
                                 </span>
                               </div>
                             </CommandItem>
@@ -643,4 +800,3 @@ export default function PackageEditPage() {
     </Form>
   );
 }
-

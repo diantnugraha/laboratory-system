@@ -915,7 +915,7 @@ async function getActiveContract(customerId: number): Promise<any | null> {
     const contract = await prisma.contract.findFirst({
       where: {
         customerId: customerId,
-        deletedAt: null,
+        trash: null,
         periodFrom: { lte: now },
         periodTo: { gte: now }
       },

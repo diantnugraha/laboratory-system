@@ -88,6 +88,8 @@ export function ServiceFormDialog({ open, onOpenChange, onSuccess }: ServiceForm
 
   const [submitting, setSubmitting] = useState(false);
   const [descriptionRef, setDescriptionRef] = useState<HTMLTextAreaElement | null>(null);
+  const [generatedCode, setGeneratedCode] = useState<string>("");
+  const [codeLoading, setCodeLoading] = useState(false);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -110,6 +112,29 @@ export function ServiceFormDialog({ open, onOpenChange, onSuccess }: ServiceForm
       usePc: 0,
     },
   });
+
+  // Fetch auto-generated code when dialog opens
+  useEffect(() => {
+    const fetchGeneratedCode = async () => {
+      if (!open) return;
+
+      try {
+        setCodeLoading(true);
+        const response = await serviceService.getGeneratedCode();
+        setGeneratedCode(response.data.code);
+        form.setValue("code", response.data.code);
+      } catch (error) {
+        console.error('Failed to generate code:', error);
+        toast.error('Failed to generate service code');
+      } finally {
+        setCodeLoading(false);
+      }
+    };
+
+    if (open) {
+      fetchGeneratedCode();
+    }
+  }, [open, form]);
 
   // Fetch categories
   useEffect(() => {
@@ -300,6 +325,7 @@ export function ServiceFormDialog({ open, onOpenChange, onSuccess }: ServiceForm
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
       form.reset();
+      setGeneratedCode("");
       setCategorySearchQuery("");
       setParameterSearchQuery("");
       setMethodSearchQuery("");
@@ -325,11 +351,17 @@ export function ServiceFormDialog({ open, onOpenChange, onSuccess }: ServiceForm
               <FormItem>
                 <FormLabel>Code</FormLabel>
                 <FormControl>
-                  <Input 
-                    placeholder="SRV-001" 
-                    {...field}
-                    className="h-10 bg-muted/30 hover:bg-muted/50 focus:bg-background transition-colors border-muted"
-                  />
+                  <div className="relative">
+                    <Input
+                      {...field}
+                      value={generatedCode || field.value}
+                      disabled
+                      className="h-10 bg-muted/50 border-muted cursor-not-allowed pr-8"
+                    />
+                    {codeLoading && (
+                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
                 </FormControl>
                 <FormMessage />
               </FormItem>

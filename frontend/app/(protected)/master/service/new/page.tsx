@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from 'next/navigation';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,6 +16,7 @@ import {
   Calendar,
   Bold,
   Italic,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,10 +61,11 @@ import {
   Parameter,
   Method,
 } from "@/data/masterData";
+import { serviceService } from "@/services/serviceService";
 
 // Extended service schema for the new page
 const serviceNewSchema = z.object({
-  code: z.string().min(1, "Code is required").max(20, "Code must be less than 20 characters"),
+  code: z.string().max(20, "Code must be less than 20 characters").optional(),
   name: z.string().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
   categoryServiceId: z.string().min(1, "Category Service is required"),
   parameterId: z.string().min(1, "Parameter is required"),
@@ -201,6 +203,8 @@ function SearchableSelect<T extends { id: string; name: string; code?: string }>
 export default function ServiceNewPage() {
   const router = useRouter();
   const [descriptionRef, setDescriptionRef] = useState<HTMLTextAreaElement | null>(null);
+  const [generatedCode, setGeneratedCode] = useState<string>("");
+  const [codeLoading, setCodeLoading] = useState(true);
 
   const form = useForm<ServiceNewFormData>({
     resolver: zodResolver(serviceNewSchema),
@@ -222,6 +226,23 @@ export default function ServiceNewPage() {
       description: "",
     },
   });
+
+  // Fetch auto-generated code on mount
+  useEffect(() => {
+    const fetchGeneratedCode = async () => {
+      try {
+        const response = await serviceService.getGeneratedCode();
+        setGeneratedCode(response.data.code);
+        form.setValue("code", response.data.code);
+      } catch (error) {
+        console.error('Failed to generate code:', error);
+        toast.error('Failed to generate service code');
+      } finally {
+        setCodeLoading(false);
+      }
+    };
+    fetchGeneratedCode();
+  }, [form]);
 
   const insertSymbol = (symbol: string) => {
     if (descriptionRef) {
@@ -317,11 +338,17 @@ export default function ServiceNewPage() {
                         Code
                       </FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="SVC-001"
-                          {...field}
-                          className="h-10 bg-muted/30 hover:bg-muted/50 focus:bg-background transition-colors border-muted"
-                        />
+                        <div className="relative">
+                          <Input
+                            {...field}
+                            value={generatedCode || field.value}
+                            disabled
+                            className="h-10 bg-muted/50 border-muted cursor-not-allowed pr-8"
+                          />
+                          {codeLoading && (
+                            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                          )}
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>

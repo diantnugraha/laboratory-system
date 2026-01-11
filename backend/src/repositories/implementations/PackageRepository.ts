@@ -212,9 +212,19 @@ export class PackageRepository implements IPackageRepository {
       if (data.promotionTo !== undefined) updateData.promotionTo = data.promotionTo;
       if (data.percentDiscount !== undefined) updateData.percentDiscount = data.percentDiscount;
       if (data.listService !== undefined) updateData.listService = data.listService;
-      if (data.customerId !== undefined) updateData.customerId = data.customerId;
       if (data.group !== undefined) updateData.group = data.group;
-      if (data.updatedBy !== undefined) updateData.updatedBy = data.updatedBy;
+      if (data.updatedBy !== undefined) updateData.updated_by = data.updatedBy;
+
+      // Handle customer relation properly for Prisma
+      if (data.customerId !== undefined) {
+        if (data.customerId === null) {
+          // Disconnect customer relation
+          updateData.customer = { disconnect: true };
+        } else {
+          // Connect to customer
+          updateData.customer = { connect: { id: data.customerId } };
+        }
+      }
 
       const packageData = await (this.prisma as any).package.update({
         where: { id },

@@ -12,8 +12,7 @@ interface BreadcrumbItem {
 // Route configuration for breadcrumb generation
 const routeConfig: Record<string, { section: string; parent?: string; label: string; basePath?: string }> = {
   '/': { section: 'Overview', label: 'Dashboard' },
-  '/settings': { section: 'Settings', label: 'Settings' },
-  
+
   // Master Data - Service Catalog
   '/master/method': { section: 'Master Data', parent: 'Service Catalog', label: 'Method' },
   '/master/matrix': { section: 'Master Data', parent: 'Service Catalog', label: 'Matrix' },

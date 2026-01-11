@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Edit, Trash2, FileText, Layers, Users } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, FileText, Layers, Users, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,61 +25,61 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { standards, customers, services, packages, units, methods } from "@/data/masterData";
+import { standardService, Standard } from "@/services/standardService";
+import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
-
-// Mock data for standard items (in real app, would be fetched from API)
-interface StandardItem {
-  id: string;
-  sourceType: "service" | "package";
-  sourceId: string;
-  parameter: string;
-  method: string;
-  matrix: string;
-  matrixId: string;
-  minValue: string;
-  maxValue: string;
-  unitId: string;
-  unitName: string;
-}
-
-const generateMockItems = (standardId: string): StandardItem[] => {
-  // Generate mock items based on standard id
-  const mockServices = services.slice(0, 3);
-  return mockServices.map((service, idx) => {
-    const method = methods.find((m) => m.id === service.methodId);
-    const unit = units[idx % units.length];
-    return {
-      id: `item-${standardId}-${idx}`,
-      sourceType: "service" as const,
-      sourceId: service.id,
-      parameter: service.parameter,
-      method: service.method,
-      matrix: method?.matrix || "",
-      matrixId: method?.matrixId || "",
-      minValue: String((idx + 1) * 10),
-      maxValue: String((idx + 1) * 100),
-      unitId: unit.id,
-      unitName: unit.name,
-    };
-  });
-};
 
 export default function StandardDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = typeof params.id === 'string' ? params.id : '';
-  
-  const standard = standards.find((s) => s.id === id);
-  const standardItems = useMemo(() => id ? generateMockItems(id) : [], [id]);
-  
-  // Mock customer relation
-  const customer = customers[0];
 
-  const handleDelete = () => {
-    toast.success("Standard deleted successfully");
-    router.push("/master/standard");
+  const [standard, setStandard] = useState<Standard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    const fetchStandard = async () => {
+      if (!id) return;
+      try {
+        setLoading(true);
+        const response = await standardService.getById(id);
+        setStandard(response.data);
+      } catch (error: any) {
+        console.error('Error fetching standard:', error);
+        if (error.response?.status === 404) {
+          toast.error('Standard not found');
+        } else {
+          toast.error(error.response?.data?.message || 'Failed to fetch standard');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStandard();
+  }, [id]);
+
+  const handleDelete = async () => {
+    try {
+      setDeleting(true);
+      await standardService.delete(id);
+      toast.success("Standard deleted successfully");
+      router.push("/master/standard");
+    } catch (error: any) {
+      console.error('Error deleting standard:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete standard');
+    } finally {
+      setDeleting(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!standard) {
     return (
@@ -119,8 +119,12 @@ export default function StandardDetailPage() {
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive" className="gap-2">
-                <Trash2 className="h-4 w-4" />
+              <Button variant="destructive" className="gap-2" disabled={deleting}>
+                {deleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
                 Delete
               </Button>
             </AlertDialogTrigger>
@@ -180,12 +184,27 @@ export default function StandardDetailPage() {
                 Customer
               </label>
               <Input
-                value={`${customer.code} - ${customer.name}`}
+                value={standard.customer ? `${standard.customer.code} - ${standard.customer.customer_name}` : '-'}
                 disabled
                 className="h-10 bg-muted/30 border-muted"
               />
             </div>
           </div>
+
+          {standard.category && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Category
+                </label>
+                <Input
+                  value={standard.category.name}
+                  disabled
+                  className="h-10 bg-muted/30 border-muted"
+                />
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -197,15 +216,15 @@ export default function StandardDetailPage() {
               <Layers className="h-4 w-4 text-primary" />
             </div>
             Standard Items
-            {standardItems.length > 0 && (
+            {standard.standartDetails && standard.standartDetails.length > 0 && (
               <span className="ml-2 text-sm font-normal text-muted-foreground">
-                ({standardItems.length} items)
+                ({standard.standartDetails.length} items)
               </span>
             )}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {standardItems.length === 0 ? (
+          {!standard.standartDetails || standard.standartDetails.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <Layers className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <p>No items in this standard</p>
@@ -215,42 +234,36 @@ export default function StandardDetailPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/30">
+                    <TableHead>Service</TableHead>
                     <TableHead>Parameter</TableHead>
                     <TableHead>Method</TableHead>
-                    <TableHead>Matrix</TableHead>
                     <TableHead>Min. Value</TableHead>
                     <TableHead>Max. Value</TableHead>
                     <TableHead>Unit</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {standardItems.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.parameter}</TableCell>
-                      <TableCell>{item.method}</TableCell>
+                  {standard.standartDetails.map((detail, index) => (
+                    <TableRow key={detail.id || index}>
+                      <TableCell className="font-medium">
+                        {detail.service?.code || '-'} - <RenderHTML html={detail.service?.name} />
+                      </TableCell>
+                      <TableCell><RenderHTML html={detail.service?.parameter?.name} /></TableCell>
+                      <TableCell><RenderHTML html={detail.service?.method?.name} /></TableCell>
                       <TableCell>
-                        <span className="text-sm">{item.matrix || "-"}</span>
+                        <div className="h-9 w-auto min-w-24 px-3 py-2 bg-muted/30 rounded-md border border-input flex items-center">
+                          <RenderHTML html={detail.min} />
+                        </div>
                       </TableCell>
                       <TableCell>
-                        <Input
-                          value={item.minValue}
-                          disabled
-                          className="h-9 w-24 bg-muted/30"
-                        />
+                        <div className="h-9 w-auto min-w-24 px-3 py-2 bg-muted/30 rounded-md border border-input flex items-center">
+                          <RenderHTML html={detail.max} />
+                        </div>
                       </TableCell>
                       <TableCell>
-                        <Input
-                          value={item.maxValue}
-                          disabled
-                          className="h-9 w-24 bg-muted/30"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={item.unitName}
-                          disabled
-                          className="h-9 w-32 bg-muted/30"
-                        />
+                        <div className="h-9 w-auto min-w-32 px-3 py-2 bg-muted/30 rounded-md border border-input flex items-center">
+                          <RenderHTML html={detail.unit} />
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -263,11 +276,3 @@ export default function StandardDetailPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

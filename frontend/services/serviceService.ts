@@ -226,5 +226,11 @@ export const serviceService = {
     const response = await api.get<ServicesJsonResponse>('/services/json', { params });
     return response.data;
   },
+
+  // Get auto-generated code for new service
+  getGeneratedCode: async (): Promise<{ success: boolean; data: { code: string } }> => {
+    const response = await api.get<{ success: boolean; data: { code: string } }>('/services/generate-code');
+    return response.data;
+  },
 };
 

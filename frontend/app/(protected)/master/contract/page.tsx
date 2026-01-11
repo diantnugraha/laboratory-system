@@ -5,43 +5,31 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Plus, Search } from 'lucide-react';
 import { DataTable, Column } from "@/components/shared/DataTable";
-import { packageService, PackageListItem, PackagesResponse } from "@/services/packageService";
+import { contractService, ContractListItem } from "@/services/contractService";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(value);
+const formatDate = (dateString: string) => {
+  if (!dateString) return '-';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
 };
 
-// Helper to parse service list and count services
-const parseServiceList = (listService: string | null | undefined): number[] => {
-  if (!listService || typeof listService !== 'string') {
-    return [];
-  }
-  const trimmed = listService.trim().replace(/^,+|,+$/g, '');
-  if (!trimmed) {
-    return [];
-  }
-  return trimmed
-    .split(',')
-    .map((id) => parseInt(id.trim(), 10))
-    .filter((id) => !isNaN(id) && id > 0);
-};
-
-const columns: Column<PackageListItem>[] = [
+const columns: Column<ContractListItem>[] = [
   {
     key: "code",
     label: "Code",
     render: (item) => (
       <Link
-        href={`/master/package/${item.id}`}
+        href={`/master/contract/${item.id}`}
         className="text-primary hover:underline font-medium"
       >
         <RenderHTML html={item.code} />
@@ -49,28 +37,42 @@ const columns: Column<PackageListItem>[] = [
     ),
   },
   {
-    key: "name",
-    label: "Package Name",
-    render: (item) => <RenderHTML html={item.name} />,
+    key: "customer",
+    label: "Customer",
+    render: (item) => <RenderHTML html={item.customer?.customer_name || '-'} />,
   },
   {
-    key: "listService",
-    label: "Services",
-    render: (item) => {
-      const serviceCount = parseServiceList(item.listService).length;
-      return <span>{serviceCount} service{serviceCount !== 1 ? 's' : ''}</span>;
-    },
+    key: "period",
+    label: "Period",
+    render: (item) => (
+      <span className="text-sm">
+        {formatDate(item.periodFrom)} - {formatDate(item.periodTo)}
+      </span>
+    ),
   },
   {
-    key: "totalPrice",
-    label: "Price (IDR)",
-    render: (item) => formatCurrency(item.totalPrice || 0),
+    key: "statusService",
+    label: "Service Mode",
+    render: (item) => (
+      <Badge variant={item.statusService === "ALL" ? "default" : "secondary"}>
+        {item.statusService}
+      </Badge>
+    ),
+  },
+  {
+    key: "normalDay",
+    label: "Lead Time",
+    render: (item) => (
+      <span className="text-sm text-muted-foreground">
+        {item.normalDay}/{item.urgentDay}/{item.veryUrgentDay} days
+      </span>
+    ),
   },
 ];
 
-export default function PackagePage() {
+export default function ContractPage() {
   const router = useRouter();
-  const [packages, setPackages] = useState<PackageListItem[]>([]);
+  const [contracts, setContracts] = useState<ContractListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [pagination, setPagination] = useState({
@@ -82,32 +84,31 @@ export default function PackagePage() {
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
-  const fetchPackages = useCallback(async (page: number = 1, search?: string, limit: number = 30) => {
+  const fetchContracts = useCallback(async (page: number = 1, search?: string, limit: number = 30) => {
     try {
       setLoading(true);
-      const response = await packageService.getAll({
+      const response = await contractService.getAll({
         page,
         limit,
         search: search && search.length >= 2 ? search : undefined,
-      }) as PackagesResponse;
-
-      setPackages(response.data);
+      });
+      setContracts(response.data);
       setPagination(response.pagination);
     } catch (error: any) {
-      console.error('Error fetching packages:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch packages');
+      console.error('Error fetching contracts:', error);
+      toast.error(error.response?.data?.message || 'Failed to fetch contracts');
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchPackages(1, debouncedSearch, pagination.limit);
-  }, [fetchPackages, debouncedSearch, pagination.limit]);
+    fetchContracts(1, debouncedSearch, pagination.limit);
+  }, [fetchContracts, debouncedSearch, pagination.limit]);
 
   const handlePageChange = (page: number) => {
     setPagination(prev => ({ ...prev, page }));
-    fetchPackages(page, debouncedSearch, pagination.limit);
+    fetchContracts(page, debouncedSearch, pagination.limit);
   };
 
   const handleSearch = (query: string) => {
@@ -119,10 +120,10 @@ export default function PackagePage() {
     <div className="space-y-4">
       {/* Title and Add Button Row */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Package</h1>
-        <Button onClick={() => router.push("/master/package/new")} className="gap-2">
+        <h1 className="text-2xl font-semibold text-foreground">Contract</h1>
+        <Button onClick={() => router.push("/master/contract/new")} className="gap-2">
           <Plus className="h-4 w-4" />
-          Add Package
+          Add Contract
         </Button>
       </div>
 
@@ -131,7 +132,7 @@ export default function PackagePage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search packages..."
+            placeholder="Search contracts..."
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             className="pl-9"
@@ -147,7 +148,7 @@ export default function PackagePage() {
       <DataTable
         title=""
         columns={columns}
-        data={packages}
+        data={contracts}
         loading={loading}
         searchPlaceholder=""
         pagination={pagination}
