@@ -19,6 +19,7 @@ export interface ContractDetail {
   package?: {
     id: number;
     name: string;
+    totalPrice?: number;
   };
 }
 

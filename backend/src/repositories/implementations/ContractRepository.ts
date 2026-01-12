@@ -44,12 +44,14 @@ export class ContractRepository implements IContractRepository {
               id: true,
               code: true,
               name: true,
+              price: true,
             },
           },
           package: {
             select: {
               id: true,
               name: true,
+              totalPrice: true,
             },
           },
         },

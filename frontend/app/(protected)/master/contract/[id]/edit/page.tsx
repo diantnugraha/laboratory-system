@@ -66,6 +66,8 @@ import { FileUpload } from "@/components/ui/file-upload";
 const contractDetailSchema = z.object({
   type: z.enum(["service", "package"]),
   itemId: z.coerce.number().min(1, "Item is required"),
+  itemName: z.string().optional(),
+  itemPrice: z.coerce.number().optional().default(0),
   discountNormal: z.coerce.number().min(0).max(100).default(0),
   discountUrgent: z.coerce.number().min(0).max(100).default(50),
   discountVeryUrgent: z.coerce.number().min(0).max(100).default(100),
@@ -108,12 +110,21 @@ interface ServiceOption {
 interface PackageOption {
   id: number;
   name: string;
+  totalPrice?: number;
 }
 
 const formatDateForInput = (dateString: string) => {
   if (!dateString) return '';
   const date = new Date(dateString);
   return date.toISOString().split('T')[0];
+};
+
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(value);
 };
 
 export default function ContractEditPage() {
@@ -184,14 +195,53 @@ export default function ContractEditPage() {
       const response = await contractService.getById(id);
       setContract(response.data);
 
-      // Map details to form format
+      // Map details to form format - include itemName and itemPrice for display
       const details = response.data.details?.map(d => ({
         type: (d.serviceId ? "service" : "package") as "service" | "package",
         itemId: d.serviceId || d.packageId || 0,
+        itemName: d.serviceId ? d.service?.name : d.package?.name,
+        itemPrice: d.serviceId ? (d.service?.price || 0) : (d.package?.totalPrice || 0),
         discountNormal: d.discountNormal || 0,
         discountUrgent: d.discountUrgent || 50,
         discountVeryUrgent: d.discountVeryUrgent || 100,
       })) || [];
+
+      // IMPORTANT: Set services and packages from contract details BEFORE form.reset
+      // This ensures services/packages state is populated when form renders
+      if (response.data.details) {
+        const detailServices = response.data.details
+          .filter(d => d.serviceId && d.service)
+          .map(d => ({
+            id: d.service!.id,
+            code: d.service!.code || '',
+            name: d.service!.name,
+            price: d.service!.price || 0,
+          }));
+
+        if (detailServices.length > 0) {
+          setServices(prev => {
+            const existingIds = new Set(prev.map(s => s.id));
+            const newServices = detailServices.filter(s => !existingIds.has(s.id));
+            return [...prev, ...newServices];
+          });
+        }
+
+        const detailPackages = response.data.details
+          .filter(d => d.packageId && d.package)
+          .map(d => ({
+            id: d.package!.id,
+            name: d.package!.name,
+            totalPrice: d.package!.totalPrice || 0,
+          }));
+
+        if (detailPackages.length > 0) {
+          setPackages(prev => {
+            const existingIds = new Set(prev.map(p => p.id));
+            const newPackages = detailPackages.filter(p => !existingIds.has(p.id));
+            return [...prev, ...newPackages];
+          });
+        }
+      }
 
       // Populate form with fetched data
       form.reset({
@@ -204,7 +254,7 @@ export default function ContractEditPage() {
         normalDay: response.data.normalDay,
         urgentDay: response.data.urgentDay,
         veryUrgentDay: response.data.veryUrgentDay,
-        statusService: response.data.statusService,
+        statusService: (response.data.statusService?.toUpperCase() as "ALL" | "SELECTED") || "ALL",
         discount: response.data.discount || 0,
         discountUrgent: response.data.discountUrgent || 50,
         discountVeryUrgent: response.data.discountVeryUrgent || 100,
@@ -276,6 +326,7 @@ export default function ContractEditPage() {
       setPackages(items.map((p: any) => ({
         id: p.id,
         name: p.name,
+        totalPrice: p.total_price || p.totalPrice || 0,
       })));
     } catch (error) {
       console.error('Error fetching packages:', error);
@@ -330,6 +381,7 @@ export default function ContractEditPage() {
         setPackageSearchResults(items.map((p: any) => ({
           id: p.id,
           name: p.name,
+          totalPrice: p.total_price || p.totalPrice || 0,
         })));
       } catch (error) {
         console.error('Error searching packages:', error);
@@ -345,6 +397,8 @@ export default function ContractEditPage() {
     appendDetail({
       type,
       itemId: 0,
+      itemName: "",
+      itemPrice: 0,
       discountNormal: 0,
       discountUrgent: 50,
       discountVeryUrgent: 100,
@@ -873,6 +927,7 @@ export default function ContractEditPage() {
                       <TableRow className="bg-muted/50">
                         <TableHead className="w-[100px]">Type</TableHead>
                         <TableHead>Service/Package <span className="text-destructive">*</span></TableHead>
+                        <TableHead className="w-[120px] text-right">Price</TableHead>
                         <TableHead className="w-[130px]">Discount (%)</TableHead>
                         <TableHead className="w-[130px]">Urgent (%)</TableHead>
                         <TableHead className="w-[130px]">V.Urgent (%)</TableHead>
@@ -910,7 +965,7 @@ export default function ContractEditPage() {
                                             )}
                                           >
                                             {itemField.value
-                                              ? <span dangerouslySetInnerHTML={{ __html: services.find(s => s.id === itemField.value)?.name || serviceSearchResults.find(s => s.id === itemField.value)?.name || "Select service..." }} />
+                                              ? <span dangerouslySetInnerHTML={{ __html: form.watch(`details.${index}.itemName`) || services.find(s => s.id === itemField.value)?.name || serviceSearchResults.find(s => s.id === itemField.value)?.name || "Select service..." }} />
                                               : "Search service..."}
                                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                           </Button>
@@ -947,6 +1002,8 @@ export default function ContractEditPage() {
                                                     value={String(service.id)}
                                                     onSelect={() => {
                                                       itemField.onChange(service.id);
+                                                      form.setValue(`details.${index}.itemName`, service.name);
+                                                      form.setValue(`details.${index}.itemPrice`, service.price || 0);
                                                       setOpenServicePopover(null);
                                                       setServiceSearchQuery("");
                                                       if (!services.find(s => s.id === service.id)) {
@@ -983,7 +1040,7 @@ export default function ContractEditPage() {
                                             )}
                                           >
                                             {itemField.value
-                                              ? <span dangerouslySetInnerHTML={{ __html: packages.find(p => p.id === itemField.value)?.name || packageSearchResults.find(p => p.id === itemField.value)?.name || "Select package..." }} />
+                                              ? <span dangerouslySetInnerHTML={{ __html: form.watch(`details.${index}.itemName`) || packages.find(p => p.id === itemField.value)?.name || packageSearchResults.find(p => p.id === itemField.value)?.name || "Select package..." }} />
                                               : "Search package..."}
                                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                           </Button>
@@ -1020,6 +1077,8 @@ export default function ContractEditPage() {
                                                     value={String(pkg.id)}
                                                     onSelect={() => {
                                                       itemField.onChange(pkg.id);
+                                                      form.setValue(`details.${index}.itemName`, pkg.name);
+                                                      form.setValue(`details.${index}.itemPrice`, pkg.totalPrice || 0);
                                                       setOpenPackagePopover(null);
                                                       setPackageSearchQuery("");
                                                       if (!packages.find(p => p.id === pkg.id)) {
@@ -1042,6 +1101,14 @@ export default function ContractEditPage() {
                                 </FormItem>
                               )}
                             />
+                          </TableCell>
+                          <TableCell className="text-right text-sm text-muted-foreground">
+                            {(() => {
+                              const price = form.watch(`details.${index}.itemPrice`) || 0;
+                              const discount = form.watch(`details.${index}.discountNormal`) || 0;
+                              const finalPrice = price - (price * discount / 100);
+                              return formatCurrency(finalPrice);
+                            })()}
                           </TableCell>
                           <TableCell>
                             <FormField
