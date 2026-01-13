@@ -46,6 +46,22 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
+const getCleanFilename = (doc: string | null): string => {
+  if (!doc) return '';
+  let cleanDoc: any = doc;
+  let maxIterations = 5;
+  while (maxIterations-- > 0 && typeof cleanDoc === 'string' && (cleanDoc.startsWith('[') || cleanDoc.startsWith('"'))) {
+    try {
+      const parsed = JSON.parse(cleanDoc);
+      cleanDoc = Array.isArray(parsed) ? parsed[0] : parsed;
+    } catch {
+      break;
+    }
+  }
+  const filename = String(cleanDoc).split(/[/\\]/).pop() || cleanDoc;
+  return filename.replace(/[^\w\-_.]/g, '');
+};
+
 export default function ContractDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -101,6 +117,11 @@ export default function ContractDetailPage() {
 
   const serviceDetails = contract.details?.filter(d => d.serviceId) || [];
   const packageDetails = contract.details?.filter(d => d.packageId) || [];
+
+  // Calculate totals
+  const serviceTotalPrice = serviceDetails.reduce((sum, d) => sum + (d.service?.price || 0), 0);
+  const packageTotalPrice = packageDetails.reduce((sum, d) => sum + (d.package?.totalPrice || 0), 0);
+  const grandTotal = serviceTotalPrice + packageTotalPrice;
 
   return (
     <div className="space-y-6">
@@ -233,7 +254,7 @@ export default function ContractDetailPage() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Contract Document
               </p>
-              <p className="text-sm font-medium">{contract.documents}</p>
+              <p className="text-sm font-medium">{getCleanFilename(contract.documents)}</p>
             </div>
           )}
         </CardContent>
@@ -363,6 +384,7 @@ export default function ContractDetailPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Package Name</TableHead>
+                  <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Discount (%)</TableHead>
                   <TableHead className="text-right">Urgent (%)</TableHead>
                   <TableHead className="text-right">V.Urgent (%)</TableHead>
@@ -372,6 +394,7 @@ export default function ContractDetailPage() {
                 {packageDetails.map((detail) => (
                   <TableRow key={detail.id}>
                     <TableCell className="font-medium"><span dangerouslySetInnerHTML={{ __html: detail.package?.name || '-' }} /></TableCell>
+                    <TableCell className="text-right">{formatCurrency(detail.package?.totalPrice || 0)}</TableCell>
                     <TableCell className="text-right">{detail.discountNormal}%</TableCell>
                     <TableCell className="text-right">{detail.discountUrgent}%</TableCell>
                     <TableCell className="text-right">{detail.discountVeryUrgent}%</TableCell>
@@ -379,6 +402,32 @@ export default function ContractDetailPage() {
                 ))}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Grand Total - show when there are services or packages */}
+      {(serviceDetails.length > 0 || packageDetails.length > 0) && (
+        <Card className="overflow-hidden">
+          <CardContent className="pt-6">
+            <div className="flex flex-col gap-2">
+              {serviceDetails.length > 0 && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Services Total ({serviceDetails.length} items)</span>
+                  <span className="font-medium">{formatCurrency(serviceTotalPrice)}</span>
+                </div>
+              )}
+              {packageDetails.length > 0 && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Packages Total ({packageDetails.length} items)</span>
+                  <span className="font-medium">{formatCurrency(packageTotalPrice)}</span>
+                </div>
+              )}
+              <div className="border-t pt-2 mt-2 flex justify-between items-center">
+                <span className="font-semibold">Grand Total</span>
+                <span className="text-lg font-bold text-primary">{formatCurrency(grandTotal)}</span>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}

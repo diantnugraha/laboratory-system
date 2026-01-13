@@ -97,10 +97,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       setUser(user);
       setIsAuthenticated(true);
-      
+
       // Store token in cookie
       setCookie('auth-token', token, 7);
-      
+
+      // Store auth state in auth-storage cookie for persistence on refresh
+      const authStorage = {
+        state: {
+          token: token,
+          isAuthenticated: true,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            display_name: user.display_name,
+            role_id: user.role_id,
+            role: user.roleObject,
+            role_name: user.role,
+          }
+        }
+      };
+      setCookie('auth-storage', JSON.stringify(authStorage), 7);
+
       return { success: true };
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Login failed';
@@ -111,8 +129,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     setIsAuthenticated(false);
-    // Remove token from cookie
+    // Remove tokens from cookies
     deleteCookie('auth-token');
+    deleteCookie('auth-storage');
   };
 
   return (

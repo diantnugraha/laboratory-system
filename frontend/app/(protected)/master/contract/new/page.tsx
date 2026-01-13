@@ -66,6 +66,8 @@ import { FileUpload } from "@/components/ui/file-upload";
 const contractDetailSchema = z.object({
   type: z.enum(["service", "package"]),
   itemId: z.coerce.number().min(1, "Item is required"),
+  itemName: z.string().optional(),
+  itemPrice: z.coerce.number().optional().default(0),
   discountNormal: z.coerce.number().min(0).max(100).default(0),
   discountUrgent: z.coerce.number().min(0).max(100).default(50),
   discountVeryUrgent: z.coerce.number().min(0).max(100).default(100),
@@ -105,9 +107,29 @@ interface ServiceOption {
   price: number;
 }
 
+// Helper to extract price value from service/package (handles both object and number formats)
+const getServicePrice = (price: unknown): number => {
+  if (price === null || price === undefined) return 0;
+  if (typeof price === 'number') return price;
+  if (typeof price === 'object' && price !== null && 'value' in price) {
+    const val = (price as { value: number }).value;
+    return typeof val === 'number' ? val : 0;
+  }
+  return 0;
+};
+
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(value);
+};
+
 interface PackageOption {
   id: number;
   name: string;
+  totalPrice?: number;
 }
 
 export default function ContractNewPage() {
@@ -204,6 +226,7 @@ export default function ContractNewPage() {
       setPackages(items.map((p: any) => ({
         id: p.id,
         name: p.name,
+        totalPrice: getServicePrice(p.price.value),
       })));
     } catch (error) {
       console.error('Error fetching packages:', error);
@@ -266,6 +289,7 @@ export default function ContractNewPage() {
         setPackageSearchResults(items.map((p: any) => ({
           id: p.id,
           name: p.name,
+          totalPrice: getServicePrice(p.price),
         })));
       } catch (error) {
         console.error('Error searching packages:', error);
@@ -281,6 +305,8 @@ export default function ContractNewPage() {
     appendDetail({
       type,
       itemId: 0,
+      itemName: "",
+      itemPrice: 0,
       discountNormal: 0,
       discountUrgent: 50,
       discountVeryUrgent: 100,
@@ -787,6 +813,7 @@ export default function ContractNewPage() {
                       <TableRow className="bg-muted/50">
                         <TableHead className="w-[100px]">Type</TableHead>
                         <TableHead>Service/Package <span className="text-destructive">*</span></TableHead>
+                        <TableHead className="w-[120px] text-right">Price</TableHead>
                         <TableHead className="w-[130px]">Discount (%)</TableHead>
                         <TableHead className="w-[130px]">Urgent (%)</TableHead>
                         <TableHead className="w-[130px]">V.Urgent (%)</TableHead>
@@ -861,6 +888,8 @@ export default function ContractNewPage() {
                                                     value={String(service.id)}
                                                     onSelect={() => {
                                                       itemField.onChange(service.id);
+                                                      form.setValue(`details.${index}.itemName`, service.name);
+                                                      form.setValue(`details.${index}.itemPrice`, service.price || 0);
                                                       setOpenServicePopover(null);
                                                       setServiceSearchQuery("");
                                                       if (!services.find(s => s.id === service.id)) {
@@ -934,6 +963,8 @@ export default function ContractNewPage() {
                                                     value={String(pkg.id)}
                                                     onSelect={() => {
                                                       itemField.onChange(pkg.id);
+                                                      form.setValue(`details.${index}.itemName`, pkg.name);
+                                                      form.setValue(`details.${index}.itemPrice`, pkg.totalPrice || 0);
                                                       setOpenPackagePopover(null);
                                                       setPackageSearchQuery("");
                                                       if (!packages.find(p => p.id === pkg.id)) {
@@ -956,6 +987,14 @@ export default function ContractNewPage() {
                                 </FormItem>
                               )}
                             />
+                          </TableCell>
+                          <TableCell className="text-right text-sm text-muted-foreground">
+                            {(() => {
+                              const price = Number(form.watch(`details.${index}.itemPrice`)) || 0;
+                              const discount = Number(form.watch(`details.${index}.discountNormal`)) || 0;
+                              const finalPrice = price - (price * discount / 100);
+                              return formatCurrency(finalPrice);
+                            })()}
                           </TableCell>
                           <TableCell>
                             <FormField

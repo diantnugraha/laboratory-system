@@ -1,6 +1,6 @@
-import express, { Router, Request, Response, NextFunction } from 'express';
-import { body, validationResult, ValidationChain } from 'express-validator';
+import express, { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
+import { validate, validateRequest } from '../middleware/zodValidator';
 import {
   getPublicUsers,
   getUserById,
@@ -12,6 +12,12 @@ import {
   resendWelcomeEmail,
   createUserFromContact
 } from '../controllers/userController';
+import {
+  idParamSchema,
+  createUserSchema,
+  updateUserSchema,
+  publicUsersQuerySchema
+} from '../validators';
 
 const router: Router = express.Router();
 
@@ -22,62 +28,27 @@ router.get('/json', getUsersJson);
 router.get('/fetchJson', getUsersFetchJson);
 
 // List of users (requires authentication and authorization)
-router.get('/', authorize(1, 2), getPublicUsers);
+router.get('/', authorize(1, 2), validate(publicUsersQuerySchema, 'query'), getPublicUsers);
 
 // Get user detail by ID (requires authentication and authorization)
-router.get('/:id', authorize(1, 2), getUserById);
+router.get('/:id', authorize(1, 2), validate(idParamSchema, 'params'), getUserById);
 
 // Create user (requires SuperAdmin or HRDManager)
-router.post('/', authorize(1, 2), createUser);
+router.post('/', authorize(1, 2), validate(createUserSchema), createUser);
 
 // Resend welcome email (requires SuperAdmin or HRDManager)
-router.post('/resendWelcome/:id', authorize(1, 2), resendWelcomeEmail);
+router.post('/resendWelcome/:id', authorize(1, 2), validate(idParamSchema, 'params'), resendWelcomeEmail);
 
 // Create user from contact (requires SuperAdmin or HRDManager)
 router.post('/from-contact', authorize(1, 2), createUserFromContact);
 
-// Update user validation
-const updateUserValidation: ValidationChain[] = [
-  body('username')
-    .trim()
-    .notEmpty()
-    .withMessage('Username is required'),
-  body('email')
-    .trim()
-    .notEmpty()
-    .withMessage('Email is required')
-    .isEmail()
-    .withMessage('Email must be a valid email address')
-    .normalizeEmail(),
-  body('display_name')
-    .trim()
-    .notEmpty()
-    .withMessage('Display name is required'),
-  body('role_id')
-    .notEmpty()
-    .withMessage('Role ID is required')
-    .isInt()
-    .withMessage('Role ID must be a valid number')
-];
-
-// Middleware to handle validation errors
-const handleValidationErrors = (req: Request, res: Response, next: NextFunction): void => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      errors: errors.array()
-    });
-    return;
-  }
-  next();
-};
-
 // Update user by ID (requires authentication and authorization)
-router.put('/:id', ...updateUserValidation, handleValidationErrors, updateUser);
+router.put('/:id', authorize(1, 2), validateRequest({
+  params: idParamSchema,
+  body: updateUserSchema
+}), updateUser);
 
 // Delete user (requires SuperAdmin only)
-router.delete('/:id', authorize(1), deleteUser);
+router.delete('/:id', authorize(1), validate(idParamSchema, 'params'), deleteUser);
 
 export default router;

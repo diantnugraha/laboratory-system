@@ -200,7 +200,7 @@ export class ContractRepository implements IContractRepository {
     try {
       const contract = await this.prisma.contract.findFirst({
         where: {
-          code: { equals: code, mode: 'insensitive' },
+          code: { equals: code },
           trash: null,
           ...(excludeId && { id: { not: excludeId } }),
         },
@@ -434,7 +434,7 @@ export class ContractRepository implements IContractRepository {
           periodFrom: data.periodFrom,
           periodTo: data.periodTo,
           periodAlias: data.periodAlias || null,
-          documents: data.documents || null,
+          documents: data.documents?.substring(0, 65535) || null,
           normalDay: data.normalDay,
           urgentDay: data.urgentDay,
           veryUrgentDay: data.veryUrgentDay,
@@ -504,7 +504,7 @@ export class ContractRepository implements IContractRepository {
         if (data.periodFrom !== undefined) updateData.periodFrom = data.periodFrom;
         if (data.periodTo !== undefined) updateData.periodTo = data.periodTo;
         if (data.periodAlias !== undefined) updateData.periodAlias = data.periodAlias;
-        if (data.documents !== undefined) updateData.documents = data.documents;
+        if (data.documents !== undefined) updateData.documents = data.documents?.substring(0, 65535) || null;
         if (data.normalDay !== undefined) updateData.normalDay = data.normalDay;
         if (data.urgentDay !== undefined) updateData.urgentDay = data.urgentDay;
         if (data.veryUrgentDay !== undefined) updateData.veryUrgentDay = data.veryUrgentDay;

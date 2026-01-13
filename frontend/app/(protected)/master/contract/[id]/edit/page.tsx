@@ -107,6 +107,36 @@ interface ServiceOption {
   price: number;
 }
 
+// Helper to extract price value from service (handles both object and number formats)
+const getServicePrice = (price: unknown): number => {
+  if (price === null || price === undefined) return 0;
+  if (typeof price === 'number') return price;
+  if (typeof price === 'object' && price !== null && 'value' in price) {
+    const val = (price as { value: number }).value;
+    return typeof val === 'number' ? val : 0;
+  }
+  return 0;
+};
+
+// Helper to extract clean filename from document path/string
+const getCleanFilename = (doc: string | null): string => {
+  if (!doc) return '';
+  // Try to parse as JSON if it looks like JSON
+  let cleanDoc = doc;
+  try {
+    if (doc.startsWith('[') || doc.startsWith('"')) {
+      const parsed = JSON.parse(doc);
+      cleanDoc = Array.isArray(parsed) ? parsed[0] : parsed;
+    }
+  } catch {
+    // Not JSON, use as-is
+  }
+  // Extract filename from path (handle both / and \)
+  const filename = cleanDoc.split(/[/\\]/).pop() || cleanDoc;
+  // Remove any remaining special characters except alphanumeric, dash, underscore, dot
+  return filename.replace(/[^\w\-_.]/g, '');
+};
+
 interface PackageOption {
   id: number;
   name: string;
@@ -200,10 +230,10 @@ export default function ContractEditPage() {
         type: (d.serviceId ? "service" : "package") as "service" | "package",
         itemId: d.serviceId || d.packageId || 0,
         itemName: d.serviceId ? d.service?.name : d.package?.name,
-        itemPrice: d.serviceId ? (d.service?.price || 0) : (d.package?.totalPrice || 0),
-        discountNormal: d.discountNormal || 0,
-        discountUrgent: d.discountUrgent || 50,
-        discountVeryUrgent: d.discountVeryUrgent || 100,
+        itemPrice: d.serviceId ? getServicePrice(d.service?.price) : getServicePrice(d.package?.totalPrice),
+        discountNormal: Number(d.discountNormal) || 0,
+        discountUrgent: Number(d.discountUrgent) || 50,
+        discountVeryUrgent: Number(d.discountVeryUrgent) || 100,
       })) || [];
 
       // IMPORTANT: Set services and packages from contract details BEFORE form.reset
@@ -215,7 +245,7 @@ export default function ContractEditPage() {
             id: d.service!.id,
             code: d.service!.code || '',
             name: d.service!.name,
-            price: d.service!.price || 0,
+            price: getServicePrice(d.service!.price),
           }));
 
         if (detailServices.length > 0) {
@@ -231,7 +261,7 @@ export default function ContractEditPage() {
           .map(d => ({
             id: d.package!.id,
             name: d.package!.name,
-            totalPrice: d.package!.totalPrice || 0,
+            totalPrice: getServicePrice(d.package!.totalPrice),
           }));
 
         if (detailPackages.length > 0) {
@@ -311,7 +341,7 @@ export default function ContractEditPage() {
         id: s.id,
         code: s.code || '',
         name: s.name,
-        price: s.price || 0,
+        price: getServicePrice(s.price),
       })));
     } catch (error) {
       console.error('Error fetching services:', error);
@@ -326,7 +356,7 @@ export default function ContractEditPage() {
       setPackages(items.map((p: any) => ({
         id: p.id,
         name: p.name,
-        totalPrice: p.total_price || p.totalPrice || 0,
+        totalPrice: getServicePrice(p.price),
       })));
     } catch (error) {
       console.error('Error fetching packages:', error);
@@ -355,7 +385,7 @@ export default function ContractEditPage() {
           id: s.id,
           code: s.code || '',
           name: s.name,
-          price: s.price || 0,
+          price: getServicePrice(s.price),
         })));
       } catch (error) {
         console.error('Error searching services:', error);
@@ -381,7 +411,7 @@ export default function ContractEditPage() {
         setPackageSearchResults(items.map((p: any) => ({
           id: p.id,
           name: p.name,
-          totalPrice: p.total_price || p.totalPrice || 0,
+          totalPrice: getServicePrice(p.price),
         })));
       } catch (error) {
         console.error('Error searching packages:', error);
@@ -882,7 +912,7 @@ export default function ContractEditPage() {
               />
               {!contractDocument && existingDocument && (
                 <p className="text-sm text-muted-foreground">
-                  Current document: {existingDocument}
+                  Current document: {getCleanFilename(existingDocument)}
                 </p>
               )}
             </div>
@@ -1104,8 +1134,8 @@ export default function ContractEditPage() {
                           </TableCell>
                           <TableCell className="text-right text-sm text-muted-foreground">
                             {(() => {
-                              const price = form.watch(`details.${index}.itemPrice`) || 0;
-                              const discount = form.watch(`details.${index}.discountNormal`) || 0;
+                              const price = Number(form.watch(`details.${index}.itemPrice`)) || 0;
+                              const discount = Number(form.watch(`details.${index}.discountNormal`)) || 0;
                               const finalPrice = price - (price * discount / 100);
                               return formatCurrency(finalPrice);
                             })()}

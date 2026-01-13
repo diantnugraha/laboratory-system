@@ -157,7 +157,7 @@ export class CustomerRepository implements ICustomerRepository {
     try {
       const customer = await this.prisma.customer.findFirst({
         where: {
-          code: { equals: code, mode: 'insensitive' },
+          code: { equals: code },
           trash: null,
         },
       });

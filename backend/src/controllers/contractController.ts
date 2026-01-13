@@ -327,14 +327,26 @@ export const createContract = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Handle documents
+    // Handle documents - store only the filename, not JSON
     let documents: string | null = null;
     if (req.body.contract_document) {
-      if (typeof req.body.contract_document === 'string') {
-        const docArray = req.body.contract_document.split(';;').filter(Boolean);
-        documents = JSON.stringify(docArray);
-      } else if (Array.isArray(req.body.contract_document)) {
-        documents = JSON.stringify(req.body.contract_document);
+      let docValue = req.body.contract_document;
+      // If it's a JSON string, parse it to get the actual value
+      if (typeof docValue === 'string') {
+        // Try to parse if it looks like JSON
+        let parsed = docValue;
+        let maxIterations = 5;
+        while (maxIterations-- > 0 && typeof parsed === 'string' && (parsed.startsWith('[') || parsed.startsWith('"'))) {
+          try {
+            const temp = JSON.parse(parsed);
+            parsed = Array.isArray(temp) ? temp[0] : temp;
+          } catch {
+            break;
+          }
+        }
+        documents = typeof parsed === 'string' ? parsed : null;
+      } else if (Array.isArray(docValue)) {
+        documents = docValue[0] || null;
       }
     }
 
@@ -566,16 +578,30 @@ export const updateContract = async (req: Request, res: Response): Promise<void>
       ? parseStatusService(rawStatusService)
       : existing.statusService;
 
-    // Handle documents
+    // Handle documents - store only the filename, not JSON
     let documents: string | null | undefined = undefined;
     if (req.body.contract_document !== undefined) {
-      if (typeof req.body.contract_document === 'string') {
-        const docArray = req.body.contract_document.split(';;').filter(Boolean);
-        documents = JSON.stringify(docArray);
-      } else if (Array.isArray(req.body.contract_document)) {
-        documents = JSON.stringify(req.body.contract_document);
-      } else if (req.body.contract_document === null) {
+      if (req.body.contract_document === null) {
         documents = null;
+      } else {
+        let docValue = req.body.contract_document;
+        // If it's a JSON string, parse it to get the actual value
+        if (typeof docValue === 'string') {
+          // Try to parse if it looks like JSON
+          let parsed = docValue;
+          let maxIterations = 5;
+          while (maxIterations-- > 0 && typeof parsed === 'string' && (parsed.startsWith('[') || parsed.startsWith('"'))) {
+            try {
+              const temp = JSON.parse(parsed);
+              parsed = Array.isArray(temp) ? temp[0] : temp;
+            } catch {
+              break;
+            }
+          }
+          documents = typeof parsed === 'string' ? parsed : null;
+        } else if (Array.isArray(docValue)) {
+          documents = docValue[0] || null;
+        }
       }
     }
 

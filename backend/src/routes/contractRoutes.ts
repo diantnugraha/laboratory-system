@@ -10,6 +10,12 @@ import {
   getContractsFetchJson,
 } from '../controllers/contractController';
 import { authenticate, authorize } from '../middleware/auth';
+import { validate } from '../middleware/zodValidator';
+import {
+  idParamSchema,
+  contractQuerySchema,
+  contractJsonQuerySchema
+} from '../validators';
 
 const router: Router = express.Router();
 
@@ -17,18 +23,17 @@ const router: Router = express.Router();
 router.use(authenticate);
 
 // JSON endpoints (place before parameterized routes)
-router.get('/json', getContractsJson);
+router.get('/json', validate(contractJsonQuerySchema, 'query'), getContractsJson);
 router.get('/fetch-json', getContractsFetchJson);
 
 // Customer-specific endpoint (must be before /:id)
 router.get('/customer', getCustomerContract);
 
 // CRUD operations
-router.get('/', getContracts);
+router.get('/', validate(contractQuerySchema, 'query'), getContracts);
 router.post('/', authorize(1, 2, 3), createContract); // SuperAdmin, Admin, Sales
-router.get('/:id', getContractById);
-router.put('/:id', authorize(1, 2, 3, 4), updateContract); // SuperAdmin, Admin, Sales, AdministrationSupportHO
-router.delete('/:id', authorize(1, 2, 3), deleteContract); // SuperAdmin, Admin, Sales
+router.get('/:id', validate(idParamSchema, 'params'), getContractById);
+router.put('/:id', authorize(1, 2, 3, 4), validate(idParamSchema, 'params'), updateContract); // SuperAdmin, Admin, Sales, AdministrationSupportHO
+router.delete('/:id', authorize(1, 2, 3), validate(idParamSchema, 'params'), deleteContract); // SuperAdmin, Admin, Sales
 
 export default router;
-
