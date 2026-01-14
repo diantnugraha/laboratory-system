@@ -65,7 +65,7 @@ const customerItems = [
 
 const userItems = [
   { title: 'User', url: '/master/user' },
-  { title: 'Analyst Type', url: '/master/user/analyst' },
+  { title: 'Analyst User', url: '/master/analyst-user' },
 ];
 
 const transactionItems = [

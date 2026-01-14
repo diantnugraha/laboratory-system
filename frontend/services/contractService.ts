@@ -225,4 +225,10 @@ export const contractService = {
     const response = await api.get<ContractsResponse>('/contracts/fetch-json', { params });
     return response.data;
   },
+
+  // Generate next contract code
+  generateCode: async (): Promise<{ success: boolean; data: { code: string } }> => {
+    const response = await api.get<{ success: boolean; data: { code: string } }>('/contracts/generate-code');
+    return response.data;
+  },
 };

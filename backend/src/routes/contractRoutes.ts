@@ -8,6 +8,7 @@ import {
   deleteContract,
   getContractsJson,
   getContractsFetchJson,
+  getGenerateCode,
 } from '../controllers/contractController';
 import { authenticate, authorize } from '../middleware/auth';
 import { validate } from '../middleware/zodValidator';
@@ -25,6 +26,7 @@ router.use(authenticate);
 // JSON endpoints (place before parameterized routes)
 router.get('/json', validate(contractJsonQuerySchema, 'query'), getContractsJson);
 router.get('/fetch-json', getContractsFetchJson);
+router.get('/generate-code', getGenerateCode);
 
 // Customer-specific endpoint (must be before /:id)
 router.get('/customer', getCustomerContract);

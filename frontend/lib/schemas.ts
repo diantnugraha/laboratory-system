@@ -69,11 +69,12 @@ export const categoryServiceSchema = z.object({
 
 // Subcontractor Schema
 export const subcontractorSchema = z.object({
-  code: z.string().min(1, "Code is required").max(20, "Code must be less than 20 characters"),
-  name: z.string().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
-  contact: z.string().min(1, "Contact is required").max(100, "Contact must be less than 100 characters"),
-  email: z.string().min(1, "Email is required").email("Invalid email address"),
-  status: statusSchema,
+  lab_name: z.string().min(1, "Lab name is required").max(255, "Lab name must be less than 255 characters"),
+  address_name: z.string().min(1, "Address is required").max(255, "Address must be less than 255 characters"),
+  phone: z.string().min(1, "Phone is required").max(255, "Phone must be less than 255 characters"),
+  fax: z.string().min(1, "Fax is required").max(255, "Fax must be less than 255 characters"),
+  contact: z.string().min(1, "Contact is required").max(255, "Contact must be less than 255 characters"),
+  email: z.string().min(1, "Email is required").max(255, "Email must be less than 255 characters").email("Invalid email address"),
 });
 
 // Package Schema
@@ -177,6 +178,30 @@ export const contractSchema = z.object({
   details: z.array(contractDetailSchema).optional(),
 });
 
+// Analyst Type with Services Schema (enhanced version)
+export const analystTypeWithServicesSchema = z.object({
+  name: z.string().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
+  services: z.array(z.object({
+    serviceId: z.string(),
+    serviceName: z.string(),
+    parameter: z.string(),
+  })).min(1, "At least one service is required"),
+  status: statusSchema.optional().default("Active"),
+});
+
+// Analyst Rule Schema
+export const analystRuleSchema = z.object({
+  userId: z.string().min(1, "Internal User is required"),
+  userName: z.string(),
+  analystTypeId: z.string().min(1, "Analyst Type is required"),
+  analystTypeName: z.string(),
+  accessAnalystTypes: z.array(z.object({
+    analystTypeId: z.string(),
+    analystTypeName: z.string(),
+  })),
+  status: statusSchema.optional().default("Active"),
+});
+
 // Type exports
 export type ContractDetailFormData = z.infer<typeof contractDetailSchema>;
 export type ContractFormData = z.infer<typeof contractSchema>;
@@ -194,5 +219,7 @@ export type StandardFormData = z.infer<typeof standardSchema>;
 export type CustomerFormData = z.infer<typeof customerSchema>;
 export type ContactFormData = z.infer<typeof contactSchema>;
 export type AnalystTypeFormData = z.infer<typeof analystTypeSchema>;
+export type AnalystTypeWithServicesFormData = z.infer<typeof analystTypeWithServicesSchema>;
+export type AnalystRuleFormData = z.infer<typeof analystRuleSchema>;
 export type InternalUserFormData = z.infer<typeof internalUserSchema>;
 export type ExternalUserFormData = z.infer<typeof externalUserSchema>;

@@ -53,11 +53,20 @@ const columns: Column<ContractListItem>[] = [
   {
     key: "statusService",
     label: "Service Mode",
-    render: (item) => (
-      <Badge variant={item.statusService === "ALL" ? "default" : "secondary"}>
-        {item.statusService}
-      </Badge>
-    ),
+    render: (item) => {
+      const isAll = item.statusService?.toUpperCase() === "ALL";
+      return (
+        <Badge
+          variant={isAll ? "default" : "outline"}
+          className={isAll
+            ? "bg-blue-500 text-white border-blue-500 hover:bg-blue-600"
+            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+          }
+        >
+          {isAll ? "All" : "Selected"}
+        </Badge>
+      );
+    },
   },
   {
     key: "normalDay",

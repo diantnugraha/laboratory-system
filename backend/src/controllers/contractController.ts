@@ -9,6 +9,54 @@ import { ContractDetailDTO } from '../repositories/contracts/IContractRepository
 const contractRepository = new ContractRepository(prisma);
 
 /**
+ * Generate contract code with format CON.00000
+ * Finds the highest existing CON.XXXXX code and increments from there
+ */
+async function generateContractCode(): Promise<string> {
+  // Find the contract with highest CON.XXXXX code using ORDER BY DESC
+  const lastContract = await prisma.contract.findFirst({
+    where: {
+      code: {
+        startsWith: 'CON.',
+      },
+    },
+    orderBy: { code: 'desc' },
+    select: { code: true },
+  });
+
+  let nextNumber = 1;
+  if (lastContract?.code) {
+    const match = lastContract.code.match(/CON\.(\d+)/);
+    if (match) {
+      nextNumber = parseInt(match[1], 10) + 1;
+    }
+  }
+
+  return `CON.${String(nextNumber).padStart(5, '0')}`;
+}
+
+/**
+ * GET /api/contracts/generate-code - Generate next contract code
+ */
+export const getGenerateCode = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const code = await generateContractCode();
+    res.json({
+      success: true,
+      data: { code },
+    });
+  } catch (error) {
+    console.error('Generate contract code error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate contract code',
+      ...(process.env.NODE_ENV === 'development' && { error: errorMessage }),
+    });
+  }
+};
+
+/**
  * Helper function to parse date from d-m-Y or ISO format
  */
 function parseDate(dateString: string | undefined): Date | null {
@@ -220,7 +268,6 @@ export const createContract = async (req: Request, res: Response): Promise<void>
     const createdBy = user?.id || 1;
 
     const {
-      code,
       customer_id,
       period,
       periode_from,
@@ -242,14 +289,17 @@ export const createContract = async (req: Request, res: Response): Promise<void>
       packages,
     } = req.body;
 
-    // Validate required fields
-    if (!code || !customer_id || !period) {
+    // Validate required fields (code is auto-generated)
+    if (!customer_id || !period) {
       res.status(400).json({
         success: false,
-        message: 'Missing required fields: code, customer_id, period',
+        message: 'Missing required fields: customer_id, period',
       });
       return;
     }
+
+    // Auto-generate contract code
+    const code = await generateContractCode();
 
     // Parse dates (support both periode_from/to and period_from/to)
     const periodFrom = parseDate(periode_from || period_from);

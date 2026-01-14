@@ -199,7 +199,7 @@ export const createSubcontractor = async (req: Request, res: Response): Promise<
 
     // Check duplicate via repository
     const duplicateResult = await subcontractorRepo.findByLabName(lab_name.trim());
-    if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
+    if (duplicateResult.isSuccess() && duplicateResult.getValue() === true) {
       res.status(409).json({
         success: false,
         message: 'Lab name already exists'
@@ -422,7 +422,7 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
     // Check duplicate via repository
     if (updateData.lab_name) {
       const duplicateResult = await subcontractorRepo.findByLabName(updateData.lab_name, id);
-      if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
+      if (duplicateResult.isSuccess() && duplicateResult.getValue() === true) {
         res.status(409).json({
           success: false,
           message: 'Lab name already exists'
