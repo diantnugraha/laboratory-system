@@ -108,6 +108,7 @@ model Customer {
   preOrders       PreOrder[]
   contracts       Contract[]
   packages        Package[]
+  orders          Order[]
 
   @@index([customer_name], name: "idx_customer_name")
   @@index([special_customer, top], name: "idx_customer_special_top")
@@ -140,8 +141,9 @@ model AnalystType {
   updated_by  Int?      @map("updated_by")
   trash       Int?
 
-  analystRules AnalystRules[]
-  services     Service[]
+  analystRules   AnalystRules[]
+  services       Service[]
+  sampleAnalysts SampleAnalyst[]
 
   @@index([name])
   @@map("analyst_type")
@@ -176,6 +178,7 @@ model Contact {
   users           Users[]
   quotations      Quotation[]
   preOrders       PreOrder[]
+  orders          Order[]
 
   @@index([customer_id])
   @@index([address_id])
@@ -205,6 +208,7 @@ model Address {
   customer          Customer  @relation(fields: [customer_id], references: [id])
   contacts          Contact[]
   quotations        Quotation[]
+  orders            Order[]
 
   @@index([customer_id])
   @@map("address")
@@ -354,6 +358,7 @@ model Service {
   @@index([status])
   standartDetails StandartDetail[]
   contractDetails ContractDetail[]
+  worksheets      Worksheet[]
 
   @@map("service")
 }
@@ -370,9 +375,11 @@ model Standart {
   updated_by Int?      @map("updated_by")
   trash      Int?
 
-  category       Category?        @relation(fields: [category_id], references: [id])
-  customer       Customer?        @relation(fields: [customer_id], references: [id])
+  category        Category?        @relation(fields: [category_id], references: [id])
+  customer        Customer?        @relation(fields: [customer_id], references: [id])
   standartDetails StandartDetail[]
+  samples         Sample[]
+  worksheets      Worksheet[]
 
   @@index([category_id])
   @@index([customer_id])
@@ -429,6 +436,7 @@ model Quotation {
   contact         Contact?  @relation(fields: [contact_id], references: [id])
   address         Address?  @relation(fields: [address_id], references: [id])
   preOrders       PreOrder[]
+  orders          Order[]
 
   @@index([customer_id])
   @@index([contact_id])
@@ -471,6 +479,7 @@ model PreOrder {
   customer          Customer  @relation(fields: [customer_id], references: [id])
   contact           Contact   @relation(fields: [contact_id], references: [id])
   quotation         Quotation? @relation(fields: [quotation_id], references: [id])
+  orders            Order[]
 
   @@index([customer_id])
   @@index([contact_id])
@@ -511,6 +520,7 @@ model Contract {
 
   customer          Customer             @relation(fields: [customerId], references: [id])
   details           ContractDetail[]
+  orders            Order[]
 
   @@index([customerId])
   @@index([periodTo])
@@ -559,10 +569,212 @@ model Package {
 
   customer        Customer? @relation(fields: [customerId], references: [id])
   contractDetails ContractDetail[]
+  worksheets      Worksheet[]
 
   @@index([customerId])
   @@index([code])
   @@index([name])
   @@index([trash])
   @@map("package")
+}
+
+// ==================== ORDER MODULE ====================
+
+model Order {
+  id                Int       @id @default(autoincrement())
+  code              String    @unique @db.VarChar(50)
+  customer_id       Int       @map("customer_id")
+  contact_id        Int       @map("contact_id")
+  address_id        Int?      @map("address_id")
+  contract_id       Int?      @map("contract_id")
+  pre_order_id      Int?      @map("pre_order_id")
+  quotation_id      Int?      @map("quotation_id")
+
+  // Order details
+  status            String    @db.VarChar(50)
+  priority          String    @db.VarChar(20)
+  order_date        DateTime  @map("order_date") @db.Date
+  due_date          DateTime? @map("due_date") @db.Date
+  complete_date     DateTime? @map("complete_date") @db.DateTime(0)
+
+  // Pricing
+  sub_total         Float     @map("sub_total") @default(0)
+  discount_percent  Float     @map("discount_percent") @default(0)
+  discount_value    Float     @map("discount_value") @default(0)
+  vat_percent       Float     @map("vat_percent") @default(11)
+  vat_value         Float     @map("vat_value") @default(0)
+  total             Float     @default(0)
+
+  // Additional info
+  remarks           String?   @db.Text
+  notes_internal    String?   @map("notes_internal") @db.Text
+  lab               Int       @default(0)
+
+  // Audit fields
+  created_at        DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at        DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by        Int       @map("created_by")
+  updated_by        Int?      @map("updated_by")
+  trash             Int?
+
+  // Relations
+  customer          Customer  @relation(fields: [customer_id], references: [id])
+  contact           Contact   @relation(fields: [contact_id], references: [id])
+  address           Address?  @relation(fields: [address_id], references: [id])
+  contract          Contract? @relation(fields: [contract_id], references: [id])
+  preOrder          PreOrder? @relation(fields: [pre_order_id], references: [id])
+  quotation         Quotation? @relation(fields: [quotation_id], references: [id])
+  samples           Sample[]
+
+  @@index([customer_id])
+  @@index([contact_id])
+  @@index([status])
+  @@index([code])
+  @@index([trash])
+  @@map("order")
+}
+
+// ==================== SAMPLE MODULE ====================
+
+model Sample {
+  id                Int       @id @default(autoincrement())
+  code              String    @unique @db.VarChar(50)
+  order_id          Int       @map("order_id")
+  standart_id       Int?      @map("standart_id")
+
+  // Sample details
+  name              String    @db.VarChar(255)
+  description       String?   @db.Text
+  sample_type       String?   @map("sample_type") @db.VarChar(100)
+  sample_condition  String?   @map("sample_condition") @db.VarChar(255)
+  sampling_date     DateTime? @map("sampling_date") @db.Date
+  received_date     DateTime? @map("received_date") @db.Date
+  quantity          Int       @default(1)
+  unit              String?   @db.VarChar(50)
+
+  // Status (aggregated from worksheets)
+  status            String    @db.VarChar(50)
+
+  // Due dates
+  due_date          DateTime? @map("due_date") @db.Date
+  coa_release_due_date DateTime? @map("coa_release_due_date") @db.Date
+  analysis_finished_date DateTime? @map("analysis_finished_date") @db.DateTime(0)
+
+  // Lead time tracking
+  lead_time         String?   @map("lead_time") @db.VarChar(50)
+
+  // Audit fields
+  created_at        DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at        DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by        Int       @map("created_by")
+  updated_by        Int?      @map("updated_by")
+  trash             Int?
+
+  // Relations
+  order             Order     @relation(fields: [order_id], references: [id])
+  standart          Standart? @relation(fields: [standart_id], references: [id])
+  worksheets        Worksheet[]
+  sampleAnalysts    SampleAnalyst[]
+
+  @@index([order_id])
+  @@index([standart_id])
+  @@index([status])
+  @@index([code])
+  @@index([trash])
+  @@map("sample")
+}
+
+// ==================== WORKSHEET MODULE ====================
+
+model Worksheet {
+  id                Int       @id @default(autoincrement())
+  code              String    @unique @db.VarChar(50)
+  sample_id         Int       @map("sample_id")
+  service_id        Int       @map("service_id")
+  package_id        Int?      @map("package_id")
+  standart_id       Int?      @map("standart_id")
+
+  // Status
+  status            String    @db.VarChar(50)
+
+  // Test result
+  result            String?   @db.Text
+  n_result          String?   @map("n_result") @db.Text
+  result_history    String?   @map("result_history") @db.Text
+  unit              String?   @db.VarChar(255)
+  remarks           String?   @db.Text
+  document          String?   @db.VarChar(500)
+
+  // Analyst assignment
+  analyst_id        Int?      @map("worksheet_by")
+  worksheet_date    DateTime? @map("worksheet_date") @db.DateTime(0)
+  finish_date       DateTime? @map("finish_date") @db.Date
+
+  // Supervisor
+  supervisor_id     Int?      @map("supervisor_id")
+
+  // QC verification
+  qc_id             Int?      @map("qc_id")
+  verify_qc_date    DateTime? @map("verify_qc_date") @db.DateTime(0)
+
+  // Manager approval
+  manager_id        Int?      @map("manager_id")
+
+  // Subcontract fields
+  air_way_bill      String?   @map("air_way_bill") @db.VarChar(255)
+  subcon_send_date  DateTime? @map("subcon_send_date") @db.Date
+  subcon_received_date DateTime? @map("subcon_received_date") @db.Date
+  subcon_end_date   DateTime? @map("subcon_end_date") @db.Date
+
+  // Revision/Retest tracking
+  total_retest      Int       @map("total_retest") @default(0)
+  total_revision    Int       @map("total_revision") @default(0)
+  total_customer_retest Int   @map("total_customer_retest") @default(0)
+
+  // Pricing
+  discount          Decimal?  @db.Decimal(5, 2)
+  index_array       Int?      @map("index_array")
+  non_parameter     Int?      @map("non_parameter")
+
+  // Audit fields
+  created_at        DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at        DateTime? @updatedAt @map("updated_at") @db.DateTime(0)
+  created_by        Int       @map("created_by")
+  updated_by        Int?      @map("updated_by")
+  trash             Int?
+
+  // Relations
+  sample            Sample    @relation(fields: [sample_id], references: [id])
+  service           Service   @relation(fields: [service_id], references: [id])
+  package           Package?  @relation(fields: [package_id], references: [id])
+  standart          Standart? @relation(fields: [standart_id], references: [id])
+
+  @@index([sample_id])
+  @@index([service_id])
+  @@index([package_id])
+  @@index([status])
+  @@index([analyst_id], map: "idx_worksheet_analyst")
+  @@index([code])
+  @@index([trash])
+  @@map("worksheet")
+}
+
+// ==================== SAMPLE ANALYST MODULE ====================
+
+model SampleAnalyst {
+  id                Int         @id @default(autoincrement())
+  sample_id         Int         @map("sample_id")
+  analyst_type_id   Int         @map("analyst_type_id")
+  status            String      @db.VarChar(50)
+  created_at        DateTime    @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at        DateTime?   @updatedAt @map("updated_at") @db.DateTime(0)
+
+  // Relations
+  sample            Sample      @relation(fields: [sample_id], references: [id])
+  analystType       AnalystType @relation(fields: [analyst_type_id], references: [id])
+
+  @@unique([sample_id, analyst_type_id])
+  @@index([sample_id])
+  @@index([analyst_type_id])
+  @@map("sample_analyst")
 }

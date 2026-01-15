@@ -26,6 +26,9 @@ import subcontractorRoutes from './routes/subcontractorRoutes';
 import packageRoutes from './routes/packageRoutes';
 import standartRoutes from './routes/standartRoutes';
 import contractRoutes from './routes/contractRoutes';
+import orderRoutes from './routes/orderRoutes';
+import sampleRoutes from './routes/sampleRoutes';
+import worksheetRoutes from './routes/worksheetRoutes';
 
 const app: Express = express();
 const PORT: number = parseInt(process.env.PORT || '3000', 10);
@@ -72,6 +75,9 @@ app.use('/api/subcontractors', subcontractorRoutes);
 app.use('/api/packages', packageRoutes);
 app.use('/api/standards', standartRoutes);
 app.use('/api/contracts', contractRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/samples', sampleRoutes);
+app.use('/api/worksheets', worksheetRoutes);
 
 // 404 handler
 app.use(notFoundHandler);

@@ -121,7 +121,7 @@ export const createAnalystType = async (req: Request, res: Response): Promise<vo
 
     // Check duplicate via repository
     const duplicateResult = await analystTypeRepo.findByName(name.trim());
-    if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
+    if (duplicateResult.isSuccess() && duplicateResult.getValue()) {
       res.status(409).json({
         success: false,
         message: 'Name already exists'
@@ -214,7 +214,7 @@ export const updateAnalystType = async (req: Request, res: Response): Promise<vo
     // Check duplicate via repository
     if (updateData.name) {
       const duplicateResult = await analystTypeRepo.findByName(updateData.name, id);
-      if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
+      if (duplicateResult.isSuccess() && duplicateResult.getValue()) {
         res.status(409).json({
           success: false,
           message: 'Name already exists'
