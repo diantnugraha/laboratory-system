@@ -12,6 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { InternalUserFormDialog } from "@/components/forms/InternalUserFormDialog";
 import { ExternalUserFormDialog } from "@/components/forms/ExternalUserFormDialog";
 
@@ -63,11 +65,12 @@ export default function UserPage() {
         limit: 30,
         search,
       });
-      setInternalUsers(response.data);
-      setInternalPagination(response.pagination);
-    } catch (error: any) {
-      console.error('Error fetching internal users:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch internal users');
+      setInternalUsers(response.data || []);
+      if (response.pagination) {
+        setInternalPagination(response.pagination);
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('internal users')));
     } finally {
       setInternalLoading(false);
     }
@@ -82,11 +85,12 @@ export default function UserPage() {
         limit: 30,
         search,
       });
-      setExternalUsers(response.data);
-      setExternalPagination(response.pagination);
-    } catch (error: any) {
-      console.error('Error fetching external users:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch external users');
+      setExternalUsers(response.data || []);
+      if (response.pagination) {
+        setExternalPagination(response.pagination);
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('external users')));
     } finally {
       setExternalLoading(false);
     }
@@ -96,7 +100,7 @@ export default function UserPage() {
   const fetchRoles = useCallback(async () => {
     try {
       const response = await userService.getRoles({ limit: 100 });
-      setRoles(response.data);
+      setRoles(response.data || []);
     } catch (error: any) {
       console.error('Error fetching roles:', error);
     }

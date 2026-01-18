@@ -217,31 +217,39 @@ export class MethodRepository implements IMethodRepository {
     }
   }
 
+  /**
+   * Generate next method code using transaction with row-level locking
+   * to prevent race conditions under concurrent requests.
+   * Format: MTD.00001, MTD.00002, etc.
+   *
+   * PERFORMANCE: String formatting moved outside transaction to minimize lock time
+   */
   async generateNextCode(): Promise<RepositoryResult<string>> {
     try {
-      const lastMethod = await this.prisma.method.findFirst({
-        where: { trash: null },
-        orderBy: { code: 'desc' },
-        select: { code: true },
+      // Transaction returns only the next number - minimize lock time
+      const nextNumber = await this.prisma.$transaction(async (tx) => {
+        // Use FOR UPDATE to lock rows during code generation
+        // This prevents race conditions when multiple requests try to generate codes simultaneously
+        const result = await tx.$queryRaw<[{ max_code: string | null }]>`
+          SELECT MAX(code) as max_code
+          FROM method
+          WHERE code LIKE 'MTD.%' AND trash IS NULL
+          FOR UPDATE
+        `;
+
+        const maxCode = result[0]?.max_code;
+        if (!maxCode) return 1;
+
+        const match = maxCode.match(/^MTD\.(\d+)$/);
+        return match ? parseInt(match[1], 10) + 1 : 1;
       });
 
-      if (!lastMethod || !lastMethod.code) {
-        return RepositoryResult.ok('MTD.00001');
-      }
-
-      // Parse MTD.XXXXX format
-      const match = lastMethod.code.match(/^MTD\.(\d+)$/);
-      if (!match) {
-        return RepositoryResult.ok('MTD.00001');
-      }
-
-      const lastNumber = parseInt(match[1], 10);
-      const nextNumber = lastNumber + 1;
-      const nextCode = `MTD.${nextNumber.toString().padStart(5, '0')}`;
-
-      return RepositoryResult.ok(nextCode);
-    } catch (error: any) {
-      return RepositoryResult.fail(`Failed to generate code: ${error.message}`);
+      // String formatting OUTSIDE transaction (lock already released)
+      const code = `MTD.${String(nextNumber).padStart(5, '0')}`;
+      return RepositoryResult.ok(code);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return RepositoryResult.fail(`Failed to generate code: ${message}`);
     }
   }
 

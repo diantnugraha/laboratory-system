@@ -10,6 +10,7 @@ import { FlaskConical, Loader2, Lock, Eye, EyeOff, CheckCircle, XCircle, ArrowRi
 import { useToast } from '@/hooks/use-toast';
 import { AnimatedBackground } from '@/components/ui/AnimatedBackground';
 import api from '@/services/api';
+import { getErrorMessage } from '@/lib/utils/errorHandler';
 
 function SetupPasswordForm() {
   const searchParams = useSearchParams();
@@ -95,10 +96,10 @@ function SetupPasswordForm() {
           variant: 'destructive',
         });
       }
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: 'Error',
-        description: err.response?.data?.message || 'Failed to setup password',
+        description: getErrorMessage(err, 'Failed to setup password'),
         variant: 'destructive',
       });
     } finally {

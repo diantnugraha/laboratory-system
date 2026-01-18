@@ -7,11 +7,11 @@ import { dateSchema } from './common';
 
 export const createUnitSchema = z.object({
   name: z.string()
-    .min(1, 'Nama unit wajib diisi')
-    .max(255, 'Nama unit maksimal 255 karakter')
+    .min(1, 'Unit name is required')
+    .max(255, 'Unit name must be at most 255 characters')
     .trim(),
   description: z.string()
-    .min(1, 'Deskripsi wajib diisi'),
+    .min(1, 'Description is required'),
   lab_id: z.number().optional()
 });
 
@@ -23,12 +23,12 @@ export type CreateUnitInput = z.infer<typeof createUnitSchema>;
 
 export const updateUnitSchema = z.object({
   name: z.string()
-    .min(1, 'Nama unit tidak boleh kosong')
-    .max(255, 'Nama unit maksimal 255 karakter')
+    .min(1, 'Unit name is required')
+    .max(255, 'Unit name must be at most 255 characters')
     .trim()
     .optional(),
   description: z.string()
-    .min(1, 'Deskripsi tidak boleh kosong')
+    .min(1, 'Description is required')
     .optional(),
   lab_id: z.number().nullable().optional()
 });
@@ -42,7 +42,7 @@ export type UpdateUnitInput = z.infer<typeof updateUnitSchema>;
 export const unitJsonQuerySchema = z.object({
   q: z.string().optional(),
   lab_id: z.string()
-    .regex(/^\d+$/, 'Lab ID harus berupa angka')
+    .regex(/^\d+$/, 'Lab ID must be a number')
     .transform(Number)
     .optional()
 });
@@ -57,7 +57,7 @@ export const unitReportQuerySchema = z.object({
   startDate: dateSchema.optional(),
   endDate: dateSchema.optional(),
   lab_id: z.string()
-    .regex(/^\d+$/, 'Lab ID harus berupa angka')
+    .regex(/^\d+$/, 'Lab ID must be a number')
     .transform(Number)
     .optional()
 });

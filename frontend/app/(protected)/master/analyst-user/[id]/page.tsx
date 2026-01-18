@@ -49,6 +49,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import {
   analystTypeService,
   AnalystType,
@@ -134,8 +136,8 @@ export default function AnalystTypeDetailPage() {
       } else {
         setServices([]);
       }
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to fetch analyst type");
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('analyst type')));
       router.push("/master/analyst-user");
     } finally {
       setLoading(false);
@@ -225,8 +227,8 @@ export default function AnalystTypeDetailPage() {
 
       // Refetch data
       await fetchAnalystType();
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to update analyst type");
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('analyst type')));
     } finally {
       setSaving(false);
     }
@@ -238,8 +240,8 @@ export default function AnalystTypeDetailPage() {
       await analystTypeService.delete(id);
       toast.success("Analyst Type deleted successfully");
       router.push("/master/analyst-user");
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to delete analyst type");
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('analyst type')));
       setDeleteDialogOpen(false);
     } finally {
       setDeleting(false);

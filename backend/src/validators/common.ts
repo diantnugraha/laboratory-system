@@ -9,7 +9,7 @@ import { z } from 'zod';
  */
 export const idParamSchema = z.object({
   id: z.string()
-    .regex(/^\d+$/, 'ID harus berupa angka')
+    .regex(/^\d+$/, 'ID must be a number')
     .transform(Number)
 });
 
@@ -24,11 +24,11 @@ export type IdParam = z.infer<typeof idParamSchema>;
  */
 export const paginationSchema = z.object({
   page: z.string()
-    .regex(/^\d+$/, 'Page harus berupa angka')
+    .regex(/^\d+$/, 'Page must be a number')
     .transform(Number)
     .optional(),
   limit: z.string()
-    .regex(/^\d+$/, 'Limit harus berupa angka')
+    .regex(/^\d+$/, 'Limit must be a number')
     .transform(Number)
     .optional(),
   search: z.string().optional()
@@ -41,11 +41,11 @@ export type PaginationQuery = z.infer<typeof paginationSchema>;
  */
 export const offsetPaginationSchema = z.object({
   limit: z.string()
-    .regex(/^\d+$/, 'Limit harus berupa angka')
+    .regex(/^\d+$/, 'Limit must be a number')
     .transform(Number)
     .optional(),
   offset: z.string()
-    .regex(/^\d+$/, 'Offset harus berupa angka')
+    .regex(/^\d+$/, 'Offset must be a number')
     .transform(Number)
     .optional(),
   search: z.string().optional()
@@ -61,13 +61,13 @@ export type OffsetPaginationQuery = z.infer<typeof offsetPaginationSchema>;
  * Date format YYYY-MM-DD
  */
 export const dateSchema = z.string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal harus YYYY-MM-DD');
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date format must be YYYY-MM-DD');
 
 /**
  * Flexible date format (YYYY-MM-DD or DD-MM-YYYY)
  */
 export const flexibleDateSchema = z.string()
-  .regex(/^(\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})$/, 'Format tanggal harus YYYY-MM-DD atau DD-MM-YYYY');
+  .regex(/^(\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})$/, 'Date format must be YYYY-MM-DD or DD-MM-YYYY');
 
 // ============================================
 // Common String Validators
@@ -78,7 +78,7 @@ export const flexibleDateSchema = z.string()
  */
 export const requiredString = (fieldName: string) =>
   z.string()
-    .min(1, `${fieldName} wajib diisi`)
+    .min(1, `${fieldName} is required`)
     .trim();
 
 /**
@@ -86,8 +86,8 @@ export const requiredString = (fieldName: string) =>
  */
 export const requiredStringMax = (fieldName: string, maxLength: number) =>
   z.string()
-    .min(1, `${fieldName} wajib diisi`)
-    .max(maxLength, `${fieldName} maksimal ${maxLength} karakter`)
+    .min(1, `${fieldName} is required`)
+    .max(maxLength, `${fieldName} must be at most ${maxLength} characters`)
     .trim();
 
 /**
@@ -111,7 +111,7 @@ export const nullableString = () =>
  */
 export const stringToNumber = (fieldName: string) =>
   z.string()
-    .regex(/^\d+$/, `${fieldName} harus berupa angka`)
+    .regex(/^\d+$/, `${fieldName} must be a number`)
     .transform(Number);
 
 /**

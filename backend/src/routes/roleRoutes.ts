@@ -1,18 +1,35 @@
-import express, { Router } from 'express';
-import { authenticate } from '../middleware/auth';
-import { validate } from '../middleware/zodValidator';
-import { getRoles, getRoleById } from '../controllers/roleController';
-import { idParamSchema, roleQuerySchema } from '../validators';
+import type { FastifyPluginAsync } from 'fastify';
+import { authenticate } from '../plugins/auth.js';
+import { validate } from '../plugins/zodValidator.js';
+import { getRoles, getRoleById } from '../controllers/roleController.js';
+import { idParamSchema, roleQuerySchema } from '../validators/index.js';
+import { zodToSwagger } from '../schemas/swagger/index.js';
 
-const router: Router = express.Router();
+const roleRoutes: FastifyPluginAsync = async (fastify) => {
+  // All routes require authentication
+  fastify.addHook('preHandler', authenticate);
 
-// All routes require authentication
-router.use(authenticate);
+  // List of roles (requires authentication)
+  fastify.get('/', {
+    schema: {
+      description: 'Get all roles with optional search',
+      tags: ['Roles'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(roleQuerySchema)
+    },
+    preHandler: [validate(roleQuerySchema, 'query')]
+  }, getRoles);
 
-// List of roles (requires authentication)
-router.get('/', validate(roleQuerySchema, 'query'), getRoles);
+  // Get role detail by ID (requires authentication)
+  fastify.get('/:id', {
+    schema: {
+      description: 'Get role detail by ID',
+      tags: ['Roles'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [validate(idParamSchema, 'params')]
+  }, getRoleById);
+};
 
-// Get role detail by ID (requires authentication)
-router.get('/:id', validate(idParamSchema, 'params'), getRoleById);
-
-export default router;
+export default roleRoutes;

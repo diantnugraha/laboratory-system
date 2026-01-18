@@ -32,6 +32,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { RenderHTML } from '@/components/shared/RenderHTML';
+import { getErrorMessage } from '@/lib/utils/errorHandler';
+import { OPERATION_ERROR_MESSAGES } from '@/lib/constants/errorMessages';
 
 export default function CategoriesServicesDetailPage() {
   const params = useParams();
@@ -55,9 +57,8 @@ export default function CategoriesServicesDetailPage() {
         setLoading(true);
         const response = await categoryService.getById(categoryId);
         setCategory(response.data);
-      } catch (error: any) {
-        console.error('Error fetching category:', error);
-        toast.error(error.response?.data?.message || 'Failed to fetch category');
+      } catch (error) {
+        toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('category')));
       } finally {
         setLoading(false);
       }
@@ -92,8 +93,8 @@ export default function CategoriesServicesDetailPage() {
       // Refresh category data
       const response = await categoryService.getById(categoryId);
       setCategory(response.data);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to update category');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('category')));
     }
   };
 
@@ -102,8 +103,8 @@ export default function CategoriesServicesDetailPage() {
       await categoryService.delete(categoryId);
       toast.success('Category deleted successfully');
       router.push('/master/categories-services');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to delete category');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('category')));
     }
   };
 

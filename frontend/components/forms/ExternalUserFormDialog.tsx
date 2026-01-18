@@ -42,6 +42,8 @@ import { toast } from "sonner";
 import { userService, AGENCY_ROLE_ID, CUSTOMER_ROLE_ID } from "@/services/userService";
 import { customerService, Contact } from "@/services/customerService";
 import { cn } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 interface Customer {
   id: number;
@@ -273,9 +275,8 @@ export function ExternalUserFormDialog({ open, onOpenChange, onSuccess }: Extern
         onOpenChange(false);
         onSuccess?.();
       }
-    } catch (error: any) {
-      console.error('Error creating user:', error);
-      toast.error(error.response?.data?.message || 'Failed to create user');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('user')));
     } finally {
       setSubmitting(false);
     }

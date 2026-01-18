@@ -114,12 +114,6 @@ export class ServiceRepository implements IServiceRepository {
               lab_name: true,
             },
           },
-          analystType: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
         },
       });
 
@@ -453,12 +447,6 @@ export class ServiceRepository implements IServiceRepository {
               lab_name: true,
             },
           },
-          analystType: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
         },
       });
 
@@ -560,12 +548,6 @@ export class ServiceRepository implements IServiceRepository {
               select: {
                 id: true,
                 lab_name: true,
-              },
-            },
-            analystType: {
-              select: {
-                id: true,
-                name: true,
               },
             },
           },

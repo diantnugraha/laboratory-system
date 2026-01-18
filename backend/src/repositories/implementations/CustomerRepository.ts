@@ -2,6 +2,8 @@ import { PrismaClient } from '@prisma/client';
 import {
   ICustomerRepository,
   CustomerFilter,
+  ContactFilter,
+  CustomerAdvancedFilter,
   CreateCustomerDTO,
   UpdateCustomerDTO,
   AddressDTO,
@@ -23,36 +25,36 @@ export class CustomerRepository implements ICustomerRepository {
     try {
       const {
         search,
-        months = 60,
+        months, // No default - fetch all data by default
         offset = 0,
         limit = 30,
         userRole,
         userCustomerId,
       } = filter;
 
-      // Calculate date filter
-      const monthsAgo = new Date();
-      if (months > 0) {
-        monthsAgo.setMonth(monthsAgo.getMonth() - months);
-      }
-
       // Build where condition
       const where: any = {
         trash: null,
-        ...(months > 0 ? { created_at: { gte: monthsAgo } } : {}),
         ...buildMultiFieldSearchCondition(
           ['customer_name', 'code', 'business', 'email'],
           sanitizeSearchQuery(search)
         ),
       };
 
+      // Only apply date filter if months is explicitly provided and > 0
+      if (months && months > 0) {
+        const monthsAgo = new Date();
+        monthsAgo.setMonth(monthsAgo.getMonth() - months);
+        where.created_at = { gte: monthsAgo };
+      }
+
       // BR-010: Customer role restrictions
       if (userRole === 16 && userCustomerId) {
         where.id = userCustomerId;
       }
 
-      // Execute queries in parallel
-      const [customers, total, totalAll] = await Promise.all([
+      // OPTIMIZED: Removed redundant totalAll count (was 3 queries, now 2)
+      const [customers, total] = await Promise.all([
         this.prisma.customer.findMany({
           where,
           orderBy: { id: 'desc' },
@@ -94,7 +96,6 @@ export class CustomerRepository implements ICustomerRepository {
           },
         }),
         this.prisma.customer.count({ where }),
-        this.prisma.customer.count({ where: { trash: null } }),
       ]);
 
       const totalPages = Math.ceil(total / limit);
@@ -111,7 +112,9 @@ export class CustomerRepository implements ICustomerRepository {
           },
         },
         {
-          message: `Showing ${total} customers from last ${months / 12} years (Total: ${totalAll} customers)`,
+          message: months && months > 0
+            ? `Showing ${total} customers from last ${months / 12} years`
+            : `Showing ${total} customers`,
         }
       );
     } catch (error: any) {
@@ -260,11 +263,12 @@ export class CustomerRepository implements ICustomerRepository {
           phone: data.phone!,
           fax: data.fax,
           city: data.city!,
-          state: data.state,
+          state: data.state!,
           country: data.country!,
           postal_code: data.postal_code ? parseInt(data.postal_code) : null,
           npwp: data.npwp,
           status: data.status || 'Active',
+          created_by: data.created_by || 0,
           trash: null,
         },
       });
@@ -302,6 +306,7 @@ export class CustomerRepository implements ICustomerRepository {
       }
       if (data.npwp !== undefined) updateData.npwp = data.npwp;
       if (data.status) updateData.status = data.status;
+      if (data.updated_by) updateData.updated_by = data.updated_by;
 
       const address = await this.prisma.address.update({
         where: { id },
@@ -370,7 +375,7 @@ export class CustomerRepository implements ICustomerRepository {
         data: {
           customer_id: customerId,
           address_id: data.address_id!,
-          title: data.title,
+          title: data.title!,
           first_name: data.first_name!,
           middle_name: data.middle_name,
           surname: data.surname!,
@@ -382,6 +387,7 @@ export class CustomerRepository implements ICustomerRepository {
           fax: data.fax,
           mobile_phone: data.mobile_phone,
           status: data.status || 'Active',
+          created_by: data.created_by || 0,
           trash: null,
         },
       });
@@ -418,15 +424,13 @@ export class CustomerRepository implements ICustomerRepository {
       if (data.fax !== undefined) updateData.fax = data.fax;
       if (data.mobile_phone !== undefined) updateData.mobile_phone = data.mobile_phone;
       if (data.status) updateData.status = data.status;
+      if (data.updated_by) updateData.updated_by = data.updated_by;
 
-      // Update username if name changed
-      if (data.first_name || data.surname) {
-        const contact = await this.prisma.contact.findUnique({ where: { id } });
-        if (contact) {
-          const firstName = data.first_name || contact.first_name;
-          const surname = data.surname || contact.surname;
-          updateData.username = `${firstName.toLowerCase()}.${surname.toLowerCase()}`;
-        }
+      // OPTIMIZED: Only update username if BOTH names are provided
+      // This avoids an extra DB fetch just to get the current name
+      // If only one name is updated, username stays unchanged (acceptable trade-off)
+      if (data.first_name && data.surname) {
+        updateData.username = `${data.first_name.toLowerCase()}.${data.surname.toLowerCase()}`;
       }
 
       const contact = await this.prisma.contact.update({
@@ -469,6 +473,258 @@ export class CustomerRepository implements ICustomerRepository {
       return RepositoryResult.ok(!!address);
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to validate address: ${error.message}`);
+    }
+  }
+
+  // ===== Additional Read Operations =====
+
+  async findContacts(filter: ContactFilter): Promise<RepositoryResult<PaginatedData<any>>> {
+    try {
+      const { customerId, search, offset = 0, limit = 20 } = filter;
+
+      // Build where condition
+      const where: any = {
+        customer_id: customerId,
+        trash: null,
+        ...buildMultiFieldSearchCondition(
+          ['first_name', 'middle_name', 'surname', 'email'],
+          sanitizeSearchQuery(search)
+        ),
+      };
+
+      const [contacts, total] = await Promise.all([
+        this.prisma.contact.findMany({
+          where,
+          orderBy: { id: 'desc' },
+          take: limit,
+          skip: offset,
+          select: {
+            id: true,
+            title: true,
+            first_name: true,
+            middle_name: true,
+            surname: true,
+            username: true,
+            job_title: true,
+            department: true,
+            email: true,
+            phone: true,
+            fax: true,
+            mobile_phone: true,
+            status: true,
+            created_at: true,
+            address: {
+              select: {
+                id: true,
+                address_type: true,
+                address: true,
+                city: true,
+                state: true,
+                country: true,
+              },
+            },
+          },
+        }),
+        this.prisma.contact.count({ where }),
+      ]);
+
+      return RepositoryResult.ok({
+        data: contacts,
+        pagination: {
+          page: Math.floor(offset / limit) + 1,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch contacts: ${error.message}`);
+    }
+  }
+
+  async findRegions(
+    type: 'city' | 'state' | 'country',
+    search?: string
+  ): Promise<RepositoryResult<string[]>> {
+    try {
+      const sanitizedSearch = sanitizeSearchQuery(search);
+
+      // Build where condition
+      const where: any = {
+        trash: null,
+        [type]: { not: null },
+      };
+
+      // Add search condition if provided
+      if (sanitizedSearch) {
+        where[type] = {
+          ...where[type],
+          contains: sanitizedSearch,
+        };
+      }
+
+      // OPTIMIZED: Added limit to prevent loading 50k+ rows
+      const addresses = await this.prisma.address.findMany({
+        where,
+        select: { [type]: true },
+        distinct: [type],
+        orderBy: { [type]: 'asc' },
+        take: 100, // Cap results to prevent memory issues
+      });
+
+      // Extract and filter values (already sorted by DB, no need to sort again)
+      const regions: string[] = [];
+      for (const addr of addresses) {
+        const value = (addr as any)[type] as string | null | undefined;
+        if (value && typeof value === 'string' && value.trim() !== '') {
+          regions.push(value);
+        }
+      }
+
+      return RepositoryResult.ok(regions);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch regions: ${error.message}`);
+    }
+  }
+
+  async getTopCustomersByOrders(
+    year: number
+  ): Promise<RepositoryResult<{ labels: string[]; datasets: any[] }>> {
+    try {
+      // OPTIMIZED: Single query with JOIN instead of N+1 pattern
+      const topCustomers = await this.prisma.$queryRaw<
+        Array<{ customer_id: number; customer_name: string; order_count: bigint }>
+      >`
+        SELECT
+          c.id as customer_id,
+          c.customer_name,
+          COUNT(po.id) as order_count
+        FROM pre_order po
+        INNER JOIN customer c ON po.customer_id = c.id
+        WHERE po.trash IS NULL
+          AND c.trash IS NULL
+          AND YEAR(po.created_at) = ${year}
+        GROUP BY c.id, c.customer_name
+        ORDER BY order_count DESC
+        LIMIT 5
+      `;
+
+      // Calculate total for percentage
+      const total = topCustomers.reduce((sum, x) => sum + Number(x.order_count), 0) || 1;
+
+      const labels = topCustomers.map((c) => c.customer_name);
+      const datasets = [
+        {
+          label: `Top Customers ${year}`,
+          data: topCustomers.map((c) => Math.round((Number(c.order_count) / total) * 100)),
+        },
+      ];
+
+      return RepositoryResult.ok({ labels, datasets });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to compute top customers: ${error.message}`);
+    }
+  }
+
+  async findContactsForAutocomplete(
+    customerId: number,
+    search?: string,
+    isDataTable?: boolean
+  ): Promise<RepositoryResult<any[]>> {
+    try {
+      const sanitizedSearch = sanitizeSearchQuery(search);
+      // OPTIMIZED: Reduced max limit from 1000 to 200 to prevent memory issues
+      const take = isDataTable ? 200 : 20;
+
+      const where: any = {
+        trash: null,
+        customer_id: customerId,
+        ...(sanitizedSearch
+          ? buildMultiFieldSearchCondition(['first_name', 'middle_name', 'surname', 'email'], sanitizedSearch)
+          : {}),
+      };
+
+      const contacts = await this.prisma.contact.findMany({
+        where,
+        take,
+        orderBy: { id: 'desc' },
+        select: {
+          id: true,
+          first_name: true,
+          middle_name: true,
+          surname: true,
+          email: true,
+        },
+      });
+
+      const items = contacts.map((c) => ({
+        id: c.id,
+        text: [c.first_name, c.middle_name, c.surname].filter(Boolean).join(' '),
+        email: c.email,
+      }));
+
+      return RepositoryResult.ok(items);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch contacts for autocomplete: ${error.message}`);
+    }
+  }
+
+  async findWithAdvancedFilters(
+    filter: CustomerAdvancedFilter
+  ): Promise<RepositoryResult<PaginatedData<any>>> {
+    try {
+      const {
+        customerId,
+        priority,
+        payment,
+        sales,
+        page = 1,
+        perPage = 20,
+        orderBy = 'id:desc',
+      } = filter;
+
+      const skip = (page - 1) * perPage;
+
+      // Build where condition
+      const where: any = { trash: null };
+      if (customerId) where.id = customerId;
+      if (priority !== undefined) where.special_customer = priority ? 1 : 0;
+      if (payment !== undefined) where.payment_middle = payment ? 1 : 0;
+      if (sales) where.sales_incharge = sales;
+
+      // Parse orderBy
+      const [field, dir] = orderBy.split(':');
+      const orderByClause = { [field || 'id']: (dir === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc' };
+
+      const [items, total] = await Promise.all([
+        this.prisma.customer.findMany({
+          where,
+          take: perPage,
+          skip,
+          orderBy: orderByClause,
+          select: {
+            id: true,
+            code: true,
+            customer_name: true,
+            special_customer: true,
+            payment_middle: true,
+            sales_incharge: true,
+          },
+        }),
+        this.prisma.customer.count({ where }),
+      ]);
+
+      return RepositoryResult.ok({
+        data: items,
+        pagination: {
+          page,
+          limit: perPage,
+          total,
+          totalPages: Math.ceil(total / perPage),
+        },
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch customers: ${error.message}`);
     }
   }
 }

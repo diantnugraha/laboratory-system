@@ -27,6 +27,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { serviceService } from "@/services/serviceService";
 import api from "@/services/api";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 interface Category {
   id: number;
@@ -314,9 +316,8 @@ export function ServiceFormDialog({ open, onOpenChange, onSuccess }: ServiceForm
       setAnalystTypeSearchQuery("");
     onOpenChange(false);
       onSuccess?.();
-    } catch (error: any) {
-      console.error('Error creating service:', error);
-      toast.error(error.response?.data?.message || 'Failed to create service');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('service')));
     } finally {
       setSubmitting(false);
     }

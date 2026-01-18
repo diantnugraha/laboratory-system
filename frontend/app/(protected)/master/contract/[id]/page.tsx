@@ -27,6 +27,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { contractService, Contract } from "@/services/contractService";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const formatDate = (dateString: string) => {
   if (!dateString) return '-';
@@ -76,9 +78,9 @@ export default function ContractDetailPage() {
       setLoading(true);
       const response = await contractService.getById(id);
       setContract(response.data);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching contract:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch contract');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('contract')));
     } finally {
       setLoading(false);
     }
@@ -93,9 +95,9 @@ export default function ContractDetailPage() {
       await contractService.delete(id);
       toast.success("Contract deleted successfully");
       router.push("/master/contract");
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting contract:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete contract');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('contract')));
     }
   };
 

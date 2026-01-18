@@ -1,93 +1,115 @@
-/// <reference path="./types/express.d.ts" />
-import express, { Express, Request, Response, NextFunction } from 'express';
-import cors from 'cors';
-import morgan from 'morgan';
-import helmet from 'helmet';
+/// <reference path="./types/fastify.d.ts" />
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-import { testConnection } from './config/database';
-import { errorHandler, notFoundHandler } from './middleware/errorHandler';
-import authRoutes from './routes/authRoutes';
-import userRoutes from './routes/userRoutes';
-import publicRoutes from './routes/publicRoutes';
-import customerRoutes from './routes/customerRoutes';
-import roleRoutes from './routes/roleRoutes';
-import matrixRoutes from './routes/matrixRoutes';
-import categoryRoutes from './routes/categoryRoutes';
-import methodRoutes from './routes/methodRoutes';
-import labRoutes from './routes/labRoutes';
-import parameterRoutes from './routes/parameterRoutes';
-import unitRoutes from './routes/unitRoutes';
-import analystTypeRoutes from './routes/analystTypeRoutes';
-import serviceRoutes from './routes/serviceRoutes';
-import subcontractorRoutes from './routes/subcontractorRoutes';
-import packageRoutes from './routes/packageRoutes';
-import standartRoutes from './routes/standartRoutes';
-import contractRoutes from './routes/contractRoutes';
-import orderRoutes from './routes/orderRoutes';
-import sampleRoutes from './routes/sampleRoutes';
-import worksheetRoutes from './routes/worksheetRoutes';
+import { testConnection } from './config/database.js';
+import errorHandler from './plugins/errorHandler.js';
+import fileUpload from './plugins/fileUpload.js';
+import { registerSwagger } from './plugins/swagger.js';
 
-const app: Express = express();
-const PORT: number = parseInt(process.env.PORT || '3000', 10);
+// Import routes
+import authRoutes from './routes/authRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import publicRoutes from './routes/publicRoutes.js';
+import customerRoutes from './routes/customerRoutes.js';
+import roleRoutes from './routes/roleRoutes.js';
+import matrixRoutes from './routes/matrixRoutes.js';
+import categoryRoutes from './routes/categoryRoutes.js';
+import methodRoutes from './routes/methodRoutes.js';
+import labRoutes from './routes/labRoutes.js';
+import parameterRoutes from './routes/parameterRoutes.js';
+import unitRoutes from './routes/unitRoutes.js';
+import analystTypeRoutes from './routes/analystTypeRoutes.js';
+import serviceRoutes from './routes/serviceRoutes.js';
+import subcontractorRoutes from './routes/subcontractorRoutes.js';
+import packageRoutes from './routes/packageRoutes.js';
+import standartRoutes from './routes/standartRoutes.js';
+import contractRoutes from './routes/contractRoutes.js';
+import orderRoutes from './routes/orderRoutes.js';
+import sampleRoutes from './routes/sampleRoutes.js';
+import worksheetRoutes from './routes/worksheetRoutes.js';
+import invoiceRoutes from './routes/invoiceRoutes.js';
+import quotationRoutes from './routes/quotationRoutes.js';
 
-// Middleware
-app.use(helmet());
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
-  credentials: true
-}));
-app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const PORT = parseInt(process.env.PORT || '3000', 10);
+
+const app = Fastify({
+  logger: {
+    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+    transport: process.env.NODE_ENV !== 'production' ? {
+      target: 'pino-pretty',
+      options: {
+        colorize: true
+      }
+    } : undefined
+  }
+});
+
+// Register plugins
+await app.register(helmet);
+await app.register(cors, {
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+});
+await app.register(errorHandler);
+await app.register(fileUpload);
+
+// Register Swagger documentation
+await registerSwagger(app);
 
 // Test database connection
 testConnection();
 
-// Routes
-app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({
+// Health check route
+app.get('/api/health', async () => {
+  return {
     status: 'OK',
     message: 'Laboratory System API is running',
     timestamp: new Date().toISOString()
-  });
+  };
 });
 
-// Public routes (no authentication)
-app.use('/api/public', publicRoutes);
-
-// Authenticated routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/customers', customerRoutes);
-app.use('/api/roles', roleRoutes);
-app.use('/api/matrices', matrixRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/methods', methodRoutes);
-app.use('/api/labs', labRoutes);
-app.use('/api/parameters', parameterRoutes);
-app.use('/api/units', unitRoutes);
-app.use('/api/analyst-types', analystTypeRoutes);
-app.use('/api/services', serviceRoutes);
-app.use('/api/subcontractors', subcontractorRoutes);
-app.use('/api/packages', packageRoutes);
-app.use('/api/standards', standartRoutes);
-app.use('/api/contracts', contractRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/samples', sampleRoutes);
-app.use('/api/worksheets', worksheetRoutes);
-
-// 404 handler
-app.use(notFoundHandler);
-
-// Error handler
-app.use(errorHandler);
+// Register routes
+await app.register(publicRoutes, { prefix: '/api/public' });
+await app.register(authRoutes, { prefix: '/api/auth' });
+await app.register(userRoutes, { prefix: '/api/users' });
+await app.register(customerRoutes, { prefix: '/api/customers' });
+await app.register(roleRoutes, { prefix: '/api/roles' });
+await app.register(matrixRoutes, { prefix: '/api/matrices' });
+await app.register(categoryRoutes, { prefix: '/api/categories' });
+await app.register(methodRoutes, { prefix: '/api/methods' });
+await app.register(labRoutes, { prefix: '/api/labs' });
+await app.register(parameterRoutes, { prefix: '/api/parameters' });
+await app.register(unitRoutes, { prefix: '/api/units' });
+await app.register(analystTypeRoutes, { prefix: '/api/analyst-types' });
+await app.register(serviceRoutes, { prefix: '/api/services' });
+await app.register(subcontractorRoutes, { prefix: '/api/subcontractors' });
+await app.register(packageRoutes, { prefix: '/api/packages' });
+await app.register(standartRoutes, { prefix: '/api/standards' });
+await app.register(contractRoutes, { prefix: '/api/contracts' });
+await app.register(orderRoutes, { prefix: '/api/orders' });
+await app.register(sampleRoutes, { prefix: '/api/samples' });
+await app.register(worksheetRoutes, { prefix: '/api/worksheets' });
+await app.register(invoiceRoutes, { prefix: '/api/invoices' });
+await app.register(quotationRoutes, { prefix: '/api/quotations' });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 API URL: http://localhost:${PORT}/api`);
-});
+const start = async () => {
+  try {
+    await app.listen({ port: PORT, host: '0.0.0.0' });
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🌐 API URL: http://localhost:${PORT}/api`);
+  } catch (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
+};
+
+start();

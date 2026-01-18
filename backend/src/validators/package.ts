@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 export const createPackageSchema = z.object({
   name: z.string()
-    .min(1, 'Nama package wajib diisi')
+    .min(1, 'Package name is required')
     .trim(),
   description: z.string().trim().optional(),
   services: z.array(z.number()).optional() // array of service IDs
@@ -20,11 +20,14 @@ export type CreatePackageInput = z.infer<typeof createPackageSchema>;
 
 export const updatePackageSchema = z.object({
   name: z.string()
-    .min(1, 'Nama package tidak boleh kosong')
+    .min(1, 'Package name is required')
     .trim()
     .optional(),
   description: z.string().trim().nullable().optional(),
-  services: z.array(z.number()).optional()
+  services: z.array(z.number()).optional(),
+  serviceIds: z.array(z.number()).optional(),
+  customer_id: z.number().nullable().optional(),
+  group: z.number().optional()
 });
 
 export type UpdatePackageInput = z.infer<typeof updatePackageSchema>;
@@ -35,11 +38,11 @@ export type UpdatePackageInput = z.infer<typeof updatePackageSchema>;
 
 export const packageQuerySchema = z.object({
   page: z.string()
-    .regex(/^\d+$/, 'Page harus berupa angka')
+    .regex(/^\d+$/, 'Page must be a number')
     .transform(Number)
     .optional(),
   limit: z.string()
-    .regex(/^\d+$/, 'Limit harus berupa angka')
+    .regex(/^\d+$/, 'Limit must be a number')
     .transform(Number)
     .optional(),
   search: z.string().optional(),

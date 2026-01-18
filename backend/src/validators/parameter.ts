@@ -7,9 +7,9 @@ import { dateSchema } from './common';
 
 export const createParameterSchema = z.object({
   name: z.string()
-    .min(1, 'Nama parameter wajib diisi')
+    .min(1, 'Parameter name is required')
     .trim(),
-  lab_id: z.number({ message: 'Lab wajib dipilih' })
+  lab_id: z.number({ message: 'Lab is required' })
 });
 
 export type CreateParameterInput = z.infer<typeof createParameterSchema>;
@@ -20,7 +20,7 @@ export type CreateParameterInput = z.infer<typeof createParameterSchema>;
 
 export const updateParameterSchema = z.object({
   name: z.string()
-    .min(1, 'Nama parameter tidak boleh kosong')
+    .min(1, 'Parameter name is required')
     .trim()
     .optional(),
   lab_id: z.number().optional()

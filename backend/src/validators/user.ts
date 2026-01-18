@@ -6,17 +6,17 @@ import { z } from 'zod';
 
 export const createUserSchema = z.object({
   email: z.string()
-    .min(1, 'Email wajib diisi')
-    .email('Email tidak valid')
+    .min(1, 'Email is required')
+    .email('Invalid email format')
     .trim()
     .toLowerCase(),
   username: z.string()
-    .min(1, 'Username wajib diisi')
+    .min(1, 'Username is required')
     .trim(),
   display_name: z.string()
-    .min(1, 'Display name wajib diisi')
+    .min(1, 'Display name is required')
     .trim(),
-  role_id: z.number({ message: 'Role wajib dipilih' }),
+  role_id: z.number({ message: 'Role is required' }),
   customer_id: z.number().nullable().optional()
 });
 
@@ -28,16 +28,16 @@ export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 export const updateUserSchema = z.object({
   email: z.string()
-    .email('Email tidak valid')
+    .email('Invalid email format')
     .trim()
     .toLowerCase()
     .optional(),
   username: z.string()
-    .min(1, 'Username tidak boleh kosong')
+    .min(1, 'Username is required')
     .trim()
     .optional(),
   display_name: z.string()
-    .min(1, 'Display name tidak boleh kosong')
+    .min(1, 'Display name is required')
     .trim()
     .optional(),
   role_id: z.number().optional(),
@@ -53,11 +53,11 @@ export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
 export const userQuerySchema = z.object({
   limit: z.string()
-    .regex(/^\d+$/, 'Limit harus berupa angka')
+    .regex(/^\d+$/, 'Limit must be a number')
     .transform(Number)
     .optional(),
   offset: z.string()
-    .regex(/^\d+$/, 'Offset harus berupa angka')
+    .regex(/^\d+$/, 'Offset must be a number')
     .transform(Number)
     .optional(),
   search: z.string().optional(),
@@ -73,11 +73,11 @@ export type UserQuery = z.infer<typeof userQuerySchema>;
 
 export const publicUsersQuerySchema = z.object({
   limit: z.string()
-    .regex(/^\d+$/, 'Limit harus berupa angka')
+    .regex(/^\d+$/, 'Limit must be a number')
     .transform(Number)
     .optional(),
   offset: z.string()
-    .regex(/^\d+$/, 'Offset harus berupa angka')
+    .regex(/^\d+$/, 'Offset must be a number')
     .transform(Number)
     .optional(),
   search: z.string().optional(),

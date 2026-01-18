@@ -24,6 +24,15 @@ export interface UpdateLabDTO {
 }
 
 /**
+ * Dependency Check Result
+ */
+export interface LabDependencyCheckResult {
+  parameterCount: number;
+  unitCount: number;
+  hasDependencies: boolean;
+}
+
+/**
  * Lab Repository Interface (The Contract)
  * Defines all data access operations for Lab entity
  */
@@ -62,4 +71,9 @@ export interface ILabRepository {
    * Soft delete lab
    */
   delete(id: number): Promise<RepositoryResult<boolean>>;
+
+  /**
+   * Check if lab has dependencies (parameters, units)
+   */
+  checkDependencies(id: number): Promise<RepositoryResult<LabDependencyCheckResult>>;
 }

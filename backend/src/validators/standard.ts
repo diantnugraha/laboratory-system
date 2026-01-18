@@ -6,13 +6,13 @@ import { z } from 'zod';
 
 const standartDetailSchema = z.object({
   id: z.number().optional(), // for update - existing detail ID
-  service_id: z.number({ message: 'Service wajib dipilih' }),
-  min: z.number({ message: 'Nilai min wajib diisi' }),
-  max: z.number({ message: 'Nilai max wajib diisi' }),
+  service_id: z.number({ message: 'Service is required' }),
+  min: z.number({ message: 'Min value is required' }),
+  max: z.number({ message: 'Max value is required' }),
   unit: z.string()
-    .min(1, 'Unit wajib diisi')
+    .min(1, 'Unit is required')
 }).refine(data => data.min <= data.max, {
-  message: 'Nilai min harus kurang dari atau sama dengan max',
+  message: 'Min value must be less than or equal to max',
   path: ['min']
 });
 
@@ -24,15 +24,15 @@ export type StandartDetailInput = z.infer<typeof standartDetailSchema>;
 
 export const createStandardSchema = z.object({
   code: z.string()
-    .min(1, 'Kode wajib diisi')
+    .min(1, 'Code is required')
     .trim(),
   name: z.string()
-    .min(1, 'Nama wajib diisi')
+    .min(1, 'Name is required')
     .trim(),
   category_id: z.number().nullable().optional(),
   customer_id: z.number().nullable().optional(),
   standartDetails: z.array(standartDetailSchema)
-    .min(1, 'Minimal 1 detail wajib diisi')
+    .min(1, 'At least 1 detail is required')
 });
 
 export type CreateStandardInput = z.infer<typeof createStandardSchema>;
@@ -43,11 +43,11 @@ export type CreateStandardInput = z.infer<typeof createStandardSchema>;
 
 export const updateStandardSchema = z.object({
   code: z.string()
-    .min(1, 'Kode tidak boleh kosong')
+    .min(1, 'Code is required')
     .trim()
     .optional(),
   name: z.string()
-    .min(1, 'Nama tidak boleh kosong')
+    .min(1, 'Name is required')
     .trim()
     .optional(),
   category_id: z.number().nullable().optional(),
@@ -63,11 +63,11 @@ export type UpdateStandardInput = z.infer<typeof updateStandardSchema>;
 
 export const standardQuerySchema = z.object({
   page: z.string()
-    .regex(/^\d+$/, 'Page harus berupa angka')
+    .regex(/^\d+$/, 'Page must be a number')
     .transform(Number)
     .optional(),
   limit: z.string()
-    .regex(/^\d+$/, 'Limit harus berupa angka')
+    .regex(/^\d+$/, 'Limit must be a number')
     .transform(Number)
     .optional(),
   search: z.string().optional(),
@@ -83,7 +83,7 @@ export type StandardQuery = z.infer<typeof standardQuerySchema>;
 export const standardJsonQuerySchema = z.object({
   q: z.string().optional(),
   customer_id: z.string()
-    .regex(/^\d+$/, 'Customer ID harus berupa angka')
+    .regex(/^\d+$/, 'Customer ID must be a number')
     .transform(Number)
     .optional()
 });
@@ -96,11 +96,11 @@ export type StandardJsonQuery = z.infer<typeof standardJsonQuerySchema>;
 
 export const standardFetchJsonQuerySchema = z.object({
   page: z.string()
-    .regex(/^\d+$/, 'Page harus berupa angka')
+    .regex(/^\d+$/, 'Page must be a number')
     .transform(Number)
     .optional(),
   limit: z.string()
-    .regex(/^\d+$/, 'Limit harus berupa angka')
+    .regex(/^\d+$/, 'Limit must be a number')
     .transform(Number)
     .optional(),
   search: z.string().optional()

@@ -1,9 +1,9 @@
-import { Request, Response } from 'express';
-import { prisma } from '../config/database';
-import { PackageRepository } from '../repositories/implementations/PackageRepository';
-import { parseId, parseQueryParam, parseBooleanParam, ApiResponse } from '../types';
-import { parseServiceList, formatServiceList, calculateTotalPrice, parseDateDMY } from '../utils/packageHelper';
-import { getBatchPricing } from '../utils/contractPricingHelper';
+import type { FastifyRequest, FastifyReply } from 'fastify';
+import { prisma } from '../config/database.js';
+import { PackageRepository } from '../repositories/implementations/PackageRepository.js';
+import { parseId, parseQueryParam, parseBooleanParam, ApiResponse } from '../types/index.js';
+import { parseServiceList, formatServiceList, calculateTotalPrice, parseDateDMY } from '../utils/packageHelper.js';
+import { getBatchPricing } from '../utils/contractPricingHelper.js';
 
 // Initialize repository
 const packageRepo = new PackageRepository(prisma);
@@ -33,30 +33,29 @@ async function generatePackageCode(): Promise<string> {
  * GET /api/packages - List with search & pagination
  * Supports query parameter ?select=true for dropdown/select options
  */
-export const getAllPackages = async (req: Request, res: Response): Promise<void> => {
+export const getAllPackages = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const isSelect = parseBooleanParam(req.query.select as string | string[] | undefined);
-    const page = parseQueryParam(req.query.page, 1);
-    const limit = parseQueryParam(req.query.limit, 20);
-    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const isSelect = parseBooleanParam((request.query as any).select as string | string[] | undefined);
+    const page = parseQueryParam((request.query as any).page, 1);
+    const limit = parseQueryParam((request.query as any).limit, 20);
+    const search = typeof (request.query as any).search === 'string' ? (request.query as any).search : undefined;
 
     // Call repository
     const result = await packageRepo.findAll({ search, page, limit, select: isSelect });
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const data = result.getValue();
 
     // Select mode returns array directly, standard mode returns paginated data
     if (isSelect) {
-      res.json({
+      return reply.send({
         success: true,
         data
       });
@@ -66,12 +65,12 @@ export const getAllPackages = async (req: Request, res: Response): Promise<void>
         data: data.data,
         pagination: data.pagination,
       };
-      res.json(response);
+      return reply.send(response);
     }
   } catch (error) {
     console.error('getAll packages error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch packages',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -82,15 +81,14 @@ export const getAllPackages = async (req: Request, res: Response): Promise<void>
 /**
  * GET /api/packages/:id - Get package detail by ID
  */
-export const getPackageById = async (req: Request, res: Response): Promise<void> => {
+export const getPackageById = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = parseId((request.params as any).id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Call repository
@@ -98,27 +96,59 @@ export const getPackageById = async (req: Request, res: Response): Promise<void>
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const data = result.getValue();
 
     // Parse service list for easier consumption
     const serviceIds = parseServiceList(data.listService);
+    console.log('[DEBUG GET] listService from DB:', data.listService);
+    console.log('[DEBUG GET] parsed serviceIds:', serviceIds);
+
+    // Fetch service details
+    let services: any[] = [];
+    if (serviceIds.length > 0) {
+      const fetchedServices = await (prisma as any).service.findMany({
+        where: {
+          id: { in: serviceIds },
+          trash: null,
+        },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          price: true,
+          parameter: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      // Sort services to match the order stored in listService
+      const serviceMap = new Map(fetchedServices.map((s: any) => [s.id, s]));
+      services = serviceIds
+        .map(id => serviceMap.get(id))
+        .filter((s): s is any => s !== undefined);
+    }
+
     const responseData = {
       ...data,
-      serviceIds
+      serviceIds,
+      services,
     };
 
-    res.json({ success: true, data: responseData });
+    return reply.send({ success: true, data: responseData });
   } catch (error) {
     console.error('getPackageById error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch package',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -129,7 +159,7 @@ export const getPackageById = async (req: Request, res: Response): Promise<void>
 /**
  * POST /api/packages - Create new package
  */
-export const createPackage = async (req: Request, res: Response): Promise<void> => {
+export const createPackage = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
     const {
       code,
@@ -142,15 +172,14 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
       serviceIds, // Array of service IDs
       customer_id,
       group
-    } = req.body;
+    } = request.body as any;
 
     // Validate required fields
     if (!name) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Name is required'
       });
-      return;
     }
 
     // Auto-generate code if not provided
@@ -158,34 +187,31 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
 
     // Validate service list
     if (!Array.isArray(serviceIds) || serviceIds.length === 0) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'At least one service is required'
       });
-      return;
     }
 
     // Check if code already exists via repository (returns boolean)
     const codeResult = await packageRepo.findByCode(finalCode);
     if (codeResult.isSuccess() && codeResult.getValue() === true) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Code already exists'
       });
-      return;
     }
 
     // Check if name already exists via repository (returns boolean)
     const nameResult = await packageRepo.findByName(name);
     if (nameResult.isSuccess() && nameResult.getValue() === true) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Name already exists'
       });
-      return;
     }
 
-    const createdBy = (req as any).user?.id || null;
+    const createdBy = (request as any).user?.id || null;
 
     // Parse dates from d-m-Y format
     let promotionFromDate: Date | null = null;
@@ -194,22 +220,20 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
     if (promotion_from) {
       promotionFromDate = parseDateDMY(promotion_from);
       if (!promotionFromDate) {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Invalid promotion_from date format. Expected d-m-Y format (e.g., 01-01-2024)'
         });
-        return;
       }
     }
 
     if (promotion_to) {
       promotionToDate = parseDateDMY(promotion_to);
       if (!promotionToDate) {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Invalid promotion_to date format. Expected d-m-Y format (e.g., 31-12-2024)'
         });
-        return;
       }
     }
 
@@ -222,20 +246,18 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
         finalTotalPrice = await calculateTotalPrice(serviceIds, prisma);
       } catch (error) {
         console.error('Error calculating total price:', error);
-        res.status(500).json({
+        return reply.code(500).send({
           success: false,
           message: 'Failed to calculate total price from services'
         });
-        return;
       }
     }
 
     if (finalTotalPrice === null || finalTotalPrice === undefined) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Total price is required when group=1, or services must exist when group=0'
       });
-      return;
     }
 
     // Format service list
@@ -260,21 +282,19 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
       // Handle Prisma unique constraint errors
       const errorMsg = result.error || 'Unknown error';
       if (errorMsg.includes('Unique constraint') || errorMsg.includes('code')) {
-        res.status(409).json({
+        return reply.code(409).send({
           success: false,
           message: 'Code already exists'
         });
-        return;
       }
 
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: errorMsg,
       });
-      return;
     }
 
-    res.status(201).json({
+    return reply.code(201).send({
       success: true,
       message: 'Package created successfully',
       data: result.getValue(),
@@ -285,14 +305,13 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
 
     // Handle Prisma unique constraint errors
     if (errorMessage.includes('Unique constraint') || errorMessage.includes('code')) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Code already exists'
       });
-      return;
     }
 
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to create package',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -303,28 +322,28 @@ export const createPackage = async (req: Request, res: Response): Promise<void> 
 /**
  * PUT /api/packages/:id - Update package
  */
-export const updatePackage = async (req: Request, res: Response): Promise<void> => {
+export const updatePackage = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = parseId((request.params as any).id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Check if package exists via repository
     const existingResult = await packageRepo.findById(id);
     if (existingResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Package not found',
       });
-      return;
     }
 
     const existingPackage = existingResult.getValue();
+
+    console.log('[DEBUG UPDATE] request.body:', request.body);
 
     const {
       code,
@@ -337,29 +356,31 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
       serviceIds,
       customer_id,
       group
-    } = req.body;
+    } = request.body as any;
+
+    console.log('[DEBUG UPDATE] extracted serviceIds:', serviceIds);
 
     // Check if code is being changed and if it already exists
-    if (code && code !== existingPackage.code) {
-      const codeResult = await packageRepo.findByCode(code, id);
+    // Use case-insensitive comparison to detect actual changes
+    if (code && code.trim().toLowerCase() !== existingPackage.code?.toLowerCase()) {
+      const codeResult = await packageRepo.findByCode(code.trim(), id);
       if (codeResult.isSuccess() && codeResult.getValue() === true) {
-        res.status(409).json({
+        return reply.code(409).send({
           success: false,
           message: 'Code already exists'
         });
-        return;
       }
     }
 
     // Check if name is being changed and if it already exists
-    if (name && name !== existingPackage.name) {
-      const nameResult = await packageRepo.findByName(name, id);
+    // Use case-insensitive comparison to detect actual changes
+    if (name && name.trim().toLowerCase() !== existingPackage.name?.toLowerCase()) {
+      const nameResult = await packageRepo.findByName(name.trim(), id);
       if (nameResult.isSuccess() && nameResult.getValue() === true) {
-        res.status(409).json({
+        return reply.code(409).send({
           success: false,
           message: 'Name already exists'
         });
-        return;
       }
     }
 
@@ -379,11 +400,10 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
       } else {
         const parsedDate = parseDateDMY(promotion_from);
         if (!parsedDate) {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Invalid promotion_from date format. Expected d-m-Y format (e.g., 01-01-2024)'
           });
-          return;
         }
         updateData.promotionFrom = parsedDate;
       }
@@ -395,11 +415,10 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
       } else {
         const parsedDate = parseDateDMY(promotion_to);
         if (!parsedDate) {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Invalid promotion_to date format. Expected d-m-Y format (e.g., 31-12-2024)'
           });
-          return;
         }
         updateData.promotionTo = parsedDate;
       }
@@ -408,13 +427,15 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
     // Handle service list update
     if (serviceIds !== undefined) {
       if (!Array.isArray(serviceIds) || serviceIds.length === 0) {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'At least one service is required'
         });
-        return;
       }
-      updateData.listService = formatServiceList(serviceIds);
+      const formattedList = formatServiceList(serviceIds);
+      console.log('[DEBUG UPDATE] serviceIds received:', serviceIds);
+      console.log('[DEBUG UPDATE] formatted listService:', formattedList);
+      updateData.listService = formattedList;
     }
 
     // Handle group flag
@@ -433,18 +454,16 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
           updateData.totalPrice = calculatedPrice;
         } catch (error) {
           console.error('Error calculating total price:', error);
-          res.status(500).json({
+          return reply.code(500).send({
             success: false,
             message: 'Failed to calculate total price from services'
           });
-          return;
         }
       } else {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Cannot calculate price: no services provided'
         });
-        return;
       }
     } else if (total_price !== undefined) {
       // If group=1, use manual total_price
@@ -452,8 +471,8 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
     }
 
     // Set updated_by if user is authenticated
-    if ((req as any).user?.id) {
-      updateData.updatedBy = (req as any).user.id;
+    if ((request as any).user?.id) {
+      updateData.updatedBy = (request as any).user.id;
     }
 
     // Update package via repository
@@ -463,21 +482,19 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
       // Handle Prisma unique constraint errors
       const errorMsg = result.error || 'Unknown error';
       if (errorMsg.includes('Unique constraint') || errorMsg.includes('code')) {
-        res.status(409).json({
+        return reply.code(409).send({
           success: false,
           message: 'Code already exists'
         });
-        return;
       }
 
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: errorMsg,
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'Package updated successfully',
       data: result.getValue(),
@@ -488,14 +505,13 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
 
     // Handle Prisma unique constraint errors
     if (errorMessage.includes('Unique constraint') || errorMessage.includes('code')) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Code already exists'
       });
-      return;
     }
 
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to update package',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -506,46 +522,43 @@ export const updatePackage = async (req: Request, res: Response): Promise<void> 
 /**
  * DELETE /api/packages/:id - Delete package (soft delete)
  */
-export const deletePackage = async (req: Request, res: Response): Promise<void> => {
+export const deletePackage = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = parseId((request.params as any).id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Check if package exists via repository
     const existingResult = await packageRepo.findById(id);
     if (existingResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Package not found',
       });
-      return;
     }
 
     // Delete via repository
     const result = await packageRepo.delete(id);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'Package deleted successfully'
     });
   } catch (error) {
     console.error('deletePackage error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to delete package',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -557,12 +570,12 @@ export const deletePackage = async (req: Request, res: Response): Promise<void> 
  * GET /api/packages/json - JSON API with contract pricing support
  * Query params: q (search), group (filter group packages), contract_id (apply pricing), dataTable (use 'data' key), pretty (pretty print)
  */
-export const getPackagesJson = async (req: Request, res: Response): Promise<void> => {
+export const getPackagesJson = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const search = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const groupOnly = parseBooleanParam(req.query.group as string | string[] | undefined);
-    const contractId = parseId(req.query.contract_id as string | undefined);
-    const dataTable = parseBooleanParam(req.query.dataTable as string | string[] | undefined);
+    const search = typeof (request.query as any).q === 'string' ? (request.query as any).q : undefined;
+    const groupOnly = parseBooleanParam((request.query as any).group as string | string[] | undefined);
+    const contractId = parseId((request.query as any).contract_id as string | undefined);
+    const dataTable = parseBooleanParam((request.query as any).dataTable as string | string[] | undefined);
     const limit = dataTable ? undefined : 20; // No limit for dataTable mode
 
     // Load packages via repository
@@ -574,11 +587,10 @@ export const getPackagesJson = async (req: Request, res: Response): Promise<void
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const packages = result.getValue();
@@ -773,16 +785,16 @@ export const getPackagesJson = async (req: Request, res: Response): Promise<void
     }
 
     // Pretty print if requested
-    if (parseBooleanParam(req.query.pretty as string | string[] | undefined)) {
-      res.setHeader('Content-Type', 'application/json');
-      res.json(JSON.stringify(response, null, 2));
+    if (parseBooleanParam((request.query as any).pretty as string | string[] | undefined)) {
+      reply.header('Content-Type', 'application/json');
+      return reply.send(JSON.stringify(response, null, 2));
     } else {
-      res.json(response);
+      return reply.send(response);
     }
   } catch (error) {
     console.error('getPackagesJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch packages JSON',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })

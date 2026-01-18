@@ -34,6 +34,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { methodService } from "@/services/methodService";
 import api from "@/services/api";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { SUCCESS_MESSAGES, OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 interface Matrix {
   id: number;
@@ -109,14 +111,13 @@ export function MethodFormDialog({ open, onOpenChange, onSuccess }: MethodFormDi
         description: data.description || undefined,
         instruction: data.instruction || undefined,
       });
-      toast.success("Method created successfully");
+      toast.success(SUCCESS_MESSAGES.CREATED('Metode'));
       form.reset();
       setMatrixSearchQuery("");
       onOpenChange(false);
       onSuccess?.();
-    } catch (error: any) {
-      console.error('Error creating method:', error);
-      toast.error(error.response?.data?.message || 'Failed to create method');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('metode')));
     } finally {
       setSubmitting(false);
     }

@@ -156,12 +156,14 @@ export class ContractRepository implements IContractRepository {
 
   async findById(id: number): Promise<RepositoryResult<ContractWithDetails | null>> {
     try {
-      const contract = await this.prisma.contract.findFirst({
-        where: { id, trash: null },
+      // Use findUnique for better performance with primary key lookups
+      const contract = await this.prisma.contract.findUnique({
+        where: { id },
         include: this.getContractInclude(),
       });
 
-      if (!contract) {
+      // Check trash after fetch (findUnique doesn't support compound where)
+      if (!contract || contract.trash) {
         return RepositoryResult.ok(null);
       }
 
@@ -212,7 +214,7 @@ export class ContractRepository implements IContractRepository {
     }
   }
 
-  async findForAutocomplete(search?: string, dataTable?: boolean): Promise<RepositoryResult<any[]>> {
+  async findForAutocomplete(search?: string, _dataTable?: boolean): Promise<RepositoryResult<any[]>> {
     try {
       const where: any = { trash: null };
 
@@ -353,18 +355,18 @@ export class ContractRepository implements IContractRepository {
     excludeId?: number
   ): Promise<RepositoryResult<OverlapCheckResult>> {
     try {
+      // Simplified overlap detection using mathematical formula:
+      // Two ranges [A, B] and [C, D] overlap if and only if: A < D AND B > C
+      // This is more efficient than 3 OR conditions
       const overlapping = await this.prisma.contract.findFirst({
         where: {
           customerId,
           trash: null,
           ...(excludeId && { id: { not: excludeId } }),
-          OR: [
-            // New contract starts during existing
-            { periodFrom: { lte: periodFrom }, periodTo: { gte: periodFrom } },
-            // New contract ends during existing
-            { periodFrom: { lte: periodTo }, periodTo: { gte: periodTo } },
-            // New contract contains existing
-            { periodFrom: { gte: periodFrom }, periodTo: { lte: periodTo } },
+          // Overlap condition: existing.periodFrom < new.periodTo AND existing.periodTo > new.periodFrom
+          AND: [
+            { periodFrom: { lt: periodTo } },   // existing starts before new ends
+            { periodTo: { gt: periodFrom } },   // existing ends after new starts
           ],
         },
         select: {
@@ -521,88 +523,57 @@ export class ContractRepository implements IContractRepository {
           data: updateData,
         });
 
-        // Handle details if SELECTED mode
+        // Handle details if SELECTED mode (batch pattern to avoid N+1)
         const statusService = data.statusService ?? existing.statusService;
-        if (statusService === 'selected') {
-          const existingDetailIds = new Set(existing.details.map((d) => d.id));
+        if (statusService === 'selected' && (serviceDetails || packageDetails)) {
+          // Step 1: Delete all existing details for this contract
+          await tx.contractDetail.deleteMany({
+            where: { contractId: id },
+          });
 
-          // Upsert service details
+          // Step 2: Prepare all new details
+          const allDetails: Array<{
+            contractId: number;
+            serviceId?: number;
+            packageId?: number;
+            discountNormal: number;
+            discountUrgent: number;
+            discountVeryUrgent: number;
+          }> = [];
+
+          // Add service details
           if (serviceDetails) {
             for (const detail of serviceDetails) {
               if (detail.serviceId) {
-                await tx.contractDetail.upsert({
-                  where: {
-                    contractId_serviceId: {
-                      contractId: id,
-                      serviceId: detail.serviceId,
-                    },
-                  },
-                  create: {
-                    contractId: id,
-                    serviceId: detail.serviceId,
-                    discountNormal: detail.discountNormal,
-                    discountUrgent: detail.discountUrgent,
-                    discountVeryUrgent: detail.discountVeryUrgent,
-                  },
-                  update: {
-                    discountNormal: detail.discountNormal,
-                    discountUrgent: detail.discountUrgent,
-                    discountVeryUrgent: detail.discountVeryUrgent,
-                  },
+                allDetails.push({
+                  contractId: id,
+                  serviceId: detail.serviceId,
+                  discountNormal: detail.discountNormal,
+                  discountUrgent: detail.discountUrgent,
+                  discountVeryUrgent: detail.discountVeryUrgent,
                 });
-
-                // Remove from set to track which ones to delete
-                const existingDetail = existing.details.find(
-                  (d) => d.serviceId === detail.serviceId
-                );
-                if (existingDetail) {
-                  existingDetailIds.delete(existingDetail.id);
-                }
               }
             }
           }
 
-          // Upsert package details
+          // Add package details
           if (packageDetails) {
             for (const detail of packageDetails) {
               if (detail.packageId) {
-                await tx.contractDetail.upsert({
-                  where: {
-                    contractId_packageId: {
-                      contractId: id,
-                      packageId: detail.packageId,
-                    },
-                  },
-                  create: {
-                    contractId: id,
-                    packageId: detail.packageId,
-                    discountNormal: detail.discountNormal,
-                    discountUrgent: detail.discountUrgent,
-                    discountVeryUrgent: detail.discountVeryUrgent,
-                  },
-                  update: {
-                    discountNormal: detail.discountNormal,
-                    discountUrgent: detail.discountUrgent,
-                    discountVeryUrgent: detail.discountVeryUrgent,
-                  },
+                allDetails.push({
+                  contractId: id,
+                  packageId: detail.packageId,
+                  discountNormal: detail.discountNormal,
+                  discountUrgent: detail.discountUrgent,
+                  discountVeryUrgent: detail.discountVeryUrgent,
                 });
-
-                // Remove from set to track which ones to delete
-                const existingDetail = existing.details.find(
-                  (d) => d.packageId === detail.packageId
-                );
-                if (existingDetail) {
-                  existingDetailIds.delete(existingDetail.id);
-                }
               }
             }
           }
 
-          // Delete removed details
-          if (existingDetailIds.size > 0) {
-            await tx.contractDetail.deleteMany({
-              where: { id: { in: Array.from(existingDetailIds) } },
-            });
+          // Step 3: Batch create all details (single query)
+          if (allDetails.length > 0) {
+            await tx.contractDetail.createMany({ data: allDetails });
           }
         }
 
@@ -623,25 +594,70 @@ export class ContractRepository implements IContractRepository {
 
   async delete(id: number, userId: number): Promise<RepositoryResult<boolean>> {
     try {
-      const contract = await this.prisma.contract.findUnique({
-        where: { id },
-      });
+      // Use transaction for atomic check-and-update operation
+      await this.prisma.$transaction(async (tx) => {
+        const contract = await tx.contract.findUnique({
+          where: { id },
+        });
 
-      if (!contract || contract.trash) {
-        return RepositoryResult.fail('Contract not found');
-      }
+        if (!contract || contract.trash) {
+          throw new Error('Contract not found');
+        }
 
-      await this.prisma.contract.update({
-        where: { id },
-        data: {
-          trash: 1,
-          updatedBy: userId,
-        },
+        // Soft delete - set trash flag
+        await tx.contract.update({
+          where: { id },
+          data: {
+            trash: 1,
+            updatedBy: userId,
+          },
+        });
       });
 
       return RepositoryResult.ok(true);
     } catch (error: any) {
+      if (error.message === 'Contract not found') {
+        return RepositoryResult.fail('Contract not found');
+      }
       return RepositoryResult.fail(`Failed to delete contract: ${error.message}`);
+    }
+  }
+
+  // ===== Code Generation =====
+
+  /**
+   * Generate next contract code using transaction with row-level locking
+   * to prevent race conditions under concurrent requests.
+   * Format: CON.00001, CON.00002, etc.
+   */
+  async generateCode(): Promise<RepositoryResult<string>> {
+    try {
+      const code = await this.prisma.$transaction(async (tx) => {
+        // Use FOR UPDATE to lock the rows during code generation
+        // This prevents race conditions when multiple requests try to generate codes simultaneously
+        const result = await tx.$queryRaw<[{ max_code: string | null }]>`
+          SELECT MAX(code) as max_code
+          FROM contract
+          WHERE code LIKE 'CON.%' AND trash IS NULL
+          FOR UPDATE
+        `;
+
+        let nextNumber = 1;
+        const maxCode = result[0]?.max_code;
+
+        if (maxCode) {
+          const match = maxCode.match(/CON\.(\d+)/);
+          if (match) {
+            nextNumber = parseInt(match[1], 10) + 1;
+          }
+        }
+
+        return `CON.${String(nextNumber).padStart(5, '0')}`;
+      });
+
+      return RepositoryResult.ok(code);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to generate code: ${error.message}`);
     }
   }
 }

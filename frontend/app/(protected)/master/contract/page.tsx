@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const formatDate = (dateString: string) => {
   if (!dateString) return '-';
@@ -103,9 +105,9 @@ export default function ContractPage() {
       });
       setContracts(response.data);
       setPagination(response.pagination);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching contracts:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch contracts');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('contracts')));
     } finally {
       setLoading(false);
     }

@@ -248,6 +248,68 @@ export interface DataTablesResponse {
 }
 
 /**
+ * Worksheet Report Filter
+ */
+export interface WorksheetReportFilter {
+  dateFrom?: Date;
+  dateTo?: Date;
+  type?: 'M' | 'C' | ''; // M=Microbiology, C=Chemistry, ''=All
+  includeTrash?: boolean;
+}
+
+/**
+ * Worksheet Report Data (full details for export)
+ */
+export interface WorksheetReportData {
+  id: number;
+  code: string;
+  status: string;
+  result: string | null;
+  unit: string | null;
+  finishDate: Date | null;
+  sample: {
+    code: string;
+    name: string;
+    priority: string;
+    dueDate: Date | null;
+    receivedDate: Date | null;
+    analysisFinishedDate: Date | null;
+    coaReleaseDueDate: Date | null;
+    status: string;
+  };
+  service: {
+    name: string;
+    price: number | null;
+    category: string | null;
+  };
+  method: {
+    name: string;
+  };
+  order: {
+    code: string;
+    reviewedDate: Date | null;
+  };
+  customer: {
+    name: string;
+  };
+  analyst: {
+    name: string | null;
+  };
+  qc: {
+    name: string | null;
+  };
+}
+
+/**
+ * TODO Analyst Summary (grouped report)
+ */
+export interface TodoAnalystSummary {
+  typeName: string;
+  parameterName: string;
+  count: number;
+}
+
+/**
  * Worksheet Repository Interface
  * Defines all data access operations for Worksheet entity
  */
@@ -418,4 +480,48 @@ export interface IWorksheetRepository {
    * Format: WS{YY}{MM}{0000000}
    */
   generateCode(): Promise<RepositoryResult<string>>;
+
+  // ===== Specialized List Operations =====
+
+  /**
+   * Find delayed worksheets (due_date < today, status in Process/To Be Verified)
+   */
+  findDelayedWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>>;
+
+  /**
+   * Find today's worksheets (due_date = today)
+   */
+  findTodaysWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>>;
+
+  /**
+   * Find retest worksheets (status in Internal Retest/Customer Retest)
+   */
+  findRetestWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>>;
+
+  /**
+   * Find revision worksheets (status = Need to Revised)
+   */
+  findRevisionWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>>;
+
+  /**
+   * Find calculation worksheets (specific service IDs for calculation)
+   */
+  findCalculationWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>>;
+
+  // ===== Report Operations =====
+
+  /**
+   * Get worksheets for report export with full details
+   */
+  findForReport(filter: WorksheetReportFilter): Promise<RepositoryResult<WorksheetReportData[]>>;
+
+  /**
+   * Get analyst TODO summary (grouped by analyst type and parameter)
+   */
+  findTodoAnalystSummary(dateFrom: Date, dateTo: Date): Promise<RepositoryResult<TodoAnalystSummary[]>>;
+
+  /**
+   * Get environmental worksheets for report (orders starting with OD.E)
+   */
+  findEnviroWorksheets(dateFrom: Date, dateTo: Date): Promise<RepositoryResult<WorksheetReportData[]>>;
 }

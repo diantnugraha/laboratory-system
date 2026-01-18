@@ -1,11 +1,11 @@
-import { Request, Response } from 'express';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
-import { prisma } from '../config/database';
-import { UserRepository } from '../repositories/implementations/UserRepository';
-import { handleDepartmentArray } from '../utils/userHelper';
-import { parseId, parseQueryParam, ApiResponse } from '../types';
-import { generateSecurePassword } from '../utils/otpGenerator';
-import { emailService } from '../services/emailService';
+import { prisma } from '../config/database.js';
+import { UserRepository } from '../repositories/implementations/UserRepository.js';
+import { handleDepartmentArray } from '../utils/userHelper.js';
+import { parseId, parseQueryParam, ApiResponse } from '../types/index.js';
+import { generateSecurePassword } from '../utils/otpGenerator.js';
+import { emailService } from '../services/emailService.js';
 
 // Initialize repository
 const userRepo = new UserRepository(prisma);
@@ -47,35 +47,35 @@ const generateSetupTokenAndSendEmail = async (userId: number, email: string, dis
  * - exclude_roles: string (comma-separated role IDs to exclude, e.g. "16,28")
  * - include_roles: string (comma-separated role IDs to include, e.g. "16,28")
  */
-export const getPublicUsers = async (req: Request, res: Response): Promise<void> => {
+export const getPublicUsers = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const limit = parseQueryParam(req.query.limit, 30);
-    const offset = parseQueryParam(req.query.offset, 0);
-    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const query = request.query as Record<string, any>;
+    const limit = parseQueryParam(query.limit, 30);
+    const offset = parseQueryParam(query.offset, 0);
+    const search = typeof query.search === 'string' ? query.search : undefined;
 
     // Parse exclude_roles (comma-separated: "16,28")
-    const excludeRolesParam = typeof req.query.exclude_roles === 'string' ? req.query.exclude_roles : undefined;
+    const excludeRolesParam = typeof query.exclude_roles === 'string' ? query.exclude_roles : undefined;
     let excludeRoles: number[] | undefined;
     if (excludeRolesParam) {
-      excludeRoles = excludeRolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
+      excludeRoles = excludeRolesParam.split(',').map((r: string) => parseId(r.trim())).filter((r: number | null): r is number => r !== null);
     }
 
     // Parse include_roles (comma-separated: "16,28")
-    const includeRolesParam = typeof req.query.include_roles === 'string' ? req.query.include_roles : undefined;
+    const includeRolesParam = typeof query.include_roles === 'string' ? query.include_roles : undefined;
     let includeRoles: number[] | undefined;
     if (includeRolesParam) {
-      includeRoles = includeRolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
+      includeRoles = includeRolesParam.split(',').map((r: string) => parseId(r.trim())).filter((r: number | null): r is number => r !== null);
     }
 
     // Call repository with filters
     const result = await userRepo.findAll({ search, limit, offset, excludeRoles, includeRoles });
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error
       });
-      return;
     }
 
     const data = result.getValue();
@@ -86,11 +86,11 @@ export const getPublicUsers = async (req: Request, res: Response): Promise<void>
       pagination: data.pagination
     };
 
-    res.json(response);
+    return reply.send(response);
   } catch (error) {
     console.error('Get users error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch users',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -102,37 +102,38 @@ export const getPublicUsers = async (req: Request, res: Response): Promise<void>
  * GET /api/users/:id - Get user by ID
  * Requires SuperAdmin (role_id: 1) or Admin (role_id: 2)
  */
-export const getUserById = async (req: Request, res: Response): Promise<void> => {
+export const getUserById = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const params = request.params as Record<string, any>;
+    const id = parseId(params.id);
 
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Call repository
     const result = await userRepo.findById(id);
 
     if (result.isFailure()) {
-      res.status(404).json({
+      // Log error internal, tapi kembalikan pesan standar ke user
+      console.error('Find user by ID error:', result.error);
+      return reply.code(404).send({
         success: false,
-        message: result.error
+        message: 'User not found'
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       data: result.getValue()
     });
   } catch (error) {
     console.error('Get user by ID error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch user',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -147,115 +148,104 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
 // Agency role ID
 const AGENCY_ROLE_ID = 28;
 
-export const createUser = async (req: Request, res: Response): Promise<void> => {
+export const createUser = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const { username, email, display_name, role_id, customer_id, contact_id, department, analyst_type_id, customer_ids, contact_ids } = req.body;
-    const userId = (req as any).user?.id;
+    const body = request.body as Record<string, any>;
+    const { username, email, display_name, role_id, customer_id, contact_id, department, analyst_type_id, customer_ids, contact_ids } = body;
+    const userId = (request as any).user?.id;
 
     // Validate required fields
     if (!username || typeof username !== 'string' || username.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Username is required'
       });
-      return;
     }
 
     if (!email || typeof email !== 'string' || email.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Email is required'
       });
-      return;
     }
 
     if (!display_name || typeof display_name !== 'string' || display_name.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Display name is required'
       });
-      return;
     }
 
     if (!role_id || typeof role_id !== 'number') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Role ID is required'
       });
-      return;
     }
 
     // Business Rule: customer_id required if role_id=16 (Customer) - BR-003
     if (role_id === 16 && !customer_id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Customer ID is required for Customer role'
       });
-      return;
     }
 
     // Business Rule: customer_ids required if role_id=28 (Agency) - BR-006
     if (role_id === AGENCY_ROLE_ID && (!customer_ids || !Array.isArray(customer_ids) || customer_ids.length === 0)) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'At least one customer is required for Agency role'
       });
-      return;
     }
 
     // Check role exists via repository
     const roleValid = await userRepo.validateRoleExists(role_id);
     if (roleValid.isFailure() || !roleValid.getValue()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Role not found'
       });
-      return;
     }
 
     // Business Rule: Check username uniqueness separately - BR-001
     const usernameResult = await userRepo.findByUsername(username.trim());
     if (usernameResult.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: usernameResult.error
       });
-      return;
     }
     if (usernameResult.getValue() !== null) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Username already exists'
       });
-      return;
     }
 
     // Business Rule: Check email uniqueness separately - BR-002
     const emailResult = await userRepo.findByEmail(email.trim());
     if (emailResult.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: emailResult.error
       });
-      return;
     }
     if (emailResult.getValue() !== null) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Email already exists'
       });
-      return;
     }
 
     // Check customer exists if provided via repository
     if (customer_id) {
       const customerValid = await userRepo.validateCustomerExists(customer_id);
       if (customerValid.isFailure() || !customerValid.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Customer not found'
         });
-        return;
       }
     }
 
@@ -313,11 +303,10 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     const result = await userRepo.create(createData);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error
       });
-      return;
     }
 
     const createdUser = result.getValue();
@@ -327,7 +316,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       console.error('Failed to send welcome email:', err);
     });
 
-    res.status(201).json({
+    return reply.code(201).send({
       success: true,
       message: 'User created successfully. Welcome email has been sent.',
       data: createdUser
@@ -335,7 +324,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
   } catch (error) {
     console.error('Create user error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to create user',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -347,20 +336,21 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
  * PUT /api/users/:id - Update user
  * Requires SuperAdmin OR self (own profile)
  */
-export const updateUser = async (req: Request, res: Response): Promise<void> => {
+export const updateUser = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const params = request.params as Record<string, any>;
+    const id = parseId(params.id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
-    const { username, email, display_name, role_id, customer_id, contact_id, department, analyst_type_id, delete: deleteFlag, password, customer_ids, contact_ids } = req.body;
-    const userId = (req as any).user?.id;
-    const isAdmin = (req as any).user?.role_id === 1; // SuperAdmin
+    const body = request.body as Record<string, any>;
+    const { username, email, display_name, role_id, customer_id, contact_id, department, analyst_type_id, delete: deleteFlag, password, customer_ids, contact_ids } = body;
+    const userId = (request as any).user?.id;
+    const isAdmin = (request as any).user?.role_id === 1; // SuperAdmin
 
     // Check if user exists via repository (need full user data for authorization & role check)
     const existingResult = await prisma.users.findFirst({
@@ -368,40 +358,36 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     });
 
     if (!existingResult || existingResult.trash !== null) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'User not found'
       });
-      return;
     }
 
     const existingUser = existingResult;
 
     // Check authorization: Admin or self
     if (!isAdmin && existingUser.id !== userId) {
-      res.status(403).json({
+      return reply.code(403).send({
         success: false,
         message: 'Not authorized to update this user'
       });
-      return;
     }
 
     // Handle soft delete (BR-004) via repository
     if (deleteFlag === true || deleteFlag === '1' || deleteFlag === 1) {
       const deleteResult = await userRepo.delete(id, userId || null);
       if (deleteResult.isFailure()) {
-        res.status(500).json({
+        return reply.code(500).send({
           success: false,
           message: deleteResult.error
         });
-        return;
       }
 
-      res.json({
+      return reply.send({
         success: true,
         message: 'User deleted successfully'
       });
-      return;
     }
 
     // Prepare update data
@@ -409,44 +395,40 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 
     if (username !== undefined) {
       if (!username || typeof username !== 'string' || username.trim() === '') {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Username cannot be empty'
         });
-        return;
       }
       updateData.username = username.trim();
     }
 
     if (email !== undefined) {
       if (!email || typeof email !== 'string' || email.trim() === '') {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Email cannot be empty'
         });
-        return;
       }
       updateData.email = email.trim();
     }
 
     if (display_name !== undefined) {
       if (!display_name || typeof display_name !== 'string' || display_name.trim() === '') {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Display name cannot be empty'
         });
-        return;
       }
       updateData.display_name = display_name.trim();
     }
 
     if (role_id !== undefined) {
       if (typeof role_id !== 'number') {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Role ID must be a number'
         });
-        return;
       }
       updateData.role_id = role_id;
     }
@@ -472,31 +454,28 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (updateData.role_id) {
       const roleValid = await userRepo.validateRoleExists(updateData.role_id);
       if (roleValid.isFailure() || !roleValid.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Role not found'
         });
-        return;
       }
 
       // Business Rule: customer_id required if role_id=16
       if (updateData.role_id === 16 && !updateData.customer_id && !existingUser.customer_id) {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Customer ID is required for Customer role'
         });
-        return;
       }
 
       // Business Rule: customer_ids required if role_id=28 (Agency)
       if (updateData.role_id === AGENCY_ROLE_ID) {
         // Check if customer_ids provided in update or existing user has list_customer
         if (!customer_ids || !Array.isArray(customer_ids) || customer_ids.length === 0) {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'At least one customer is required for Agency role'
           });
-          return;
         }
       }
     }
@@ -532,11 +511,10 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (updateData.customer_id) {
       const customerValid = await userRepo.validateCustomerExists(updateData.customer_id);
       if (customerValid.isFailure() || !customerValid.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Customer not found'
         });
-        return;
       }
     }
 
@@ -544,18 +522,16 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (updateData.username) {
       const usernameResult = await userRepo.findByUsername(updateData.username, id);
       if (usernameResult.isFailure()) {
-        res.status(500).json({
+        return reply.code(500).send({
           success: false,
           message: usernameResult.error
         });
-        return;
       }
       if (usernameResult.getValue() !== null) {
-        res.status(409).json({
+        return reply.code(409).send({
           success: false,
           message: 'Username already exists'
         });
-        return;
       }
     }
 
@@ -563,18 +539,16 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (updateData.email) {
       const emailResult = await userRepo.findByEmail(updateData.email, id);
       if (emailResult.isFailure()) {
-        res.status(500).json({
+        return reply.code(500).send({
           success: false,
           message: emailResult.error
         });
-        return;
       }
       if (emailResult.getValue() !== null) {
-        res.status(409).json({
+        return reply.code(409).send({
           success: false,
           message: 'Email already exists'
         });
-        return;
       }
     }
 
@@ -585,14 +559,13 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     const result = await userRepo.update(id, updateData, existingUser.role_id);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'User updated successfully',
       data: result.getValue()
@@ -600,7 +573,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
   } catch (error) {
     console.error('Update user error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to update user',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -612,56 +585,53 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
  * DELETE /api/users/:id - Soft delete user
  * Requires SuperAdmin (role_id: 1) only
  */
-export const deleteUser = async (req: Request, res: Response): Promise<void> => {
+export const deleteUser = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const params = request.params as Record<string, any>;
+    const id = parseId(params.id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
-    const userId = (req as any).user?.id;
+    const userId = (request as any).user?.id;
 
     // Prevent self-deletion
     if (id === userId) {
-      res.status(403).json({
+      return reply.code(403).send({
         success: false,
         message: 'Cannot delete your own account'
       });
-      return;
     }
 
     // Check if user exists via repository
     const existingResult = await userRepo.findById(id);
     if (existingResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'User not found'
       });
-      return;
     }
 
     // Delete via repository
     const result = await userRepo.delete(id, userId || null);
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'User deleted successfully'
     });
   } catch (error) {
     console.error('Delete user error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to delete user',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -673,31 +643,32 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
  * GET /api/users/json - JSON API for autocomplete/select2
  * Requires any authenticated user
  */
-export const getUsersJson = async (req: Request, res: Response): Promise<void> => {
+export const getUsersJson = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const idIn = typeof req.query.id_in === 'string' ? req.query.id_in : undefined;
-    const exceptRole = typeof req.query.except_role === 'string' ? parseId(req.query.except_role) : undefined;
-    const isDataTable = req.query.dataTable !== undefined;
+    const query = request.query as Record<string, any>;
+    const searchTerm = typeof query.q === 'string' ? query.q : undefined;
+    const idIn = typeof query.id_in === 'string' ? query.id_in : undefined;
+    const exceptRole = typeof query.except_role === 'string' ? parseId(query.except_role) : undefined;
+    const isDataTable = query.dataTable !== undefined;
 
     // Parse filterIds (comma-separated)
     let filterIds: number[] | undefined;
     if (idIn) {
-      filterIds = idIn.split(',').map(id => parseId(id.trim())).filter((id): id is number => id !== null);
+      filterIds = idIn.split(',').map((id: string) => parseId(id.trim())).filter((id: number | null): id is number => id !== null);
     }
 
     // Parse excludeRoles (comma-separated: "16,28")
-    const excludeRolesParam = typeof req.query.exclude_roles === 'string' ? req.query.exclude_roles : undefined;
+    const excludeRolesParam = typeof query.exclude_roles === 'string' ? query.exclude_roles : undefined;
     let excludeRoles: number[] | undefined;
     if (excludeRolesParam) {
-      excludeRoles = excludeRolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
+      excludeRoles = excludeRolesParam.split(',').map((r: string) => parseId(r.trim())).filter((r: number | null): r is number => r !== null);
     }
 
     // Parse includeRoles (comma-separated: "16,28")
-    const includeRolesParam = typeof req.query.include_roles === 'string' ? req.query.include_roles : undefined;
+    const includeRolesParam = typeof query.include_roles === 'string' ? query.include_roles : undefined;
     let includeRoles: number[] | undefined;
     if (includeRolesParam) {
-      includeRoles = includeRolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
+      includeRoles = includeRolesParam.split(',').map((r: string) => parseId(r.trim())).filter((r: number | null): r is number => r !== null);
     }
 
     // Determine limit based on mode
@@ -714,11 +685,10 @@ export const getUsersJson = async (req: Request, res: Response): Promise<void> =
     });
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error
       });
-      return;
     }
 
     // Get response from repository
@@ -731,11 +701,11 @@ export const getUsersJson = async (req: Request, res: Response): Promise<void> =
       ...(isDataTable ? { data: data.items } : { items: data.items })
     };
 
-    res.json(response);
+    return reply.send(response);
   } catch (error) {
     console.error('getUsersJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch users JSON',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -747,18 +717,19 @@ export const getUsersJson = async (req: Request, res: Response): Promise<void> =
  * GET /api/users/fetchJson - Advanced JSON API with multiple filters
  * Requires any authenticated user
  */
-export const getUsersFetchJson = async (req: Request, res: Response): Promise<void> => {
+export const getUsersFetchJson = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const name = typeof req.query.name === 'string' ? req.query.name : undefined;
-    const rolesParam = typeof req.query.roles === 'string' ? req.query.roles : undefined;
-    const customerId = typeof req.query.customer_id === 'string' ? parseId(req.query.customer_id) : undefined;
-    const orderBy = typeof req.query.order_by === 'string' ? req.query.order_by : undefined;
+    const query = request.query as Record<string, any>;
+    const searchTerm = typeof query.q === 'string' ? query.q : undefined;
+    const name = typeof query.name === 'string' ? query.name : undefined;
+    const rolesParam = typeof query.roles === 'string' ? query.roles : undefined;
+    const customerId = typeof query.customer_id === 'string' ? parseId(query.customer_id) : undefined;
+    const orderBy = typeof query.order_by === 'string' ? query.order_by : undefined;
 
     // Parse roles (comma-separated)
     let roleIds: number[] | undefined;
     if (rolesParam) {
-      roleIds = rolesParam.split(',').map(r => parseId(r.trim())).filter((r): r is number => r !== null);
+      roleIds = rolesParam.split(',').map((r: string) => parseId(r.trim())).filter((r: number | null): r is number => r !== null);
     }
 
     // Search by display_name (q or name)
@@ -773,18 +744,17 @@ export const getUsersFetchJson = async (req: Request, res: Response): Promise<vo
     });
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error
       });
-      return;
     }
 
-    res.json(result.getValue());
+    return reply.send(result.getValue());
   } catch (error) {
     console.error('getUsersFetchJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch users fetchJson',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -810,17 +780,17 @@ const CUSTOMER_ROLE_ID = 16;
  * Creates a new user with Customer role using contact data
  * Requires SuperAdmin (role_id: 1) or HRDManager (role_id: 2)
  */
-export const createUserFromContact = async (req: Request, res: Response): Promise<void> => {
+export const createUserFromContact = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const { contact_id } = req.body;
-    const userId = (req as any).user?.id;
+    const body = request.body as Record<string, any>;
+    const { contact_id } = body;
+    const userId = (request as any).user?.id;
 
     if (!contact_id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Contact ID is required'
       });
-      return;
     }
 
     // 1. Get contact data
@@ -835,27 +805,24 @@ export const createUserFromContact = async (req: Request, res: Response): Promis
     });
 
     if (!contact) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Contact not found'
       });
-      return;
     }
 
     if (!contact.email) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Contact does not have an email address'
       });
-      return;
     }
 
     if (!contact.customer_id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Contact is not linked to a customer'
       });
-      return;
     }
 
     // 2. Check if user already exists for this contact
@@ -867,28 +834,25 @@ export const createUserFromContact = async (req: Request, res: Response): Promis
     });
 
     if (existingUserByContact) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'User already exists for this contact'
       });
-      return;
     }
 
     // 3. Check if email already used
     const emailResult = await userRepo.findByEmail(contact.email);
     if (emailResult.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: emailResult.error
       });
-      return;
     }
     if (emailResult.getValue() !== null) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Email already registered to another user'
       });
-      return;
     }
 
     // 4. Generate username
@@ -897,11 +861,10 @@ export const createUserFromContact = async (req: Request, res: Response): Promis
     // 5. Check username uniqueness
     const usernameResult = await userRepo.findByUsername(username);
     if (usernameResult.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: usernameResult.error
       });
-      return;
     }
     // If username exists, regenerate with different random suffix
     let finalUsername = username;
@@ -931,11 +894,10 @@ export const createUserFromContact = async (req: Request, res: Response): Promis
     const result = await userRepo.create(createData);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error
       });
-      return;
     }
 
     const createdUser = result.getValue();
@@ -945,7 +907,7 @@ export const createUserFromContact = async (req: Request, res: Response): Promis
       console.error('Failed to send welcome email:', err);
     });
 
-    res.status(201).json({
+    return reply.code(201).send({
       success: true,
       message: 'User created successfully. Welcome email has been sent.',
       data: {
@@ -958,7 +920,7 @@ export const createUserFromContact = async (req: Request, res: Response): Promis
   } catch (error) {
     console.error('Create user from contact error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to create user from contact',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -970,25 +932,24 @@ export const createUserFromContact = async (req: Request, res: Response): Promis
  * POST /api/users/resendWelcome/:id - Resend welcome email with new setup token
  * Requires SuperAdmin (role_id: 1) or HRDManager (role_id: 2)
  */
-export const resendWelcomeEmail = async (req: Request, res: Response): Promise<void> => {
+export const resendWelcomeEmail = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const params = request.params as Record<string, any>;
+    const id = parseId(params.id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Check if user exists via repository
     const userResult = await userRepo.findById(id);
     if (userResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'User not found'
       });
-      return;
     }
 
     const user = userResult.getValue();
@@ -997,21 +958,20 @@ export const resendWelcomeEmail = async (req: Request, res: Response): Promise<v
     const emailSent = await generateSetupTokenAndSendEmail(user.id, user.email, user.display_name);
 
     if (!emailSent) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: 'Failed to send welcome email. Please try again.'
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'Welcome email sent successfully'
     });
   } catch (error) {
     console.error('Resend welcome email error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to resend welcome email',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })

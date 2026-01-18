@@ -37,6 +37,8 @@ import {
 import { analystTypeWithServicesSchema, AnalystTypeWithServicesFormData } from "@/lib/schemas";
 import { analystTypeService, toListService } from "@/services/analystTypeService";
 import { serviceService } from "@/services/serviceService";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 interface ServiceOption {
   id: number;
@@ -141,8 +143,8 @@ export function AnalystTypeWithServicesFormDialog({
       form.reset();
       onOpenChange(false);
       onSuccess?.();
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to create analyst type");
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('analyst type')));
     } finally {
       setSubmitting(false);
     }

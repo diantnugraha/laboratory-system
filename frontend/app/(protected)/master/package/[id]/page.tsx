@@ -29,7 +29,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { packageService, Package as PackageType } from "@/services/packageService";
-import { serviceService, Service } from "@/services/serviceService";
+import { Service } from "@/services/serviceService";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const formatCurrency = (value: number | null | undefined) => {
   return new Intl.NumberFormat("id-ID", {
@@ -37,21 +39,6 @@ const formatCurrency = (value: number | null | undefined) => {
     currency: "IDR",
     minimumFractionDigits: 0,
   }).format(value || 0);
-};
-
-// Helper to parse service list
-const parseServiceList = (listService: string | null | undefined): number[] => {
-  if (!listService || typeof listService !== 'string') {
-    return [];
-  }
-  const trimmed = listService.trim().replace(/^,+|,+$/g, '');
-  if (!trimmed) {
-    return [];
-  }
-  return trimmed
-    .split(',')
-    .map((id) => parseInt(id.trim(), 10))
-    .filter((id) => !isNaN(id) && id > 0);
 };
 
 export default function PackageDetailPage() {
@@ -71,25 +58,14 @@ export default function PackageDetailPage() {
       if (response.success && response.data) {
         setPkg(response.data);
 
-        // Parse service IDs and fetch service details
-        const serviceIds = response.data.serviceIds || parseServiceList(response.data.listService);
-        if (serviceIds.length > 0) {
-          // Fetch services in batch
-          const servicesPromises = serviceIds.map(async (serviceId) => {
-            try {
-              const serviceResponse = await serviceService.getById(serviceId);
-              return serviceResponse.data;
-            } catch {
-              return null;
-            }
-          });
-          const fetchedServices = await Promise.all(servicesPromises);
-          setServices(fetchedServices.filter((s): s is Service => s !== null));
+        // Use services from API response (already sorted by backend)
+        if (response.data.services && response.data.services.length > 0) {
+          setServices(response.data.services);
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching package:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch package');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('package')));
     } finally {
       setLoading(false);
     }
@@ -109,9 +85,9 @@ export default function PackageDetailPage() {
         toast.success("Package deleted successfully");
         router.push("/master/package");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting package:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete package');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('package')));
     } finally {
       setDeleting(false);
     }
@@ -246,7 +222,7 @@ export default function PackageDetailPage() {
             </div>
             <div className="space-y-0.5">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Price</p>
-              <p className="text-xl font-bold text-primary">{formatCurrency(pkg.totalPrice || 0)}</p>
+              <p className="text-xl font-bold text-primary">{formatCurrency(services.reduce((sum, s) => sum + (s.price || 0), 0))}</p>
             </div>
           </div>
         </CardContent>
@@ -288,7 +264,7 @@ export default function PackageDetailPage() {
                   </TableRow>
                 ) : (
                   services.map((service, index) => (
-                    <TableRow key={service.id} className="border-b hover:bg-muted/50 transition-colors">
+                    <TableRow key={`${service.id}-${index}`} className="border-b hover:bg-muted/50 transition-colors">
                       <TableCell className="text-center px-2 py-3 font-medium text-muted-foreground">{index + 1}</TableCell>
                       <TableCell className="font-semibold px-2 py-3 text-primary">{service.code}</TableCell>
                       <TableCell className="px-2 py-3" dangerouslySetInnerHTML={{ __html: service.name }} />
@@ -312,7 +288,7 @@ export default function PackageDetailPage() {
                 <div className="h-8 w-px bg-border" />
                 <div className="space-y-0.5">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Price</p>
-                  <p className="text-lg font-bold text-primary">{formatCurrency(pkg.totalPrice || 0)}</p>
+                  <p className="text-lg font-bold text-primary">{formatCurrency(services.reduce((sum, s) => sum + (s.price || 0), 0))}</p>
                 </div>
               </div>
             </div>

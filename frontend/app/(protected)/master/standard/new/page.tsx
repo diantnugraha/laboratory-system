@@ -53,6 +53,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { RenderHTML } from "@/components/shared/RenderHTML";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { standardService } from "@/services/standardService";
 import { serviceService } from "@/services/serviceService";
 import { customerService } from "@/services/customerService";
@@ -273,9 +275,8 @@ export default function StandardNewPage() {
       });
       toast.success("Standard created successfully");
       router.push("/master/standard");
-    } catch (error: any) {
-      console.error('Error creating standard:', error);
-      toast.error(error.response?.data?.message || 'Failed to create standard');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('standard')));
     } finally {
       setIsSubmitting(false);
     }

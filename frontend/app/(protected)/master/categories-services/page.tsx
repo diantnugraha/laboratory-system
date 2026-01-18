@@ -26,6 +26,8 @@ import { CategoryServiceFormDialog } from "@/components/forms/CategoryServiceFor
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { categoryService, Category } from "@/services/categoryService";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const columns = [
   { 
@@ -73,11 +75,12 @@ export default function CategoriesServicesPage() {
         limit: 20,
         search: search && search.length >= 2 ? search : undefined,
       });
-      setCategories(response.data);
-      setPagination(response.pagination);
-    } catch (error: any) {
-      console.error('Error fetching categories:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch categories');
+      setCategories(response.data || []);
+      if (response.pagination) {
+        setPagination(response.pagination);
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('categories')));
     } finally {
       setLoading(false);
     }

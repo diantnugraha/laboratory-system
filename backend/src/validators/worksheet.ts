@@ -59,8 +59,8 @@ export const worksheetDataTablesQuerySchema = z.object({
  * Create worksheet schema
  */
 export const createWorksheetSchema = z.object({
-  sample_id: z.number().int().positive('Sample ID harus positif'),
-  service_id: z.number().int().positive('Service ID harus positif'),
+  sample_id: z.number().int().positive('Sample ID must be positive'),
+  service_id: z.number().int().positive('Service ID must be positive'),
   package_id: z.number().int().positive().nullable().optional(),
   standart_id: z.number().int().positive().nullable().optional(),
   discount: z.number().min(0).max(100).nullable().optional(),
@@ -96,22 +96,22 @@ export const approveWorksheetSchema = z.object({
  * Revision request schema (QC action)
  */
 export const revisionRequestSchema = z.object({
-  message: z.string().min(1, 'Pesan revisi wajib diisi'),
+  message: z.string().min(1, 'Revision message is required'),
 });
 
 /**
  * Retest request schema (QC/Customer action)
  */
 export const retestRequestSchema = z.object({
-  message: z.string().min(1, 'Pesan retest wajib diisi'),
+  message: z.string().min(1, 'Retest message is required'),
 });
 
 /**
  * Quick submit schema
  */
 export const quickSubmitSchema = z.object({
-  worksheet_id: z.number().int().positive('Worksheet ID harus positif'),
-  result: z.string().min(1, 'Result wajib diisi'),
+  worksheet_id: z.number().int().positive('Worksheet ID must be positive'),
+  result: z.string().min(1, 'Result is required'),
   unit: z.string().max(255).optional(),
   n_result: z.string().optional(),
 });
@@ -133,6 +133,23 @@ export const cancelWorksheetSchema = z.object({
   reason: z.string().optional(),
 });
 
+/**
+ * Report query schema
+ */
+export const reportQuerySchema = z.object({
+  start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date format must be YYYY-MM-DD').optional(),
+  end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date format must be YYYY-MM-DD').optional(),
+  type: z.enum(['M', 'C', '']).optional(), // M=Microbiology, C=Chemistry, ''=All
+});
+
+/**
+ * Pagination query schema (for specialized list endpoints)
+ */
+export const paginationQuerySchema = z.object({
+  page: z.string().regex(/^\d+$/).transform(Number).optional(),
+  limit: z.string().regex(/^\d+$/).transform(Number).optional(),
+});
+
 // Type exports
 export type WorksheetQuery = z.infer<typeof worksheetQuerySchema>;
 export type CreateWorksheetBody = z.infer<typeof createWorksheetSchema>;
@@ -144,3 +161,5 @@ export type RetestRequestBody = z.infer<typeof retestRequestSchema>;
 export type QuickSubmitBody = z.infer<typeof quickSubmitSchema>;
 export type UpdateSubcontractBody = z.infer<typeof updateSubcontractSchema>;
 export type CancelWorksheetBody = z.infer<typeof cancelWorksheetSchema>;
+export type ReportQuery = z.infer<typeof reportQuerySchema>;
+export type WorksheetPaginationQuery = z.infer<typeof paginationQuerySchema>;

@@ -11,6 +11,8 @@ import { RenderHTML } from "@/components/shared/RenderHTML";
 import { SubcontractorFormDialog } from "@/components/forms/SubcontractorFormDialog";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const columns: Column<Subcontractor>[] = [
   {
@@ -61,9 +63,9 @@ export default function SubcontractorPage() {
       });
       setSubcontractors(response.data);
       setPagination(response.pagination);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching subcontractors:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch subcontractors');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('subcontractors')));
     } finally {
       setLoading(false);
     }

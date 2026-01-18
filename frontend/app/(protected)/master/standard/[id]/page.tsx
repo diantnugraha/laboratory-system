@@ -28,6 +28,8 @@ import {
 import { standardService, Standard } from "@/services/standardService";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 export default function StandardDetailPage() {
   const params = useParams();
@@ -45,13 +47,9 @@ export default function StandardDetailPage() {
         setLoading(true);
         const response = await standardService.getById(id);
         setStandard(response.data);
-      } catch (error: any) {
+      } catch (error) {
         console.error('Error fetching standard:', error);
-        if (error.response?.status === 404) {
-          toast.error('Standard not found');
-        } else {
-          toast.error(error.response?.data?.message || 'Failed to fetch standard');
-        }
+        toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('standard')));
       } finally {
         setLoading(false);
       }
@@ -65,9 +63,9 @@ export default function StandardDetailPage() {
       await standardService.delete(id);
       toast.success("Standard deleted successfully");
       router.push("/master/standard");
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting standard:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete standard');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('standard')));
     } finally {
       setDeleting(false);
     }

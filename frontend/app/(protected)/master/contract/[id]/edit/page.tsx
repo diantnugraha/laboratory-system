@@ -57,6 +57,8 @@ import { cn } from "@/lib/utils";
 import api from "@/services/api";
 import { toast } from "sonner";
 import { contractService, Contract } from "@/services/contractService";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { customerService } from "@/services/customerService";
 import { serviceService } from "@/services/serviceService";
 import { packageService } from "@/services/packageService";
@@ -309,9 +311,9 @@ export default function ContractEditPage() {
 
       // Set existing document
       setExistingDocument(response.data.documents || null);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching contract:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch contract');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('contract')));
     } finally {
       setLoading(false);
     }
@@ -491,9 +493,9 @@ export default function ContractEditPage() {
       await contractService.update(id, payload);
       toast.success("Contract updated successfully");
       router.push(`/master/contract/${id}`);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating contract:', error);
-      toast.error(error.response?.data?.message || 'Failed to update contract');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('contract')));
     } finally {
       setIsSubmitting(false);
     }

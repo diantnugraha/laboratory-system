@@ -53,6 +53,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { RenderHTML } from "@/components/shared/RenderHTML";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { standardService, Standard } from "@/services/standardService";
 import { serviceService } from "@/services/serviceService";
 import { customerService } from "@/services/customerService";
@@ -185,12 +187,11 @@ export default function StandardEditPage() {
         setUnits(unitsResponse.items || unitsResponse.data || []);
 
       } catch (error: any) {
-        console.error('Error fetching standard:', error);
         if (error.response?.status === 404) {
           toast.error('Standard not found');
           router.push('/master/standard');
         } else {
-          toast.error(error.response?.data?.message || 'Failed to fetch standard');
+          toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('standard')));
         }
       } finally {
         setLoading(false);
@@ -333,9 +334,8 @@ export default function StandardEditPage() {
       });
       toast.success("Standard updated successfully");
       router.push(`/master/standard/${id}`);
-    } catch (error: any) {
-      console.error('Error updating standard:', error);
-      toast.error(error.response?.data?.message || 'Failed to update standard');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('standard')));
     } finally {
       setIsSubmitting(false);
     }

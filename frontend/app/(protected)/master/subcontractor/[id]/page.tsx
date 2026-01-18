@@ -19,6 +19,8 @@ import {
 import { SubcontractorFormDialog } from "@/components/forms/SubcontractorFormDialog";
 import { subcontractorService, Subcontractor } from "@/services/subcontractorService";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 export default function SubcontractorDetailPage() {
   const params = useParams();
@@ -35,9 +37,9 @@ export default function SubcontractorDetailPage() {
       setLoading(true);
       const response = await subcontractorService.getById(id);
       setSubcontractor(response.data);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching subcontractor:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch subcontractor');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('subcontractor')));
     } finally {
       setLoading(false);
     }
@@ -52,9 +54,9 @@ export default function SubcontractorDetailPage() {
       await subcontractorService.delete(id);
       toast.success("Subcontractor deleted successfully");
       router.push("/master/subcontractor");
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting subcontractor:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete subcontractor');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('subcontractor')));
     }
   };
 

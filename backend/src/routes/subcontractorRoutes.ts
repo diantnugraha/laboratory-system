@@ -1,4 +1,4 @@
-import express, { Router } from 'express';
+import type { FastifyPluginAsync } from 'fastify';
 import {
   getAllSubcontractors,
   getSubcontractorById,
@@ -6,32 +6,83 @@ import {
   updateSubcontractor,
   deleteSubcontractor,
   getSubcontractorsJson
-} from '../controllers/subcontractorController';
-import { authenticate, authorize } from '../middleware/auth';
-import { validate, validateRequest } from '../middleware/zodValidator';
+} from '../controllers/subcontractorController.js';
+import { authenticate, authorize } from '../plugins/auth.js';
+import { validate, validateRequest } from '../plugins/zodValidator.js';
 import {
   idParamSchema,
   paginationSchema,
   autocompleteQuerySchema,
   createSubcontractorSchema,
   updateSubcontractorSchema
-} from '../validators';
+} from '../validators/index.js';
+import { zodToSwagger, roleDescription } from '../schemas/swagger/index.js';
 
-const router: Router = express.Router();
+const subcontractorRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', authenticate);
 
-router.use(authenticate);
+  // JSON endpoint - any authenticated user can access
+  fastify.get('/json', {
+    schema: {
+      description: 'Get subcontractors in JSON format for autocomplete/select components',
+      tags: ['Subcontractors'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(autocompleteQuerySchema)
+    },
+    preHandler: [validate(autocompleteQuerySchema, 'query')]
+  }, getSubcontractorsJson);
 
-// JSON endpoint - any authenticated user can access
-router.get('/json', validate(autocompleteQuerySchema, 'query'), getSubcontractorsJson);
+  // Standard REST endpoints
+  fastify.get('/', {
+    schema: {
+      description: `Get all subcontractors with pagination. ${roleDescription([1, 3])}`,
+      tags: ['Subcontractors'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(paginationSchema)
+    },
+    preHandler: [authorize(1, 3), validate(paginationSchema, 'query')]
+  }, getAllSubcontractors);
 
-// Standard REST endpoints
-router.get('/', authorize(1, 3), validate(paginationSchema, 'query'), getAllSubcontractors);
-router.get('/:id', authorize(1, 3), validate(idParamSchema, 'params'), getSubcontractorById);
-router.post('/', authorize(1, 3), validate(createSubcontractorSchema), createSubcontractor);
-router.put('/:id', authorize(1, 3), validateRequest({
-  params: idParamSchema,
-  body: updateSubcontractorSchema
-}), updateSubcontractor);
-router.delete('/:id', authorize(1, 3), validate(idParamSchema, 'params'), deleteSubcontractor);
+  fastify.get('/:id', {
+    schema: {
+      description: `Get subcontractor detail by ID. ${roleDescription([1, 3])}`,
+      tags: ['Subcontractors'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [authorize(1, 3), validate(idParamSchema, 'params')]
+  }, getSubcontractorById);
 
-export default router;
+  fastify.post('/', {
+    schema: {
+      description: `Create a new subcontractor. ${roleDescription([1, 3])}`,
+      tags: ['Subcontractors'],
+      security: [{ bearerAuth: [] }],
+      body: zodToSwagger(createSubcontractorSchema)
+    },
+    preHandler: [authorize(1, 3), validate(createSubcontractorSchema)]
+  }, createSubcontractor);
+
+  fastify.put('/:id', {
+    schema: {
+      description: `Update an existing subcontractor. ${roleDescription([1, 3])}`,
+      tags: ['Subcontractors'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema),
+      body: zodToSwagger(updateSubcontractorSchema)
+    },
+    preHandler: [authorize(1, 3), validateRequest({ params: idParamSchema, body: updateSubcontractorSchema })]
+  }, updateSubcontractor);
+
+  fastify.delete('/:id', {
+    schema: {
+      description: `Delete a subcontractor. ${roleDescription([1, 3])}`,
+      tags: ['Subcontractors'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [authorize(1, 3), validate(idParamSchema, 'params')]
+  }, deleteSubcontractor);
+};
+
+export default subcontractorRoutes;

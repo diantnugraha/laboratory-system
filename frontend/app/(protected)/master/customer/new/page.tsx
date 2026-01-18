@@ -38,6 +38,8 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { customerService } from "@/services/customerService";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 // Address Schema
 const addressSchema = z.object({
@@ -222,9 +224,8 @@ export default function CustomerNewPage() {
       }
 
       router.push(`/master/customer/${response.data?.id || ''}`);
-    } catch (error: any) {
-      console.error('Error creating customer:', error);
-      toast.error(error.response?.data?.message || 'Failed to create customer');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('customer')));
     } finally {
       setIsSubmitting(false);
     }

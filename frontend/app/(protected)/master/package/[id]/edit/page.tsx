@@ -51,6 +51,8 @@ import { packageSchema, PackageFormData } from "@/lib/schemas";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import {
   DndContext,
   closestCenter,
@@ -113,21 +115,6 @@ const formatCurrency = (value: number | null | undefined) => {
     currency: "IDR",
     minimumFractionDigits: 0,
   }).format(value || 0);
-};
-
-// Helper to parse service list
-const parseServiceList = (listService: string | null | undefined): number[] => {
-  if (!listService || typeof listService !== 'string') {
-    return [];
-  }
-  const trimmed = listService.trim().replace(/^,+|,+$/g, '');
-  if (!trimmed) {
-    return [];
-  }
-  return trimmed
-    .split(',')
-    .map((id) => parseInt(id.trim(), 10))
-    .filter((id) => !isNaN(id) && id > 0);
 };
 
 interface SortableRowProps {
@@ -250,32 +237,22 @@ export default function PackageEditPage() {
           }]);
         }
 
-        // Parse service IDs and fetch service details
-        const serviceIds = packageData.serviceIds || parseServiceList(packageData.listService);
-        if (serviceIds.length > 0) {
-          const servicesPromises = serviceIds.map(async (serviceId, index) => {
-            try {
-              const serviceResponse = await serviceService.getById(serviceId);
-              const service = serviceResponse.data;
-              return {
-                id: `pkg-svc-${index}`,
-                serviceId: service.id,
-                code: service.code,
-                name: service.name,
-                parameter: service.parameter?.name || '-',
-                price: service.price || 0,
-              };
-            } catch {
-              return null;
-            }
-          });
-          const fetchedServices = await Promise.all(servicesPromises);
-          setPackageServices(fetchedServices.filter((s): s is PackageServiceItem => s !== null));
+        // Use services from API response (already sorted by backend)
+        if (packageData.services && packageData.services.length > 0) {
+          const mappedServices = packageData.services.map((service: any, index: number) => ({
+            id: `pkg-svc-${index}`,
+            serviceId: service.id,
+            code: service.code,
+            name: service.name,
+            parameter: service.parameter?.name || '-',
+            price: service.price || 0,
+          }));
+          setPackageServices(mappedServices);
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching package:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch package');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('package')));
     } finally {
       setLoading(false);
     }
@@ -413,10 +390,9 @@ export default function PackageEditPage() {
         toast.success("Package updated successfully");
         router.push(`/master/package/${id}`);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating package:', error);
-      const message = error.response?.data?.message || 'Failed to update package';
-      toast.error(message);
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('package')));
     } finally {
       setSubmitting(false);
     }

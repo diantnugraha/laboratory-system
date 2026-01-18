@@ -32,6 +32,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { RenderHTML } from '@/components/shared/RenderHTML';
+import { getErrorMessage } from '@/lib/utils/errorHandler';
+import { OPERATION_ERROR_MESSAGES } from '@/lib/constants/errorMessages';
 
 export default function LaboratoryDetailPage() {
   const params = useParams();
@@ -55,9 +57,8 @@ export default function LaboratoryDetailPage() {
         setLoading(true);
         const response = await labService.getById(laboratoryId);
         setLaboratory(response.data);
-      } catch (error: any) {
-        console.error('Error fetching laboratory:', error);
-        toast.error(error.response?.data?.message || 'Failed to fetch laboratory');
+      } catch (error) {
+        toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('laboratory')));
       } finally {
         setLoading(false);
       }
@@ -92,8 +93,8 @@ export default function LaboratoryDetailPage() {
       // Refresh laboratory data
       const response = await labService.getById(laboratoryId);
       setLaboratory(response.data);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to update laboratory');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('laboratory')));
     }
   };
 
@@ -102,8 +103,8 @@ export default function LaboratoryDetailPage() {
       await labService.delete(laboratoryId);
       toast.success('Laboratory deleted successfully');
       router.push('/master/laboratory');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to delete laboratory');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('laboratory')));
     }
   };
 

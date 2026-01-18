@@ -33,6 +33,8 @@ import { toast } from "sonner";
 import { unitService } from "@/services/unitService";
 import api from "@/services/api";
 import { cn } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { SUCCESS_MESSAGES, OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 interface Lab {
   id: number;
@@ -140,14 +142,13 @@ export function UnitFormDialog({ open, onOpenChange, onSuccess }: UnitFormDialog
         description: data.description,
         lab_id: data.laboratoryId ? Number(data.laboratoryId) : null,
       });
-      toast.success("Unit created successfully");
+      toast.success(SUCCESS_MESSAGES.CREATED('Unit'));
       form.reset();
       setLabSearchQuery("");
       onOpenChange(false);
       onSuccess?.();
-    } catch (error: any) {
-      console.error('Error creating unit:', error);
-      toast.error(error.response?.data?.message || 'Failed to create unit');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('unit')));
     } finally {
       setSubmitting(false);
     }

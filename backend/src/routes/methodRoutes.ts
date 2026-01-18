@@ -1,4 +1,4 @@
-import express, { Router } from 'express';
+import type { FastifyPluginAsync } from 'fastify';
 import {
   getAllMethods,
   getMethodById,
@@ -7,9 +7,9 @@ import {
   deleteMethod,
   getMethodsJson,
   getMethodsReport
-} from '../controllers/methodController';
-import { authenticate, authorize } from '../middleware/auth';
-import { validate, validateRequest } from '../middleware/zodValidator';
+} from '../controllers/methodController.js';
+import { authenticate, authorize } from '../plugins/auth.js';
+import { validate, validateRequest } from '../plugins/zodValidator.js';
 import {
   idParamSchema,
   paginationSchema,
@@ -17,26 +17,85 @@ import {
   updateMethodSchema,
   methodJsonQuerySchema,
   methodReportQuerySchema
-} from '../validators';
+} from '../validators/index.js';
+import { zodToSwagger, roleDescription } from '../schemas/swagger/index.js';
 
-const router: Router = express.Router();
+const methodRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', authenticate);
 
-router.use(authenticate);
+  // JSON API - any authenticated user
+  fastify.get('/json', {
+    schema: {
+      description: 'Get methods in JSON format for autocomplete/select components',
+      tags: ['Methods'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(methodJsonQuerySchema)
+    },
+    preHandler: [validate(methodJsonQuerySchema, 'query')]
+  }, getMethodsJson);
 
-// JSON API - any authenticated user
-router.get('/json', validate(methodJsonQuerySchema, 'query'), getMethodsJson);
+  // Report - SuperAdmin only
+  fastify.get('/report', {
+    schema: {
+      description: `Export methods report. ${roleDescription([1])}`,
+      tags: ['Methods'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(methodReportQuerySchema)
+    },
+    preHandler: [authorize(1), validate(methodReportQuerySchema, 'query')]
+  }, getMethodsReport);
 
-// Report - SuperAdmin only
-router.get('/report', authorize(1), validate(methodReportQuerySchema, 'query'), getMethodsReport);
+  // Standard REST endpoints
+  fastify.get('/', {
+    schema: {
+      description: `Get all methods with pagination. ${roleDescription([1, 2, 3])}`,
+      tags: ['Methods'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(paginationSchema)
+    },
+    preHandler: [authorize(1, 2, 3), validate(paginationSchema, 'query')]
+  }, getAllMethods);
 
-// Standard REST endpoints
-router.get('/', authorize(1, 2, 3), validate(paginationSchema, 'query'), getAllMethods);
-router.get('/:id', authorize(1, 2, 3), validate(idParamSchema, 'params'), getMethodById);
-router.post('/', authorize(1, 2, 3), validate(createMethodSchema), createMethod);
-router.put('/:id', authorize(1, 2, 3), validateRequest({
-  params: idParamSchema,
-  body: updateMethodSchema
-}), updateMethod);
-router.delete('/:id', authorize(1, 2, 3), validate(idParamSchema, 'params'), deleteMethod);
+  fastify.get('/:id', {
+    schema: {
+      description: `Get method detail by ID. ${roleDescription([1, 2, 3])}`,
+      tags: ['Methods'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [authorize(1, 2, 3), validate(idParamSchema, 'params')]
+  }, getMethodById);
 
-export default router;
+  fastify.post('/', {
+    schema: {
+      description: `Create a new method. ${roleDescription([1, 2, 3])}`,
+      tags: ['Methods'],
+      security: [{ bearerAuth: [] }],
+      body: zodToSwagger(createMethodSchema)
+    },
+    preHandler: [authorize(1, 2, 3), validate(createMethodSchema)]
+  }, createMethod);
+
+  fastify.put('/:id', {
+    schema: {
+      description: `Update an existing method. ${roleDescription([1, 2, 3])}`,
+      tags: ['Methods'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema),
+      body: zodToSwagger(updateMethodSchema)
+    },
+    preHandler: [authorize(1, 2, 3), validateRequest({ params: idParamSchema, body: updateMethodSchema })]
+  }, updateMethod);
+
+  fastify.delete('/:id', {
+    schema: {
+      description: `Delete a method. ${roleDescription([1, 2, 3])}`,
+      tags: ['Methods'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [authorize(1, 2, 3), validate(idParamSchema, 'params')]
+  }, deleteMethod);
+};
+
+export default methodRoutes;

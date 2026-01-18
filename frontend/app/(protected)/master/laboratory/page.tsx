@@ -82,7 +82,6 @@ export default function LaboratoryPage() {
       setPagination(response.pagination);
     } catch (error: any) {
       console.error('Error fetching laboratories:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch laboratories');
     } finally {
       setLoading(false);
     }

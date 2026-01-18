@@ -6,8 +6,8 @@ import { z } from 'zod';
 
 export const createMatrixSchema = z.object({
   name: z.string()
-    .min(1, 'Nama matrix wajib diisi')
-    .max(255, 'Nama matrix maksimal 255 karakter')
+    .min(1, 'Matrix name is required')
+    .max(255, 'Matrix name must be at most 255 characters')
     .trim()
 });
 
@@ -19,11 +19,10 @@ export type CreateMatrixInput = z.infer<typeof createMatrixSchema>;
 
 export const updateMatrixSchema = z.object({
   name: z.string()
-    .min(1, 'Nama matrix tidak boleh kosong')
-    .max(255, 'Nama matrix maksimal 255 karakter')
+    .min(1, 'Matrix name is required')
+    .max(255, 'Matrix name must be at most 255 characters')
     .trim()
-    .optional(),
-  delete: z.boolean().optional() // soft delete flag
+    .optional()
 });
 
 export type UpdateMatrixInput = z.infer<typeof updateMatrixSchema>;

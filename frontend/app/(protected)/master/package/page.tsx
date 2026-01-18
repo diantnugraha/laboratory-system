@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat("id-ID", {
@@ -91,11 +93,13 @@ export default function PackagePage() {
         search: search && search.length >= 2 ? search : undefined,
       }) as PackagesResponse;
 
-      setPackages(response.data);
-      setPagination(response.pagination);
-    } catch (error: any) {
+      setPackages(response.data || []);
+      if (response.pagination) {
+        setPagination(response.pagination);
+      }
+    } catch (error) {
       console.error('Error fetching packages:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch packages');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('packages')));
     } finally {
       setLoading(false);
     }

@@ -66,7 +66,7 @@ export const generateOTP = (length: number = 6): string => {
 };
 
 /**
- * Generate random password 6 karakter dengan kombinasi huruf saja
+ * Generate random password 6 characters with letters only
  * @returns Generated password (6 characters, letters only)
  */
 export const generatePassword6Letters = (): string => {

@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/select";
 import { customerService, Customer } from "@/services/customerService";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 // Schema for Customer form (only customer info)
 const customerEditSchema = z.object({
@@ -93,9 +95,8 @@ export default function CustomerEditPage() {
         salesIncharge: response.data.sales_incharge || "",
         email: response.data.email || "",
       });
-    } catch (error: any) {
-      console.error('Error fetching customer:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch customer');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('customer')));
     } finally {
       setLoading(false);
     }
@@ -129,9 +130,8 @@ export default function CustomerEditPage() {
       await customerService.update(id, payload);
       toast.success("Customer updated successfully");
       router.push(`/master/customer/${id}`);
-    } catch (error: any) {
-      console.error('Error updating customer:', error);
-      toast.error(error.response?.data?.message || 'Failed to update customer');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('customer')));
     } finally {
       setIsSubmitting(false);
     }

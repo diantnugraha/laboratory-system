@@ -57,6 +57,8 @@ import { cn } from "@/lib/utils";
 import api from "@/services/api";
 import { toast } from "sonner";
 import { contractService } from "@/services/contractService";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { customerService } from "@/services/customerService";
 import { serviceService } from "@/services/serviceService";
 import { packageService } from "@/services/packageService";
@@ -378,9 +380,9 @@ export default function ContractNewPage() {
       const response = await contractService.create(payload);
       toast.success("Contract created successfully");
       router.push(`/master/contract/${response.data?.id || ''}`);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating contract:', error);
-      toast.error(error.response?.data?.message || 'Failed to create contract');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('contract')));
     } finally {
       setIsSubmitting(false);
     }

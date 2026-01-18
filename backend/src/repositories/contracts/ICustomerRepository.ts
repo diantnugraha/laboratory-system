@@ -14,6 +14,29 @@ export interface CustomerFilter {
 }
 
 /**
+ * Contact Filter Options (for findContacts)
+ */
+export interface ContactFilter {
+  customerId: number;
+  search?: string;
+  offset?: number;
+  limit?: number;
+}
+
+/**
+ * Customer Advanced Filter Options (for findWithAdvancedFilters)
+ */
+export interface CustomerAdvancedFilter {
+  customerId?: number | null;
+  priority?: number;
+  payment?: number;
+  sales?: string;
+  page?: number;
+  perPage?: number;
+  orderBy?: string;
+}
+
+/**
  * Create Customer DTO
  */
 export interface CreateCustomerDTO {
@@ -41,7 +64,7 @@ export interface CreateCustomerDTO {
   feeder_fee?: number;
   agency?: number;
   sales_feeder?: number;
-  sales_id?: string;
+  sales_id?: number;
   central_cust_id?: string;
   is_corporate?: number;
 }
@@ -67,6 +90,8 @@ export interface AddressDTO {
   postal_code?: string;
   npwp?: string;
   status?: string;
+  created_by?: number;
+  updated_by?: number;
 }
 
 /**
@@ -87,6 +112,8 @@ export interface ContactDTO {
   fax?: string;
   mobile_phone?: string;
   status?: string;
+  created_by?: number;
+  updated_by?: number;
 }
 
 /**
@@ -176,4 +203,31 @@ export interface ICustomerRepository {
    * Validate that address belongs to customer
    */
   validateAddressBelongsToCustomer(addressId: number, customerId: number): Promise<RepositoryResult<boolean>>;
+
+  // ===== Additional Read Operations =====
+
+  /**
+   * Get contacts for a customer with pagination and search
+   */
+  findContacts(filter: ContactFilter): Promise<RepositoryResult<PaginatedData<any>>>;
+
+  /**
+   * Get distinct region values (city, state, or country)
+   */
+  findRegions(type: 'city' | 'state' | 'country', search?: string): Promise<RepositoryResult<string[]>>;
+
+  /**
+   * Get top customers by order count for a given year (chart data)
+   */
+  getTopCustomersByOrders(year: number): Promise<RepositoryResult<{ labels: string[]; datasets: any[] }>>;
+
+  /**
+   * Get contacts for autocomplete/dropdown
+   */
+  findContactsForAutocomplete(customerId: number, search?: string, isDataTable?: boolean): Promise<RepositoryResult<any[]>>;
+
+  /**
+   * Get customers with advanced filters (for fetch-json endpoint)
+   */
+  findWithAdvancedFilters(filter: CustomerAdvancedFilter): Promise<RepositoryResult<PaginatedData<any>>>;
 }

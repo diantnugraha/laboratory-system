@@ -20,6 +20,8 @@ import { FormDialog } from "@/components/shared/FormDialog";
 import { AgencyCustomerMultiSelect } from "@/components/shared/AgencyCustomerMultiSelect";
 import { toast } from "sonner";
 import { userService, AGENCY_ROLE_ID } from "@/services/userService";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 // Agency User Form Schema
 const agencyUserSchema = z.object({
@@ -83,9 +85,8 @@ export function AgencyUserFormDialog({ open, onOpenChange, onSuccess }: AgencyUs
         onOpenChange(false);
         onSuccess?.();
       }
-    } catch (error: any) {
-      console.error('Error creating agency user:', error);
-      toast.error(error.response?.data?.message || 'Failed to create agency user');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('agency user')));
     } finally {
       setSubmitting(false);
     }

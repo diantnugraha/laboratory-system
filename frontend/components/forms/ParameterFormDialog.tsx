@@ -26,6 +26,8 @@ import { toast } from "sonner";
 import { parameterService } from "@/services/parameterService";
 import api from "@/services/api";
 import { cn } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { SUCCESS_MESSAGES, OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 interface Lab {
   id: number;
@@ -91,14 +93,13 @@ export function ParameterFormDialog({ open, onOpenChange, onSuccess }: Parameter
         name: data.name,
         lab_id: Number(data.laboratoryId),
       });
-      toast.success("Parameter created successfully");
+      toast.success(SUCCESS_MESSAGES.CREATED('Parameter'));
       form.reset();
       setLabSearchQuery("");
       onOpenChange(false);
       onSuccess?.();
-    } catch (error: any) {
-      console.error('Error creating parameter:', error);
-      toast.error(error.response?.data?.message || 'Failed to create parameter');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('parameter')));
     } finally {
       setSubmitting(false);
     }

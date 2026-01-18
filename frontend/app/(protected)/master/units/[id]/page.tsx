@@ -43,6 +43,8 @@ import { toast } from 'sonner';
 import { RenderHTML } from '@/components/shared/RenderHTML';
 import api from '@/services/api';
 import { cn } from '@/lib/utils';
+import { getErrorMessage } from '@/lib/utils/errorHandler';
+import { OPERATION_ERROR_MESSAGES } from '@/lib/constants/errorMessages';
 
 interface Lab {
   id: number;
@@ -80,9 +82,9 @@ export default function UnitDetailPage() {
         if (response.data.lab) {
           setLabs([{ id: response.data.lab.id, name: response.data.lab.name }]);
         }
-      } catch (error: any) {
+      } catch (error) {
         console.error('Error fetching unit:', error);
-        toast.error(error.response?.data?.message || 'Failed to fetch unit');
+        toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('unit')));
       } finally {
         setLoading(false);
       }
@@ -159,8 +161,8 @@ export default function UnitDetailPage() {
       if (response.data.lab) {
         setLabs([{ id: response.data.lab.id, name: response.data.lab.name }]);
       }
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to update unit');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('unit')));
     }
   };
 
@@ -169,8 +171,8 @@ export default function UnitDetailPage() {
       await unitService.delete(unitId);
       toast.success('Unit deleted successfully');
       router.push('/master/units');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to delete unit');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('unit')));
     }
   };
 

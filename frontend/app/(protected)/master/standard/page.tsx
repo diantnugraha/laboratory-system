@@ -26,6 +26,8 @@ import { Input } from "@/components/ui/input";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { standardService, StandardListItem, StandardsResponse } from "@/services/standardService";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const columns = [
   {
@@ -87,9 +89,9 @@ export default function StandardPage() {
       }) as StandardsResponse;
       setStandards(response.data);
       setPagination(response.pagination);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching standards:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch standards');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('standards')));
     } finally {
       setLoading(false);
     }

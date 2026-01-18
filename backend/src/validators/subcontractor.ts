@@ -6,29 +6,29 @@ import { z } from 'zod';
 
 export const createSubcontractorSchema = z.object({
   lab_name: z.string()
-    .min(1, 'Nama lab wajib diisi')
-    .max(255, 'Nama lab maksimal 255 karakter')
+    .min(1, 'Lab name is required')
+    .max(255, 'Lab name must be at most 255 characters')
     .trim(),
   address_name: z.string()
-    .min(1, 'Alamat wajib diisi')
-    .max(255, 'Alamat maksimal 255 karakter')
+    .min(1, 'Address is required')
+    .max(255, 'Address must be at most 255 characters')
     .trim(),
   phone: z.string()
-    .min(1, 'Telepon wajib diisi')
-    .max(255, 'Telepon maksimal 255 karakter')
+    .min(1, 'Phone is required')
+    .max(255, 'Phone must be at most 255 characters')
     .trim(),
   fax: z.string()
-    .min(1, 'Fax wajib diisi')
-    .max(255, 'Fax maksimal 255 karakter')
+    .min(1, 'Fax is required')
+    .max(255, 'Fax must be at most 255 characters')
     .trim(),
   contact: z.string()
-    .min(1, 'Kontak wajib diisi')
-    .max(255, 'Kontak maksimal 255 karakter')
+    .min(1, 'Contact is required')
+    .max(255, 'Contact must be at most 255 characters')
     .trim(),
   email: z.string()
-    .min(1, 'Email wajib diisi')
-    .email('Email tidak valid')
-    .max(255, 'Email maksimal 255 karakter')
+    .min(1, 'Email is required')
+    .email('Invalid email format')
+    .max(255, 'Email must be at most 255 characters')
     .trim()
     .toLowerCase()
 });
@@ -41,33 +41,33 @@ export type CreateSubcontractorInput = z.infer<typeof createSubcontractorSchema>
 
 export const updateSubcontractorSchema = z.object({
   lab_name: z.string()
-    .min(1, 'Nama lab tidak boleh kosong')
-    .max(255, 'Nama lab maksimal 255 karakter')
+    .min(1, 'Lab name is required')
+    .max(255, 'Lab name must be at most 255 characters')
     .trim()
     .optional(),
   address_name: z.string()
-    .min(1, 'Alamat tidak boleh kosong')
-    .max(255, 'Alamat maksimal 255 karakter')
+    .min(1, 'Address is required')
+    .max(255, 'Address must be at most 255 characters')
     .trim()
     .optional(),
   phone: z.string()
-    .min(1, 'Telepon tidak boleh kosong')
-    .max(255, 'Telepon maksimal 255 karakter')
+    .min(1, 'Phone is required')
+    .max(255, 'Phone must be at most 255 characters')
     .trim()
     .optional(),
   fax: z.string()
-    .min(1, 'Fax tidak boleh kosong')
-    .max(255, 'Fax maksimal 255 karakter')
+    .min(1, 'Fax is required')
+    .max(255, 'Fax must be at most 255 characters')
     .trim()
     .optional(),
   contact: z.string()
-    .min(1, 'Kontak tidak boleh kosong')
-    .max(255, 'Kontak maksimal 255 karakter')
+    .min(1, 'Contact is required')
+    .max(255, 'Contact must be at most 255 characters')
     .trim()
     .optional(),
   email: z.string()
-    .email('Email tidak valid')
-    .max(255, 'Email maksimal 255 karakter')
+    .email('Invalid email format')
+    .max(255, 'Email must be at most 255 characters')
     .trim()
     .toLowerCase()
     .optional()

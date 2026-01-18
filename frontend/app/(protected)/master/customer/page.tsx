@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const columns: Column<CustomerListItem>[] = [
   {
@@ -71,9 +73,8 @@ export default function CustomerPage() {
       });
       setCustomers(response.data);
       setPagination(response.pagination);
-    } catch (error: any) {
-      console.error('Error fetching customers:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch customers');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('customers')));
     } finally {
       setLoading(false);
     }

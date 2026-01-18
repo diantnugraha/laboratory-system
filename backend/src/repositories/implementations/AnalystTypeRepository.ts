@@ -49,8 +49,17 @@ export class AnalystTypeRepository implements IAnalystTypeRepository {
         this.prisma.analystType.count({ where }),
       ]);
 
+      // Transform data to include analystCount (exclude _count field)
+      const transformedData = data.map(item => {
+        const { _count, ...rest } = item;
+        return {
+          ...rest,
+          analystCount: _count.analystRules,
+        };
+      });
+
       return RepositoryResult.ok({
-        data,
+        data: transformedData,
         pagination: {
           page,
           limit,
@@ -88,7 +97,15 @@ export class AnalystTypeRepository implements IAnalystTypeRepository {
         return RepositoryResult.fail('Analyst type not found');
       }
 
-      return RepositoryResult.ok(analystType);
+      // Transform data to include counts (exclude _count field)
+      const { _count, ...rest } = analystType;
+      const transformedData = {
+        ...rest,
+        analystCount: _count.analystRules,
+        serviceCount: _count.services,
+      };
+
+      return RepositoryResult.ok(transformedData);
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to fetch analyst type: ${error.message}`);
     }

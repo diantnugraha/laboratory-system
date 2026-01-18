@@ -11,6 +11,8 @@ import { AnalystTypeWithServicesFormDialog } from "@/components/forms/AnalystTyp
 import { AnalystRuleFormDialog } from "@/components/forms/AnalystRuleFormDialog";
 import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import {
   analystTypeService,
   AnalystType,
@@ -137,8 +139,8 @@ export default function AnalystUserPage() {
         total: response.pagination.total,
         totalPages: response.pagination.totalPages,
       }));
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to fetch analyst types");
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('analyst types')));
     } finally {
       setLoading(false);
     }

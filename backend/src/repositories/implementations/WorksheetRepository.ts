@@ -15,7 +15,14 @@ import {
   DataTablesResponse,
   WorksheetStatus,
   STATUS_PRIORITY,
+  WorksheetReportFilter,
+  WorksheetReportData,
+  TodoAnalystSummary,
 } from '../contracts/IWorksheetRepository';
+import {
+  CALCULATION_SERVICE_IDS,
+  MICROBIOLOGY_ANALYST_TYPE_ID,
+} from '../../config/worksheet';
 import { RepositoryResult, PaginatedData } from '../results/RepositoryResult';
 // Removed unused import: buildMultiFieldSearchCondition
 import { SampleStatus } from '../contracts/ISampleRepository';
@@ -1127,7 +1134,471 @@ export class WorksheetRepository implements IWorksheetRepository {
     }
   }
 
+  // ===== Specialized List Operations =====
+
+  async findDelayedWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>> {
+    try {
+      const { page = 1, limit = 20 } = filter;
+      const skip = (page - 1) * limit;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const where: any = {
+        trash: null,
+        non_parameter: null,
+        status: { in: ['Process', 'To Be Verified'] },
+        sample: {
+          due_date: { lt: today },
+          trash: null,
+        },
+      };
+
+      // Apply role-based filters
+      this.applyRoleFilters(where, filter);
+
+      const [data, total] = await Promise.all([
+        this.prisma.worksheet.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { sample: { due_date: 'asc' } },
+          include: this.worksheetInclude,
+        }),
+        this.prisma.worksheet.count({ where }),
+      ]);
+
+      return RepositoryResult.ok({
+        data: this.transformWorksheets(data),
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch delayed worksheets: ${error.message}`);
+    }
+  }
+
+  async findTodaysWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>> {
+    try {
+      const { page = 1, limit = 20 } = filter;
+      const skip = (page - 1) * limit;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const where: any = {
+        trash: null,
+        non_parameter: null,
+        status: { notIn: ['Cancel', 'Approved by TM'] },
+        sample: {
+          due_date: { gte: today, lt: tomorrow },
+          trash: null,
+        },
+      };
+
+      // Apply role-based filters
+      this.applyRoleFilters(where, filter);
+
+      const [data, total] = await Promise.all([
+        this.prisma.worksheet.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { id: 'desc' },
+          include: this.worksheetInclude,
+        }),
+        this.prisma.worksheet.count({ where }),
+      ]);
+
+      return RepositoryResult.ok({
+        data: this.transformWorksheets(data),
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch today's worksheets: ${error.message}`);
+    }
+  }
+
+  async findRetestWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>> {
+    try {
+      const { page = 1, limit = 20 } = filter;
+      const skip = (page - 1) * limit;
+
+      const where: any = {
+        trash: null,
+        non_parameter: null,
+        status: { in: ['Internal Retest', 'Customer Retest'] },
+      };
+
+      // Apply role-based filters
+      this.applyRoleFilters(where, filter);
+
+      const [data, total] = await Promise.all([
+        this.prisma.worksheet.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { id: 'desc' },
+          include: this.worksheetInclude,
+        }),
+        this.prisma.worksheet.count({ where }),
+      ]);
+
+      return RepositoryResult.ok({
+        data: this.transformWorksheets(data),
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch retest worksheets: ${error.message}`);
+    }
+  }
+
+  async findRevisionWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>> {
+    try {
+      const { page = 1, limit = 20 } = filter;
+      const skip = (page - 1) * limit;
+
+      const where: any = {
+        trash: null,
+        non_parameter: null,
+        status: 'Need to Revised',
+      };
+
+      // Apply role-based filters
+      this.applyRoleFilters(where, filter);
+
+      const [data, total] = await Promise.all([
+        this.prisma.worksheet.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { id: 'desc' },
+          include: this.worksheetInclude,
+        }),
+        this.prisma.worksheet.count({ where }),
+      ]);
+
+      return RepositoryResult.ok({
+        data: this.transformWorksheets(data),
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch revision worksheets: ${error.message}`);
+    }
+  }
+
+  async findCalculationWorksheets(filter: WorksheetFilter): Promise<RepositoryResult<PaginatedData<WorksheetWithRelations>>> {
+    try {
+      const { page = 1, limit = 20 } = filter;
+      const skip = (page - 1) * limit;
+
+      const where: any = {
+        trash: null,
+        non_parameter: null,
+        service_id: { in: CALCULATION_SERVICE_IDS },
+        status: { notIn: ['Cancel', 'Approved by TM'] },
+      };
+
+      // Apply role-based filters
+      this.applyRoleFilters(where, filter);
+
+      const [data, total] = await Promise.all([
+        this.prisma.worksheet.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { id: 'desc' },
+          include: this.worksheetInclude,
+        }),
+        this.prisma.worksheet.count({ where }),
+      ]);
+
+      return RepositoryResult.ok({
+        data: this.transformWorksheets(data),
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch calculation worksheets: ${error.message}`);
+    }
+  }
+
+  // ===== Report Operations =====
+
+  async findForReport(filter: WorksheetReportFilter): Promise<RepositoryResult<WorksheetReportData[]>> {
+    try {
+      const where: any = {};
+
+      if (!filter.includeTrash) {
+        where.trash = null;
+      }
+
+      // Date range filter on order's first_reviewed_at
+      if (filter.dateFrom || filter.dateTo) {
+        where.sample = {
+          order: {
+            first_reviewed_at: {
+              ...(filter.dateFrom && { gte: filter.dateFrom }),
+              ...(filter.dateTo && { lte: filter.dateTo }),
+            },
+          },
+        };
+      }
+
+      // Type filter (Microbiology vs Chemistry)
+      if (filter.type === 'M') {
+        where.service = { analyst_type_id: MICROBIOLOGY_ANALYST_TYPE_ID };
+      } else if (filter.type === 'C') {
+        where.service = { analyst_type_id: { not: MICROBIOLOGY_ANALYST_TYPE_ID } };
+      }
+
+      const worksheets = await this.prisma.worksheet.findMany({
+        where,
+        orderBy: { id: 'asc' },
+        include: {
+          sample: {
+            include: {
+              order: {
+                include: {
+                  customer: true,
+                },
+              },
+            },
+          },
+          service: {
+            include: {
+              category: true,
+              method: true,
+            },
+          },
+        },
+      });
+
+      // Fetch analyst and QC names separately
+      const userIds = new Set<number>();
+      worksheets.forEach(ws => {
+        if (ws.analyst_id) userIds.add(ws.analyst_id);
+        if (ws.qc_id) userIds.add(ws.qc_id);
+      });
+
+      const users = await this.prisma.user.findMany({
+        where: { id: { in: Array.from(userIds) } },
+        select: { id: true, display_name: true },
+      });
+
+      const userMap = new Map(users.map(u => [u.id, u.display_name]));
+
+      const result: WorksheetReportData[] = worksheets.map(ws => ({
+        id: ws.id,
+        code: ws.code,
+        status: ws.status,
+        result: ws.result,
+        unit: ws.unit,
+        finishDate: ws.finish_date,
+        sample: {
+          code: ws.sample.code,
+          name: ws.sample.name || '',
+          priority: ws.sample.order.priority || 'Normal',
+          dueDate: ws.sample.due_date,
+          receivedDate: ws.sample.received_date,
+          analysisFinishedDate: ws.sample.analysis_finished_date,
+          coaReleaseDueDate: ws.sample.coa_release_due_date,
+          status: ws.sample.status || '',
+        },
+        service: {
+          name: ws.service.name,
+          price: ws.service.price ? Number(ws.service.price) : null,
+          category: ws.service.category?.name || null,
+        },
+        method: {
+          name: ws.service.method?.name || '',
+        },
+        order: {
+          code: ws.sample.order.code,
+          reviewedDate: ws.sample.order.first_reviewed_at,
+        },
+        customer: {
+          name: ws.sample.order.customer.customer_name,
+        },
+        analyst: {
+          name: ws.analyst_id ? userMap.get(ws.analyst_id) || null : null,
+        },
+        qc: {
+          name: ws.qc_id ? userMap.get(ws.qc_id) || null : null,
+        },
+      }));
+
+      return RepositoryResult.ok(result);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch worksheets for report: ${error.message}`);
+    }
+  }
+
+  async findTodoAnalystSummary(dateFrom: Date, dateTo: Date): Promise<RepositoryResult<TodoAnalystSummary[]>> {
+    try {
+      const worksheets = await this.prisma.worksheet.findMany({
+        where: {
+          trash: null,
+          non_parameter: null,
+          status: { in: ['Process', 'Need to Revised', 'Internal Retest', 'Customer Retest'] },
+          sample: {
+            due_date: { gte: dateFrom, lte: dateTo },
+            trash: null,
+          },
+        },
+        include: {
+          service: {
+            include: {
+              analystType: true,
+            },
+          },
+        },
+      });
+
+      // Group by analyst type and service name
+      const grouped = new Map<string, number>();
+      worksheets.forEach(ws => {
+        const typeName = ws.service.analystType?.name || 'Unknown';
+        const parameterName = ws.service.name;
+        const key = `${typeName}|${parameterName}`;
+        grouped.set(key, (grouped.get(key) || 0) + 1);
+      });
+
+      const result: TodoAnalystSummary[] = Array.from(grouped.entries()).map(([key, count]) => {
+        const [typeName, parameterName] = key.split('|');
+        return { typeName, parameterName, count };
+      });
+
+      // Sort by type name, then parameter name
+      result.sort((a, b) => {
+        const typeCompare = a.typeName.localeCompare(b.typeName);
+        return typeCompare !== 0 ? typeCompare : a.parameterName.localeCompare(b.parameterName);
+      });
+
+      return RepositoryResult.ok(result);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch TODO analyst summary: ${error.message}`);
+    }
+  }
+
+  async findEnviroWorksheets(dateFrom: Date, dateTo: Date): Promise<RepositoryResult<WorksheetReportData[]>> {
+    try {
+      const worksheets = await this.prisma.worksheet.findMany({
+        where: {
+          trash: null,
+          created_at: { gte: dateFrom, lte: dateTo },
+          sample: {
+            order: {
+              code: { startsWith: 'OD.E' },
+            },
+          },
+        },
+        orderBy: { id: 'asc' },
+        include: {
+          sample: {
+            include: {
+              order: {
+                include: {
+                  customer: true,
+                },
+              },
+            },
+          },
+          service: {
+            include: {
+              category: true,
+              method: true,
+            },
+          },
+        },
+      });
+
+      // Fetch analyst names
+      const analystIds = worksheets.map(ws => ws.analyst_id).filter((id): id is number => id !== null);
+      const analysts = await this.prisma.user.findMany({
+        where: { id: { in: analystIds } },
+        select: { id: true, display_name: true },
+      });
+      const analystMap = new Map(analysts.map(u => [u.id, u.display_name]));
+
+      const result: WorksheetReportData[] = worksheets.map(ws => ({
+        id: ws.id,
+        code: ws.code,
+        status: ws.status,
+        result: ws.result,
+        unit: ws.unit,
+        finishDate: ws.finish_date,
+        sample: {
+          code: ws.sample.code,
+          name: ws.sample.name || '',
+          priority: ws.sample.order.priority || 'Normal',
+          dueDate: ws.sample.due_date,
+          receivedDate: ws.sample.received_date,
+          analysisFinishedDate: ws.sample.analysis_finished_date,
+          coaReleaseDueDate: ws.sample.coa_release_due_date,
+          status: ws.sample.status || '',
+        },
+        service: {
+          name: ws.service.name,
+          price: ws.service.price ? Number(ws.service.price) : null,
+          category: ws.service.category?.name || null,
+        },
+        method: {
+          name: ws.service.method?.name || '',
+        },
+        order: {
+          code: ws.sample.order.code,
+          reviewedDate: ws.sample.order.first_reviewed_at,
+        },
+        customer: {
+          name: ws.sample.order.customer.customer_name,
+        },
+        analyst: {
+          name: ws.analyst_id ? analystMap.get(ws.analyst_id) || null : null,
+        },
+        qc: {
+          name: null,
+        },
+      }));
+
+      return RepositoryResult.ok(result);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch enviro worksheets: ${error.message}`);
+    }
+  }
+
   // ===== Private Helper Methods =====
+
+  /**
+   * Apply role-based filters to where clause
+   */
+  private applyRoleFilters(where: any, filter: WorksheetFilter): void {
+    // Analyst type filter
+    if (filter.userAnalystTypeIds && filter.userAnalystTypeIds.length > 0) {
+      where.service = {
+        ...where.service,
+        analyst_type_id: { in: filter.userAnalystTypeIds },
+      };
+    }
+
+    // Customer role filter
+    if (filter.userRole === 8 && filter.userCustomerId) {
+      where.sample = {
+        ...where.sample,
+        order: {
+          ...where.sample?.order,
+          customer_id: filter.userCustomerId,
+        },
+      };
+    }
+
+    // Subcontract filter
+    if (filter.isSubcontract !== undefined) {
+      where.service = {
+        ...where.service,
+        status: filter.isSubcontract ? 'Subcontracted' : { not: 'Subcontracted' },
+      };
+    }
+  }
 
   private getOrderStatusInt(status: string): number {
     const statusMap: Record<string, number> = {

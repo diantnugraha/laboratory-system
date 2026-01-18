@@ -26,6 +26,8 @@ import { UnitFormDialog } from "@/components/forms/UnitFormDialog";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { unitService, Unit } from "@/services/unitService";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const columns = [
   { 
@@ -87,9 +89,9 @@ export default function UnitsPage() {
       });
       setUnits(response.data);
       setPagination(response.pagination);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching units:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch units');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('units')));
     } finally {
       setLoading(false);
     }

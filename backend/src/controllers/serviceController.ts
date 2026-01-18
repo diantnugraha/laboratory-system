@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
-import { prisma } from '../config/database';
-import { ServiceRepository } from '../repositories/implementations/ServiceRepository';
-import { parseId, parseQueryParam, ApiResponse } from '../types';
+import type { FastifyRequest, FastifyReply } from 'fastify';
+import { prisma } from '../config/database.js';
+import { ServiceRepository } from '../repositories/implementations/ServiceRepository.js';
+import { parseId, parseQueryParam, ApiResponse } from '../types/index.js';
 
 // Initialize repository
 const serviceRepo = new ServiceRepository(prisma);
@@ -30,14 +30,14 @@ async function generateServiceCode(): Promise<string> {
 /**
  * GET /api/services/generate-code - Get next auto-generated code
  */
-export const getGeneratedCode = async (req: Request, res: Response): Promise<void> => {
+export const getGeneratedCode = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
     const code = await generateServiceCode();
-    res.json({ success: true, data: { code } });
+    return reply.send({ success: true, data: { code } });
   } catch (error) {
     console.error('generateCode error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to generate code',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -48,22 +48,21 @@ export const getGeneratedCode = async (req: Request, res: Response): Promise<voi
 /**
  * GET /api/services - List dengan search & pagination
  */
-export const getAllServices = async (req: Request, res: Response): Promise<void> => {
+export const getAllServices = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const page = parseQueryParam(req.query.page, 1);
-    const limit = parseQueryParam(req.query.limit, 20);
-    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const page = parseQueryParam((request.query as any).page, 1);
+    const limit = parseQueryParam((request.query as any).limit, 20);
+    const search = typeof (request.query as any).search === 'string' ? (request.query as any).search : undefined;
 
     // Call repository
     const result = await serviceRepo.findAll({ search, page, limit });
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const data = result.getValue();
@@ -75,11 +74,11 @@ export const getAllServices = async (req: Request, res: Response): Promise<void>
       pagination: data.pagination,
     };
 
-    res.json(response);
+    return reply.send(response);
   } catch (error) {
     console.error('getAll services error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch services',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -90,15 +89,14 @@ export const getAllServices = async (req: Request, res: Response): Promise<void>
 /**
  * GET /api/services/:id
  */
-export const getServiceById = async (req: Request, res: Response): Promise<void> => {
+export const getServiceById = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = parseId((request.params as any).id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Call repository
@@ -106,18 +104,17 @@ export const getServiceById = async (req: Request, res: Response): Promise<void>
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({ success: true, data: result.getValue() });
+    return reply.send({ success: true, data: result.getValue() });
   } catch (error) {
     console.error('getById service error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch service',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -128,7 +125,7 @@ export const getServiceById = async (req: Request, res: Response): Promise<void>
 /**
  * POST /api/services
  */
-export const createService = async (req: Request, res: Response): Promise<void> => {
+export const createService = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
     const {
       code,
@@ -150,65 +147,58 @@ export const createService = async (req: Request, res: Response): Promise<void> 
       user,
       use_pc,
       status
-    } = req.body;
+    } = request.body as any;
 
     // HTTP validation stays in controller
     if (!code || typeof code !== 'string' || code.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Code is required'
       });
-      return;
     }
 
     if (!name || typeof name !== 'string' || name.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Name is required'
       });
-      return;
     }
 
     if (!category_id || typeof category_id !== 'number') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Category ID is required'
       });
-      return;
     }
 
     if (parameter_id === undefined || typeof parameter_id !== 'number') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Parameter ID is required'
       });
-      return;
     }
 
     if (!method_id || typeof method_id !== 'number') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Method ID is required'
       });
-      return;
     }
 
     if (!price || typeof price !== 'number' || price < 0) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Price is required and must be a non-negative number'
       });
-      return;
     }
 
     // Check code uniqueness via repository
     const duplicateCode = await serviceRepo.findByCode(code.trim());
     if (duplicateCode.isSuccess() && duplicateCode.getValue() !== null) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Code already exists'
       });
-      return;
     }
 
     // Validate required foreign keys via repository
@@ -219,60 +209,54 @@ export const createService = async (req: Request, res: Response): Promise<void> 
     ]);
 
     if (categoryValidation.isFailure() || !categoryValidation.getValue()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Category not found'
       });
-      return;
     }
 
     if (parameterValidation.isFailure() || !parameterValidation.getValue()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Parameter not found'
       });
-      return;
     }
 
     if (methodValidation.isFailure() || !methodValidation.getValue()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Method not found'
       });
-      return;
     }
 
     // Validate optional foreign keys if provided
     if (subcontractor_id) {
       const subcontractorValidation = await serviceRepo.validateSubcontractorExists(subcontractor_id);
       if (subcontractorValidation.isFailure() || !subcontractorValidation.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Subcontractor not found'
         });
-        return;
       }
     }
 
     if (analyst_type_id) {
       const analystTypeValidation = await serviceRepo.validateAnalystTypeExists(analyst_type_id);
       if (analystTypeValidation.isFailure() || !analystTypeValidation.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Analyst Type not found'
         });
-        return;
       }
     }
 
     // Get user ID from request (set by authenticate middleware)
-    const userId = (req as any).user?.id;
+    const userId = (request as any).user?.id;
     if (!userId) {
-      res.status(401).json({
+      return reply.code(401).send({
         success: false,
         message: 'Authentication required'
       });
-      return;
     }
 
     // Create service via repository
@@ -299,14 +283,13 @@ export const createService = async (req: Request, res: Response): Promise<void> 
     }, userId);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.status(201).json({
+    return reply.code(201).send({
       success: true,
       message: 'Service created successfully',
       data: result.getValue()
@@ -314,7 +297,7 @@ export const createService = async (req: Request, res: Response): Promise<void> 
   } catch (error) {
     console.error('create service error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to create service',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -325,25 +308,23 @@ export const createService = async (req: Request, res: Response): Promise<void> 
 /**
  * PUT /api/services/:id
  */
-export const updateService = async (req: Request, res: Response): Promise<void> => {
+export const updateService = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = parseId((request.params as any).id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Check service exists using repository
     const existingResult = await serviceRepo.findById(id);
     if (existingResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Service not found'
       });
-      return;
     }
 
     const existing = existingResult.getValue();
@@ -368,17 +349,16 @@ export const updateService = async (req: Request, res: Response): Promise<void> 
       user,
       use_pc,
       status
-    } = req.body;
+    } = request.body as any;
 
     // Check code uniqueness (exclude self) via repository
     if (code && typeof code === 'string' && code.trim() !== '') {
       const duplicateCode = await serviceRepo.findByCode(code.trim(), id);
       if (duplicateCode.isSuccess() && duplicateCode.getValue() !== null) {
-        res.status(409).json({
+        return reply.code(409).send({
           success: false,
           message: 'Code already exists'
         });
-        return;
       }
     }
 
@@ -386,66 +366,60 @@ export const updateService = async (req: Request, res: Response): Promise<void> 
     if (category_id !== undefined) {
       const categoryValidation = await serviceRepo.validateCategoryExists(category_id);
       if (categoryValidation.isFailure() || !categoryValidation.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Category not found'
         });
-        return;
       }
     }
 
     if (parameter_id !== undefined) {
       const parameterValidation = await serviceRepo.validateParameterExists(parameter_id);
       if (parameterValidation.isFailure() || !parameterValidation.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Parameter not found'
         });
-        return;
       }
     }
 
     if (method_id !== undefined) {
       const methodValidation = await serviceRepo.validateMethodExists(method_id);
       if (methodValidation.isFailure() || !methodValidation.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Method not found'
         });
-        return;
       }
     }
 
     if (subcontractor_id !== undefined && subcontractor_id !== null) {
       const subcontractorValidation = await serviceRepo.validateSubcontractorExists(subcontractor_id);
       if (subcontractorValidation.isFailure() || !subcontractorValidation.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Subcontractor not found'
         });
-        return;
       }
     }
 
     if (analyst_type_id !== undefined && analyst_type_id !== null) {
       const analystTypeValidation = await serviceRepo.validateAnalystTypeExists(analyst_type_id);
       if (analystTypeValidation.isFailure() || !analystTypeValidation.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Analyst Type not found'
         });
-        return;
       }
     }
 
     // Get user ID from request
-    const userId = (req as any).user?.id;
+    const userId = (request as any).user?.id;
     if (!userId) {
-      res.status(401).json({
+      return reply.code(401).send({
         success: false,
         message: 'Authentication required'
       });
-      return;
     }
 
     // Check if price changed for history tracking
@@ -478,14 +452,13 @@ export const updateService = async (req: Request, res: Response): Promise<void> 
     const result = await serviceRepo.update(id, updateData, userId, priceChanged);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'Service updated successfully',
       data: result.getValue()
@@ -493,7 +466,7 @@ export const updateService = async (req: Request, res: Response): Promise<void> 
   } catch (error) {
     console.error('update service error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to update service',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -504,57 +477,53 @@ export const updateService = async (req: Request, res: Response): Promise<void> 
 /**
  * DELETE /api/services/:id
  */
-export const deleteService = async (req: Request, res: Response): Promise<void> => {
+export const deleteService = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = parseId((request.params as any).id);
 
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Check if service exists using repository
     const existingResult = await serviceRepo.findById(id);
     if (existingResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Service not found'
       });
-      return;
     }
 
     // Get user ID from request
-    const userId = (req as any).user?.id;
+    const userId = (request as any).user?.id;
     if (!userId) {
-      res.status(401).json({
+      return reply.code(401).send({
         success: false,
         message: 'Authentication required'
       });
-      return;
     }
 
     // Delete service via repository
     const result = await serviceRepo.delete(id, userId);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'Service deleted successfully'
     });
   } catch (error) {
     console.error('delete service error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to delete service',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -929,24 +898,23 @@ const mapServiceToJson = (service: any, contractData?: any): any => {
  * GET /api/services/json - JSON API for CTS lab services
  * BR-006: Filters user IN (1, 3) for CTS lab
  */
-export const getServicesJson = async (req: Request, res: Response): Promise<void> => {
+export const getServicesJson = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const product = req.query.product !== undefined;
-    const nonparameter = req.query.nonparameter !== undefined;
-    const contractId = typeof req.query.contract_id === 'string' ? parseId(req.query.contract_id) : undefined;
-    const isDataTable = req.query.dataTable !== undefined;
+    const searchTerm = typeof (request.query as any).q === 'string' ? (request.query as any).q : undefined;
+    const product = (request.query as any).product !== undefined;
+    const nonparameter = (request.query as any).nonparameter !== undefined;
+    const contractId = typeof (request.query as any).contract_id === 'string' ? parseId((request.query as any).contract_id) : undefined;
+    const isDataTable = (request.query as any).dataTable !== undefined;
 
     // Call repository
     const limit = isDataTable ? 10000 : 150;
     const result = await serviceRepo.findForJson('cts', product, nonparameter, !isDataTable, searchTerm, limit);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const services = result.getValue();
@@ -970,16 +938,16 @@ export const getServicesJson = async (req: Request, res: Response): Promise<void
       ...(isDataTable ? { data: items } : { items })
     };
 
-    if (req.query.pretty !== undefined) {
-      res.setHeader('Content-Type', 'application/json');
-      res.send(JSON.stringify(response, null, 2));
+    if ((request.query as any).pretty !== undefined) {
+      reply.header('Content-Type', 'application/json');
+      return reply.send(JSON.stringify(response, null, 2));
     } else {
-      res.json(response);
+      return reply.send(response);
     }
   } catch (error) {
     console.error('getServicesJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch services',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -990,24 +958,23 @@ export const getServicesJson = async (req: Request, res: Response): Promise<void
 /**
  * GET /api/services/json-global - JSON API for all lab services
  */
-export const getServicesJsonGlobal = async (req: Request, res: Response): Promise<void> => {
+export const getServicesJsonGlobal = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const product = req.query.product !== undefined;
-    const nonparameter = req.query.nonparameter !== undefined;
-    const contractId = typeof req.query.contract_id === 'string' ? parseId(req.query.contract_id) : undefined;
-    const isDataTable = req.query.dataTable !== undefined;
+    const searchTerm = typeof (request.query as any).q === 'string' ? (request.query as any).q : undefined;
+    const product = (request.query as any).product !== undefined;
+    const nonparameter = (request.query as any).nonparameter !== undefined;
+    const contractId = typeof (request.query as any).contract_id === 'string' ? parseId((request.query as any).contract_id) : undefined;
+    const isDataTable = (request.query as any).dataTable !== undefined;
 
     // Call repository
     const limit = isDataTable ? 10000 : 150;
     const result = await serviceRepo.findForJson('all', product, nonparameter, !isDataTable, searchTerm, limit);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const services = result.getValue();
@@ -1030,16 +997,16 @@ export const getServicesJsonGlobal = async (req: Request, res: Response): Promis
       ...(isDataTable ? { data: items } : { items })
     };
 
-    if (req.query.pretty !== undefined) {
-      res.setHeader('Content-Type', 'application/json');
-      res.send(JSON.stringify(response, null, 2));
+    if ((request.query as any).pretty !== undefined) {
+      reply.header('Content-Type', 'application/json');
+      return reply.send(JSON.stringify(response, null, 2));
     } else {
-      res.json(response);
+      return reply.send(response);
     }
   } catch (error) {
     console.error('getServicesJsonGlobal error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch services',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -1051,24 +1018,23 @@ export const getServicesJsonGlobal = async (req: Request, res: Response): Promis
  * GET /api/services/json-env - JSON API for Non-CTS lab services
  * BR-006: Filters user IN (2, 3) for Non-CTS lab
  */
-export const getServicesJsonEnv = async (req: Request, res: Response): Promise<void> => {
+export const getServicesJsonEnv = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const product = req.query.product !== undefined;
-    const nonparameter = req.query.nonparameter !== undefined;
-    const contractId = typeof req.query.contract_id === 'string' ? parseId(req.query.contract_id) : undefined;
-    const isDataTable = req.query.dataTable !== undefined;
+    const searchTerm = typeof (request.query as any).q === 'string' ? (request.query as any).q : undefined;
+    const product = (request.query as any).product !== undefined;
+    const nonparameter = (request.query as any).nonparameter !== undefined;
+    const contractId = typeof (request.query as any).contract_id === 'string' ? parseId((request.query as any).contract_id) : undefined;
+    const isDataTable = (request.query as any).dataTable !== undefined;
 
     // Call repository
     const limit = isDataTable ? 10000 : 150;
     const result = await serviceRepo.findForJson('env', product, nonparameter, !isDataTable, searchTerm, limit);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const services = result.getValue();
@@ -1091,16 +1057,16 @@ export const getServicesJsonEnv = async (req: Request, res: Response): Promise<v
       ...(isDataTable ? { data: items } : { items })
     };
 
-    if (req.query.pretty !== undefined) {
-      res.setHeader('Content-Type', 'application/json');
-      res.send(JSON.stringify(response, null, 2));
+    if ((request.query as any).pretty !== undefined) {
+      reply.header('Content-Type', 'application/json');
+      return reply.send(JSON.stringify(response, null, 2));
     } else {
-      res.json(response);
+      return reply.send(response);
     }
   } catch (error) {
     console.error('getServicesJsonEnv error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch services',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -1112,12 +1078,12 @@ export const getServicesJsonEnv = async (req: Request, res: Response): Promise<v
  * GET /api/services/json2 - DataTable format with analyst count
  * Note: Analyst counting logic stays in controller (uses models that may not exist)
  */
-export const getServicesDataTable = async (req: Request, res: Response): Promise<void> => {
+export const getServicesDataTable = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const sEcho = parseQueryParam(req.query.sEcho, 1);
-    const iDisplayStart = parseQueryParam(req.query.iDisplayStart, 0);
-    const iDisplayLength = Math.min(parseQueryParam(req.query.iDisplayLength, 10), 10000);
-    const sSearch = typeof req.query.sSearch === 'string' ? req.query.sSearch : undefined;
+    const sEcho = parseQueryParam((request.query as any).sEcho, 1);
+    const iDisplayStart = parseQueryParam((request.query as any).iDisplayStart, 0);
+    const iDisplayLength = Math.min(parseQueryParam((request.query as any).iDisplayLength, 10), 10000);
+    const sSearch = typeof (request.query as any).sSearch === 'string' ? (request.query as any).sSearch : undefined;
 
     // Build where clause
     const where: any = {
@@ -1206,7 +1172,7 @@ export const getServicesDataTable = async (req: Request, res: Response): Promise
       String(analystCounts.get(service.id) || 0)
     ]);
 
-    res.json({
+    return reply.send({
       sEcho,
       iTotalRecords,
       iTotalDisplayRecords: iTotalRecords,
@@ -1216,7 +1182,7 @@ export const getServicesDataTable = async (req: Request, res: Response): Promise
   } catch (error) {
     console.error('getServicesDataTable error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch services',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -1228,10 +1194,10 @@ export const getServicesDataTable = async (req: Request, res: Response): Promise
  * GET /api/services/json-top - Service usage statistics for charts
  * Note: Statistics logic stays in controller (uses raw SQL and models that may not exist)
  */
-export const getServiceStatistics = async (req: Request, res: Response): Promise<void> => {
+export const getServiceStatistics = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const isDataTable = req.query.dataTable !== undefined;
-    const targetYear = typeof req.query.year === 'string' ? parseInt(req.query.year) : new Date().getFullYear();
+    const isDataTable = (request.query as any).dataTable !== undefined;
+    const targetYear = typeof (request.query as any).year === 'string' ? parseInt((request.query as any).year) : new Date().getFullYear();
 
     // Get total worksheet count
     let totalWorksheets = 0;
@@ -1305,11 +1271,11 @@ export const getServiceStatistics = async (req: Request, res: Response): Promise
       }));
     }
 
-    res.json(response);
+    return reply.send(response);
   } catch (error) {
     console.error('getServiceStatistics error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch statistics',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -1320,21 +1286,21 @@ export const getServiceStatistics = async (req: Request, res: Response): Promise
 /**
  * GET /api/services/fetch-json - Paginated service list with advanced filters
  */
-export const getServicesFetch = async (req: Request, res: Response): Promise<void> => {
+export const getServicesFetch = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-    const user = typeof req.query.user === 'string' ? parseId(req.query.user) : undefined;
-    const method = typeof req.query.method === 'string' ? req.query.method : undefined;
-    const name = typeof req.query.name === 'string' ? req.query.name : undefined;
-    const perPage = parseQueryParam(req.query.per_page, 20);
-    const page = parseQueryParam(req.query.page, 1);
+    const status = typeof (request.query as any).status === 'string' ? (request.query as any).status : undefined;
+    const user = typeof (request.query as any).user === 'string' ? parseId((request.query as any).user) : undefined;
+    const method = typeof (request.query as any).method === 'string' ? (request.query as any).method : undefined;
+    const name = typeof (request.query as any).name === 'string' ? (request.query as any).name : undefined;
+    const perPage = parseQueryParam((request.query as any).per_page, 20);
+    const page = parseQueryParam((request.query as any).page, 1);
     // @ts-ignore
-    const orderByStr = typeof req.query.order_by === 'string' ? req.query.order_by : 't.id DESC';
-    const contractId = typeof req.query.contract_id === 'string' ? parseId(req.query.contract_id) : 36;
+    const orderByStr = typeof (request.query as any).order_by === 'string' ? (request.query as any).order_by : 't.id DESC';
+    const contractId = typeof (request.query as any).contract_id === 'string' ? parseId((request.query as any).contract_id) : 36;
 
     // Check user role for status filter
     // @ts-ignore
-    const userRole = (req as any).user?.role_id;
+    const userRole = (request as any).user?.role_id;
     const isCustomer = userRole === 8;
 
     // Build filter
@@ -1368,11 +1334,10 @@ export const getServicesFetch = async (req: Request, res: Response): Promise<voi
     const result = await serviceRepo.findForFetch(filter, orderBy);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const { data: services, pagination } = result.getValue();
@@ -1405,14 +1370,14 @@ export const getServicesFetch = async (req: Request, res: Response): Promise<voi
       };
     });
 
-    res.json({
+    return reply.send({
       total_count: pagination.total,
       items
     });
   } catch (error) {
     console.error('getServicesFetch error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch services',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -1424,37 +1389,34 @@ export const getServicesFetch = async (req: Request, res: Response): Promise<voi
  * GET /api/services/report - CSV export
  * Note: Analyst counting logic stays in controller
  */
-export const exportServiceReport = async (req: Request, res: Response): Promise<void> => {
+export const exportServiceReport = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const start = typeof req.query.start === 'string' ? req.query.start : undefined;
-    const end = typeof req.query.end === 'string' ? req.query.end : undefined;
+    const start = typeof (request.query as any).start === 'string' ? (request.query as any).start : undefined;
+    const end = typeof (request.query as any).end === 'string' ? (request.query as any).end : undefined;
 
     // Validate date format (YYYY-MM-DD) - HTTP validation in controller
     if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid start date format (expected YYYY-MM-DD)'
       });
-      return;
     }
 
     if (end && !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid end date format (expected YYYY-MM-DD)'
       });
-      return;
     }
 
     // Repository provides data
     const result = await serviceRepo.findAllForReport(start, end);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const services = result.getValue();
@@ -1511,13 +1473,13 @@ export const exportServiceReport = async (req: Request, res: Response): Promise<
 
     const csv = header + rows;
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="report-service.csv"');
-    res.send(csv);
+    reply.header('Content-Type', 'text/csv');
+    reply.header('Content-Disposition', 'attachment; filename="report-service.csv"');
+    return reply.send(csv);
   } catch (error) {
     console.error('exportServiceReport error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to generate report',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })

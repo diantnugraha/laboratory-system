@@ -26,6 +26,8 @@ import { MatrixFormDialog } from "@/components/forms/MatrixFormDialog";
 import { matrixService, Matrix } from "@/services/matrixService";
 import { toast } from "sonner";
 import { RenderHTML } from "@/components/shared/RenderHTML";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const columns = [
   { 
@@ -80,9 +82,9 @@ export default function MatrixPage() {
       });
       setMatrices(response.data);
       setPagination(response.pagination);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching matrices:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch matrices');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('matrices')));
     } finally {
       setLoading(false);
     }

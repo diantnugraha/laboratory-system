@@ -152,14 +152,6 @@ export class UserRepository implements IUserRepository {
               customer_name: true,
             },
           },
-          contact: {
-            select: {
-              id: true,
-              first_name: true,
-              surname: true,
-              email: true,
-            },
-          },
         },
       });
 

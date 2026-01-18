@@ -48,21 +48,39 @@ export class PackageRepository implements IPackageRepository {
           skip,
           take: limit,
           orderBy: { id: 'desc' },
-          include: {
-            customer: {
-              select: {
-                id: true,
-                code: true,
-                customer_name: true,
-              },
-            },
-          },
         }),
         (this.prisma as any).package.count({ where }),
       ]);
 
+      // Fetch customer data for packages that have customerId
+      const customerIds = data
+        .filter((pkg: any) => pkg.customerId)
+        .map((pkg: any) => pkg.customerId);
+
+      let customerMap: Record<number, any> = {};
+      if (customerIds.length > 0) {
+        const customers = await (this.prisma as any).customer.findMany({
+          where: { id: { in: customerIds } },
+          select: {
+            id: true,
+            code: true,
+            customer_name: true,
+          },
+        });
+        customerMap = customers.reduce((acc: Record<number, any>, c: any) => {
+          acc[c.id] = c;
+          return acc;
+        }, {});
+      }
+
+      // Attach customer to each package
+      const dataWithCustomer = data.map((pkg: any) => ({
+        ...pkg,
+        customer: pkg.customerId ? customerMap[pkg.customerId] || null : null,
+      }));
+
       return RepositoryResult.ok({
-        data,
+        data: dataWithCustomer,
         pagination: {
           page,
           limit,
@@ -79,22 +97,29 @@ export class PackageRepository implements IPackageRepository {
     try {
       const packageData = await (this.prisma as any).package.findFirst({
         where: { id, trash: null },
-        include: {
-          customer: {
-            select: {
-              id: true,
-              code: true,
-              customer_name: true,
-            },
-          },
-        },
       });
 
       if (!packageData) {
         return RepositoryResult.fail('Package not found');
       }
 
-      return RepositoryResult.ok(packageData);
+      // Fetch customer data if customerId exists
+      let customer = null;
+      if (packageData.customerId) {
+        customer = await (this.prisma as any).customer.findFirst({
+          where: { id: packageData.customerId },
+          select: {
+            id: true,
+            code: true,
+            customer_name: true,
+          },
+        });
+      }
+
+      return RepositoryResult.ok({
+        ...packageData,
+        customer,
+      });
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to fetch package: ${error.message}`);
     }
@@ -147,15 +172,6 @@ export class PackageRepository implements IPackageRepository {
         where,
         take: filter.limit,
         orderBy: { name: 'asc' },
-        include: {
-          customer: {
-            select: {
-              id: true,
-              code: true,
-              customer_name: true,
-            },
-          },
-        },
       });
 
       return RepositoryResult.ok(packages);
@@ -179,17 +195,8 @@ export class PackageRepository implements IPackageRepository {
             listService: data.listService,
             customerId: data.customerId ?? null,
             group: data.group,
-            createdBy: data.createdBy ?? null,
+            created_by: data.createdBy ?? null,
             trash: null,
-          },
-          include: {
-            customer: {
-              select: {
-                id: true,
-                code: true,
-                customer_name: true,
-              },
-            },
           },
         });
       });
@@ -215,29 +222,14 @@ export class PackageRepository implements IPackageRepository {
       if (data.group !== undefined) updateData.group = data.group;
       if (data.updatedBy !== undefined) updateData.updated_by = data.updatedBy;
 
-      // Handle customer relation properly for Prisma
+      // Handle customerId as a direct field (no relation in schema)
       if (data.customerId !== undefined) {
-        if (data.customerId === null) {
-          // Disconnect customer relation
-          updateData.customer = { disconnect: true };
-        } else {
-          // Connect to customer
-          updateData.customer = { connect: { id: data.customerId } };
-        }
+        updateData.customerId = data.customerId;
       }
 
       const packageData = await (this.prisma as any).package.update({
         where: { id },
         data: updateData,
-        include: {
-          customer: {
-            select: {
-              id: true,
-              code: true,
-              customer_name: true,
-            },
-          },
-        },
       });
 
       return RepositoryResult.ok(packageData);

@@ -50,6 +50,8 @@ import {
 import { toast } from 'sonner';
 import api from '@/services/api';
 import { cn } from '@/lib/utils';
+import { getErrorMessage } from '@/lib/utils/errorHandler';
+import { OPERATION_ERROR_MESSAGES } from '@/lib/constants/errorMessages';
 
 interface Matrix {
   id: number;
@@ -87,9 +89,9 @@ export default function MethodDetailPage() {
         setLoading(true);
         const response = await methodService.getById(methodId);
         setMethod(response.data);
-      } catch (error: any) {
+      } catch (error) {
         console.error('Error fetching method:', error);
-        toast.error(error.response?.data?.message || 'Failed to fetch method');
+        toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('method')));
       } finally {
         setLoading(false);
       }
@@ -179,8 +181,8 @@ export default function MethodDetailPage() {
       // Refresh method data
       const response = await methodService.getById(methodId);
       setMethod(response.data);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to update method');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('method')));
     }
   };
 
@@ -189,8 +191,8 @@ export default function MethodDetailPage() {
       await methodService.delete(methodId);
       toast.success('Method deleted successfully');
       router.push('/master/method');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to delete method');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('method')));
     }
   };
 

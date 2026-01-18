@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Loader2, UserPlus, Mail, User, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/services/api';
+import { getErrorMessage } from '@/lib/utils/errorHandler';
+import { OPERATION_ERROR_MESSAGES } from '@/lib/constants/errorMessages';
 
 interface Contact {
   id: number;
@@ -53,8 +55,8 @@ export function CreateUserFromContactDialog({
         onOpenChange(false);
         onSuccess();
       }
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to create user');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('user')));
     } finally {
       setIsSubmitting(false);
     }

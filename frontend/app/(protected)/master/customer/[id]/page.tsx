@@ -37,6 +37,8 @@ import { ContactEditDialog } from "@/components/forms/ContactEditDialog";
 import { CreateUserFromContactDialog } from "@/components/forms/CreateUserFromContactDialog";
 import { customerService, Customer, Address, Contact } from "@/services/customerService";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 // Local interfaces for dialog state (with proper typing)
 interface AddressDialogData {
@@ -115,9 +117,8 @@ export default function CustomerDetailPage() {
       setLoading(true);
       const response = await customerService.getById(id);
       setCustomer(response.data);
-    } catch (error: any) {
-      console.error('Error fetching customer:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch customer');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('customer')));
     } finally {
       setLoading(false);
     }
@@ -151,9 +152,8 @@ export default function CustomerDetailPage() {
       toast.success(action === 'create' ? 'Address created successfully' : 'Address updated successfully');
       setEditingAddress(null);
       fetchCustomer(); // Refresh data
-    } catch (error: any) {
-      console.error('Error saving address:', error);
-      toast.error(error.response?.data?.message || 'Failed to save address');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to save address'));
     } finally {
       setIsAddressSaving(false);
     }
@@ -183,9 +183,8 @@ export default function CustomerDetailPage() {
       toast.success(action === 'create' ? 'Contact created successfully' : 'Contact updated successfully');
       setEditingContact(null);
       fetchCustomer(); // Refresh data
-    } catch (error: any) {
-      console.error('Error saving contact:', error);
-      toast.error(error.response?.data?.message || 'Failed to save contact');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to save contact'));
     } finally {
       setIsContactSaving(false);
     }
@@ -200,9 +199,8 @@ export default function CustomerDetailPage() {
       toast.success("Address deleted successfully");
       setSelectedAddress(null);
       fetchCustomer(); // Refresh data
-    } catch (error: any) {
-      console.error('Error deleting address:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete address');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('address')));
     }
   };
 
@@ -215,9 +213,8 @@ export default function CustomerDetailPage() {
       toast.success("Contact deleted successfully");
       setSelectedContact(null);
       fetchCustomer(); // Refresh data
-    } catch (error: any) {
-      console.error('Error deleting contact:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete contact');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('contact')));
     }
   };
 
@@ -226,9 +223,8 @@ export default function CustomerDetailPage() {
       await customerService.delete(id);
       toast.success("Customer deleted successfully");
       router.push("/master/customer");
-    } catch (error: any) {
-      console.error('Error deleting customer:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete customer');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('customer')));
     }
   };
 

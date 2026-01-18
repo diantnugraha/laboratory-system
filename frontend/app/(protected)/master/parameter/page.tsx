@@ -26,6 +26,8 @@ import { ParameterFormDialog } from "@/components/forms/ParameterFormDialog";
 import { parameterService, Parameter } from "@/services/parameterService";
 import { toast } from "sonner";
 import { RenderHTML } from "@/components/shared/RenderHTML";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 const columns = [
   { 
@@ -82,9 +84,9 @@ export default function ParameterPage() {
       });
       setParameters(response.data);
       setPagination(response.pagination);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching parameters:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch parameters');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('parameters')));
     } finally {
       setLoading(false);
     }

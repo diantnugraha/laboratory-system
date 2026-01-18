@@ -16,6 +16,8 @@ import { categoryServiceSchema, CategoryServiceFormData } from "@/lib/schemas";
 import { toast } from "sonner";
 import { categoryService } from "@/services/categoryService";
 import { Loader2 } from "lucide-react";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { SUCCESS_MESSAGES, OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 interface CategoryServiceFormDialogProps {
   open: boolean;
@@ -39,13 +41,12 @@ export function CategoryServiceFormDialog({ open, onOpenChange, onSuccess }: Cat
       await categoryService.create({
         name: data.name,
       });
-      toast.success("Category added successfully");
+      toast.success(SUCCESS_MESSAGES.CREATED('Kategori'));
       form.reset();
       onOpenChange(false);
       onSuccess?.();
-    } catch (error: any) {
-      console.error('Error creating category:', error);
-      toast.error(error.response?.data?.message || 'Failed to create category');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('kategori')));
     } finally {
       setSubmitting(false);
     }

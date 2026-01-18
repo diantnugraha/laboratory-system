@@ -43,6 +43,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import api from '@/services/api';
 import { cn } from '@/lib/utils';
 import { RenderHTML } from '@/components/shared/RenderHTML';
@@ -141,9 +143,9 @@ export default function ServiceDetailPage() {
         setLoading(true);
         const response = await serviceService.getById(serviceId);
         setService(response.data);
-      } catch (error: any) {
+      } catch (error) {
         console.error('Error fetching service:', error);
-        toast.error(error.response?.data?.message || 'Failed to fetch service');
+        toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('service')));
       } finally {
         setLoading(false);
       }
@@ -425,9 +427,9 @@ export default function ServiceDetailPage() {
       // Refresh service data
       const response = await serviceService.getById(serviceId);
       setService(response.data);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating service:', error);
-      toast.error(error.response?.data?.message || 'Failed to update service');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('service')));
     }
   };
 
@@ -436,9 +438,9 @@ export default function ServiceDetailPage() {
       await serviceService.delete(serviceId);
       toast.success('Service deleted successfully');
       router.push('/master/service');
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting service:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete service');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('service')));
     }
   };
 

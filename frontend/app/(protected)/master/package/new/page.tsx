@@ -69,6 +69,8 @@ import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { packageService } from "@/services/packageService";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { customerService } from "@/services/customerService";
 import { serviceService } from "@/services/serviceService";
 
@@ -397,10 +399,9 @@ export default function PackageNewPage() {
         toast.success("Package created successfully");
         router.push("/master/package");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating package:', error);
-      const message = error.response?.data?.message || 'Failed to create package';
-      toast.error(message);
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('package')));
     } finally {
       setSubmitting(false);
     }

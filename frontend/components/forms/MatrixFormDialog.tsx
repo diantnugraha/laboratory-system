@@ -15,6 +15,8 @@ import { FormDialog } from "@/components/shared/FormDialog";
 import { matrixSchema, MatrixFormData } from "@/lib/schemas";
 import { toast } from "sonner";
 import { matrixService } from "@/services/matrixService";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { SUCCESS_MESSAGES, OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 interface MatrixFormDialogProps {
   open: boolean;
@@ -38,13 +40,12 @@ export function MatrixFormDialog({ open, onOpenChange, onSuccess }: MatrixFormDi
       await matrixService.create({
         name: data.name,
       });
-      toast.success("Matrix created successfully");
+      toast.success(SUCCESS_MESSAGES.CREATED('Matrix'));
       form.reset();
       onOpenChange(false);
       onSuccess?.();
-    } catch (error: any) {
-      console.error('Error creating matrix:', error);
-      toast.error(error.response?.data?.message || 'Failed to create matrix');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('matrix')));
     } finally {
       setSubmitting(false);
     }

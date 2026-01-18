@@ -41,9 +41,9 @@ export const sampleJsonQuerySchema = z.object({
  * Create sample schema
  */
 export const createSampleSchema = z.object({
-  order_id: z.number().int().positive('Order ID harus positif'),
+  order_id: z.number().int().positive('Order ID must be positive'),
   standart_id: z.number().int().positive().nullable().optional(),
-  name: z.string().min(1, 'Nama sample wajib diisi').max(255, 'Nama maksimal 255 karakter'),
+  name: z.string().min(1, 'Sample name is required').max(255, 'Name must be at most 255 characters'),
   description: z.string().trim().nullable().optional(),
   sample_type: z.string().max(100).nullable().optional(),
   sample_condition: z.string().max(255).nullable().optional(),

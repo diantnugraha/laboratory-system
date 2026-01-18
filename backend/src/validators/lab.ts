@@ -6,8 +6,8 @@ import { z } from 'zod';
 
 export const createLabSchema = z.object({
   name: z.string()
-    .min(1, 'Nama lab wajib diisi')
-    .max(255, 'Nama lab maksimal 255 karakter')
+    .min(1, 'Lab name is required')
+    .max(255, 'Lab name must be at most 255 characters')
     .trim()
 });
 
@@ -19,8 +19,8 @@ export type CreateLabInput = z.infer<typeof createLabSchema>;
 
 export const updateLabSchema = z.object({
   name: z.string()
-    .min(1, 'Nama lab tidak boleh kosong')
-    .max(255, 'Nama lab maksimal 255 karakter')
+    .min(1, 'Lab name is required')
+    .max(255, 'Lab name must be at most 255 characters')
     .trim()
     .optional()
 });

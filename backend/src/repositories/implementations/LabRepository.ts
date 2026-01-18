@@ -4,6 +4,7 @@ import {
   LabFilter,
   CreateLabDTO,
   UpdateLabDTO,
+  LabDependencyCheckResult,
 } from '../contracts/ILabRepository';
 import { RepositoryResult, PaginatedData } from '../results/RepositoryResult';
 import { buildSearchCondition } from '../../utils/searchHelper';
@@ -166,6 +167,37 @@ export class LabRepository implements ILabRepository {
       return RepositoryResult.ok(true);
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to delete lab: ${error.message}`);
+    }
+  }
+
+  async checkDependencies(id: number): Promise<RepositoryResult<LabDependencyCheckResult>> {
+    try {
+      // First check if lab exists
+      const lab = await this.prisma.lab.findFirst({
+        where: { id, trash: null },
+      });
+
+      if (!lab) {
+        return RepositoryResult.fail('Lab not found');
+      }
+
+      // Count dependencies separately (Unit doesn't have trash field)
+      const [parameterCount, unitCount] = await Promise.all([
+        this.prisma.parameter.count({
+          where: { lab_id: id, trash: null },
+        }),
+        this.prisma.unit.count({
+          where: { lab_id: id },
+        }),
+      ]);
+
+      return RepositoryResult.ok({
+        parameterCount,
+        unitCount,
+        hasDependencies: parameterCount > 0 || unitCount > 0,
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to check dependencies: ${error.message}`);
     }
   }
 }

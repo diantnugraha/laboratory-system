@@ -7,7 +7,7 @@ import { dateSchema } from './common';
 
 export const createServiceSchema = z.object({
   name: z.string()
-    .min(1, 'Nama service wajib diisi')
+    .min(1, 'Service name is required')
     .trim(),
   category_id: z.number().nullable().optional(),
   parameter_id: z.number().nullable().optional(),
@@ -33,7 +33,7 @@ export type CreateServiceInput = z.infer<typeof createServiceSchema>;
 
 export const updateServiceSchema = z.object({
   name: z.string()
-    .min(1, 'Nama service tidak boleh kosong')
+    .min(1, 'Service name is required')
     .trim()
     .optional(),
   code: z.string().trim().optional(),
@@ -62,11 +62,11 @@ export type UpdateServiceInput = z.infer<typeof updateServiceSchema>;
 
 export const serviceQuerySchema = z.object({
   page: z.string()
-    .regex(/^\d+$/, 'Page harus berupa angka')
+    .regex(/^\d+$/, 'Page must be a number')
     .transform(Number)
     .optional(),
   limit: z.string()
-    .regex(/^\d+$/, 'Limit harus berupa angka')
+    .regex(/^\d+$/, 'Limit must be a number')
     .transform(Number)
     .optional(),
   search: z.string().optional()
@@ -81,11 +81,11 @@ export type ServiceQuery = z.infer<typeof serviceQuerySchema>;
 export const serviceJsonQuerySchema = z.object({
   q: z.string().optional(),
   category_id: z.string()
-    .regex(/^\d+$/, 'Category ID harus berupa angka')
+    .regex(/^\d+$/, 'Category ID must be a number')
     .transform(Number)
     .optional(),
   parameter_id: z.string()
-    .regex(/^\d+$/, 'Parameter ID harus berupa angka')
+    .regex(/^\d+$/, 'Parameter ID must be a number')
     .transform(Number)
     .optional()
 });

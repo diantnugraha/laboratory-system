@@ -25,6 +25,8 @@ import {
 import { FormDialog } from "@/components/shared/FormDialog";
 import { toast } from "sonner";
 import { userService, Role } from "@/services/userService";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 // External role IDs to exclude
 const EXTERNAL_ROLE_IDS = [16, 28];
@@ -111,9 +113,8 @@ export function InternalUserFormDialog({ open, onOpenChange, onSuccess }: Intern
         onOpenChange(false);
         onSuccess?.();
       }
-    } catch (error: any) {
-      console.error('Error creating user:', error);
-      toast.error(error.response?.data?.message || 'Failed to create user');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('user')));
     } finally {
       setSubmitting(false);
     }

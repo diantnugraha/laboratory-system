@@ -48,6 +48,8 @@ import { toast } from 'sonner';
 import { parameterService, Parameter } from '@/services/parameterService';
 import api from '@/services/api';
 import { cn } from '@/lib/utils';
+import { getErrorMessage } from '@/lib/utils/errorHandler';
+import { OPERATION_ERROR_MESSAGES } from '@/lib/constants/errorMessages';
 
 interface Lab {
   id: number;
@@ -85,10 +87,10 @@ export default function ParameterDetailPage() {
         if (response.data.lab) {
           setLabs([{ id: response.data.lab.id, name: response.data.lab.name }]);
         }
-      } catch (error: any) {
+      } catch (error) {
         console.error('Error fetching parameter:', error);
-        toast.error(error.response?.data?.message || 'Failed to fetch parameter');
-        if (error.response?.status === 404) {
+        toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('parameter')));
+        if ((error as any).response?.status === 404) {
           router.push('/master/parameter');
         }
       } finally {
@@ -160,8 +162,8 @@ export default function ParameterDetailPage() {
       if (response.data.lab) {
         setLabs([{ id: response.data.lab.id, name: response.data.lab.name }]);
       }
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to update parameter');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('parameter')));
     } finally {
       setLoading(false);
     }
@@ -173,8 +175,8 @@ export default function ParameterDetailPage() {
       await parameterService.delete(parameterId);
       toast.success('Parameter deleted successfully');
       router.push('/master/parameter');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to delete parameter');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('parameter')));
       setLoading(false);
     }
   };

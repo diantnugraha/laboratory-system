@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
-import { prisma } from '../config/database';
-import { ParameterRepository } from '../repositories/implementations/ParameterRepository';
-import { parseId, parseQueryParam, ApiResponse } from '../types';
+import type { FastifyRequest, FastifyReply } from 'fastify';
+import { prisma } from '../config/database.js';
+import { ParameterRepository } from '../repositories/implementations/ParameterRepository.js';
+import { parseId, parseQueryParam, ApiResponse } from '../types/index.js';
 
 // Initialize repository
 const parameterRepo = new ParameterRepository(prisma);
@@ -9,22 +9,22 @@ const parameterRepo = new ParameterRepository(prisma);
 /**
  * GET /api/parameters - List dengan search & pagination
  */
-export const getAllParameters = async (req: Request, res: Response): Promise<void> => {
+export const getAllParameters = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const page = parseQueryParam(req.query.page, 1);
-    const limit = parseQueryParam(req.query.limit, 20);
-    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const query = request.query as Record<string, unknown>;
+    const page = parseQueryParam(query.page, 1);
+    const limit = parseQueryParam(query.limit, 20);
+    const search = typeof query.search === 'string' ? query.search : undefined;
 
     // Call repository
     const result = await parameterRepo.findAll({ search, page, limit });
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const data = result.getValue();
@@ -36,11 +36,11 @@ export const getAllParameters = async (req: Request, res: Response): Promise<voi
       pagination: data.pagination,
     };
 
-    res.json(response);
+    return reply.send(response);
   } catch (error) {
     console.error('getAll parameters error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch parameters',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -51,15 +51,15 @@ export const getAllParameters = async (req: Request, res: Response): Promise<voi
 /**
  * GET /api/parameters/:id
  */
-export const getParameterById = async (req: Request, res: Response): Promise<void> => {
+export const getParameterById = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const params = request.params as Record<string, string>;
+    const id = parseId(params.id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Call repository
@@ -67,18 +67,17 @@ export const getParameterById = async (req: Request, res: Response): Promise<voi
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({ success: true, data: result.getValue() });
+    return reply.send({ success: true, data: result.getValue() });
   } catch (error) {
     console.error('getById parameter error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch parameter',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -89,68 +88,63 @@ export const getParameterById = async (req: Request, res: Response): Promise<voi
 /**
  * POST /api/parameters
  */
-export const createParameter = async (req: Request, res: Response): Promise<void> => {
+export const createParameter = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const { name, lab_id } = req.body;
+    const body = request.body as Record<string, unknown>;
+    const { name, lab_id } = body;
 
     // HTTP validation stays in controller
     if (!name || typeof name !== 'string' || name.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Name is required'
       });
-      return;
     }
 
     const labIdNum = typeof lab_id === 'number' ? lab_id : parseId(String(lab_id));
     if (!labIdNum) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Lab ID is required'
       });
-      return;
     }
 
     // Validate lab exists via repository
     const labValidation = await parameterRepo.validateLabExists(labIdNum);
     if (labValidation.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: labValidation.error,
       });
-      return;
     }
 
     if (!labValidation.getValue()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Lab not found'
       });
-      return;
     }
 
     // Check duplicate via repository
     const duplicateResult = await parameterRepo.findByName(name.trim());
     if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Name already exists'
       });
-      return;
     }
 
     // Create parameter
     const result = await parameterRepo.create({ name: name.trim(), lab_id: labIdNum });
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.status(201).json({
+    return reply.code(201).send({
       success: true,
       message: 'Parameter created successfully',
       data: result.getValue()
@@ -158,7 +152,7 @@ export const createParameter = async (req: Request, res: Response): Promise<void
   } catch (error) {
     console.error('create parameter error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to create parameter',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -169,28 +163,28 @@ export const createParameter = async (req: Request, res: Response): Promise<void
 /**
  * PUT /api/parameters/:id
  */
-export const updateParameter = async (req: Request, res: Response): Promise<void> => {
+export const updateParameter = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
-    const { name, lab_id } = req.body;
+    const params = request.params as Record<string, string>;
+    const body = request.body as Record<string, unknown>;
+    const id = parseId(params.id);
+    const { name, lab_id } = body;
 
     // HTTP validation stays in controller
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Check if parameter exists using repository
     const parameterResult = await parameterRepo.findById(id);
     if (parameterResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Parameter not found',
       });
-      return;
     }
 
     const updateData: {
@@ -200,11 +194,10 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
 
     if (name !== undefined) {
       if (!name || typeof name !== 'string' || name.trim() === '') {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Name cannot be empty'
         });
-        return;
       }
       updateData.name = name.trim();
     }
@@ -212,40 +205,36 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
     if (lab_id !== undefined) {
       const labIdNum = typeof lab_id === 'number' ? lab_id : parseId(String(lab_id));
       if (!labIdNum) {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Invalid lab ID'
         });
-        return;
       }
       updateData.lab_id = labIdNum;
     }
 
     if (Object.keys(updateData).length === 0) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'No valid data to update'
       });
-      return;
     }
 
     // Validate lab exists if updating lab_id
     if (updateData.lab_id) {
       const labValidation = await parameterRepo.validateLabExists(updateData.lab_id);
       if (labValidation.isFailure()) {
-        res.status(500).json({
+        return reply.code(500).send({
           success: false,
           message: labValidation.error,
         });
-        return;
       }
 
       if (!labValidation.getValue()) {
-        res.status(404).json({
+        return reply.code(404).send({
           success: false,
           message: 'Lab not found'
         });
-        return;
       }
     }
 
@@ -253,11 +242,10 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
     if (updateData.name) {
       const duplicateResult = await parameterRepo.findByName(updateData.name, id);
       if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
-        res.status(409).json({
+        return reply.code(409).send({
           success: false,
           message: 'Name already exists'
         });
-        return;
       }
     }
 
@@ -265,14 +253,13 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
     const result = await parameterRepo.update(id, updateData);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'Parameter updated successfully',
       data: result.getValue()
@@ -280,7 +267,7 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
   } catch (error) {
     console.error('update parameter error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to update parameter',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -291,48 +278,46 @@ export const updateParameter = async (req: Request, res: Response): Promise<void
 /**
  * DELETE /api/parameters/:id
  */
-export const deleteParameter = async (req: Request, res: Response): Promise<void> => {
+export const deleteParameter = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const params = request.params as Record<string, string>;
+    const id = parseId(params.id);
 
     // HTTP validation stays in controller
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Check if parameter exists using repository
     const parameterResult = await parameterRepo.findById(id);
     if (parameterResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Parameter not found',
       });
-      return;
     }
 
     // Delete parameter
     const result = await parameterRepo.delete(id);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'Parameter deleted successfully'
     });
   } catch (error) {
     console.error('delete parameter error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to delete parameter',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -343,36 +328,36 @@ export const deleteParameter = async (req: Request, res: Response): Promise<void
 /**
  * GET /api/parameters/json - JSON API for autocomplete/select2
  */
-export const getParameterJson = async (req: Request, res: Response): Promise<void> => {
+export const getParameterJson = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const search = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const isDataTable = req.query.dataTable !== undefined;
+    const query = request.query as Record<string, unknown>;
+    const search = typeof query.q === 'string' ? query.q : undefined;
+    const isDataTable = query.dataTable !== undefined;
 
     // Call repository
     const result = await parameterRepo.findForAutocomplete(search, isDataTable);
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const response = result.getValue();
 
     // Handle pretty print option (presentation logic in controller)
-    if (req.query.pretty !== undefined) {
-      res.setHeader('Content-Type', 'application/json');
-      res.send(JSON.stringify(response, null, 2));
+    if (query.pretty !== undefined) {
+      reply.header('Content-Type', 'application/json');
+      return reply.send(JSON.stringify(response, null, 2));
     } else {
-      res.json(response);
+      return reply.send(response);
     }
   } catch (error) {
     console.error('getParameterJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch parameters JSON',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -383,37 +368,35 @@ export const getParameterJson = async (req: Request, res: Response): Promise<voi
 /**
  * GET /api/parameters/report - CSV export
  */
-export const getParameterReport = async (req: Request, res: Response): Promise<void> => {
+export const getParameterReport = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const start = typeof req.query.start === 'string' ? req.query.start : undefined;
-    const end = typeof req.query.end === 'string' ? req.query.end : undefined;
+    const query = request.query as Record<string, unknown>;
+    const start = typeof query.start === 'string' ? query.start : undefined;
+    const end = typeof query.end === 'string' ? query.end : undefined;
 
     // Validate date format (YYYY-MM-DD) - HTTP validation in controller
     if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid start date format (expected YYYY-MM-DD)'
       });
-      return;
     }
 
     if (end && !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid end date format (expected YYYY-MM-DD)'
       });
-      return;
     }
 
     // Repository provides data
     const result = await parameterRepo.findAllForReport();
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const parameters = result.getValue();
@@ -436,13 +419,13 @@ export const getParameterReport = async (req: Request, res: Response): Promise<v
 
     const csv = header + rows;
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="report-parameter.csv"');
-    res.send(csv);
+    reply.header('Content-Type', 'text/csv');
+    reply.header('Content-Disposition', 'attachment; filename="report-parameter.csv"');
+    return reply.send(csv);
   } catch (error) {
     console.error('getParameterReport error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to generate report',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })

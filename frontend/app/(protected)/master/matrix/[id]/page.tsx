@@ -31,6 +31,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/lib/utils/errorHandler';
+import { OPERATION_ERROR_MESSAGES } from '@/lib/constants/errorMessages';
 
 export default function MatrixDetailPage() {
   const params = useParams();
@@ -54,9 +56,9 @@ export default function MatrixDetailPage() {
         setLoading(true);
         const response = await matrixService.getById(matrixId);
         setMatrix(response.data);
-      } catch (error: any) {
+      } catch (error) {
         console.error('Error fetching matrix:', error);
-        toast.error(error.response?.data?.message || 'Failed to fetch matrix');
+        toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('matrix')));
       } finally {
         setLoading(false);
       }
@@ -91,8 +93,8 @@ export default function MatrixDetailPage() {
       // Refresh matrix data
       const response = await matrixService.getById(matrixId);
       setMatrix(response.data);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to update matrix');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('matrix')));
     }
   };
 
@@ -101,8 +103,8 @@ export default function MatrixDetailPage() {
       await matrixService.delete(matrixId);
       toast.success('Matrix deleted successfully');
       router.push('/master/matrix');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to delete matrix');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('matrix')));
     }
   };
 

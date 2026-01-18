@@ -1,4 +1,4 @@
-import express, { Router } from 'express';
+import type { FastifyPluginAsync } from 'fastify';
 import {
   getAllUnits,
   getUnitById,
@@ -7,9 +7,9 @@ import {
   deleteUnit,
   getUnitsJson,
   getUnitsReport
-} from '../controllers/unitController';
-import { authenticate, authorize } from '../middleware/auth';
-import { validate, validateRequest } from '../middleware/zodValidator';
+} from '../controllers/unitController.js';
+import { authenticate, authorize } from '../plugins/auth.js';
+import { validate, validateRequest } from '../plugins/zodValidator.js';
 import {
   idParamSchema,
   paginationSchema,
@@ -17,26 +17,85 @@ import {
   updateUnitSchema,
   unitJsonQuerySchema,
   unitReportQuerySchema
-} from '../validators';
+} from '../validators/index.js';
+import { zodToSwagger, roleDescription } from '../schemas/swagger/index.js';
 
-const router: Router = express.Router();
+const unitRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', authenticate);
 
-router.use(authenticate);
+  // JSON API - any authenticated user
+  fastify.get('/json', {
+    schema: {
+      description: 'Get units in JSON format for autocomplete/select components',
+      tags: ['Units'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(unitJsonQuerySchema)
+    },
+    preHandler: [validate(unitJsonQuerySchema, 'query')]
+  }, getUnitsJson);
 
-// JSON API - any authenticated user
-router.get('/json', validate(unitJsonQuerySchema, 'query'), getUnitsJson);
+  // Report - SuperAdmin only
+  fastify.get('/report', {
+    schema: {
+      description: `Export units report. ${roleDescription([1])}`,
+      tags: ['Units'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(unitReportQuerySchema)
+    },
+    preHandler: [authorize(1), validate(unitReportQuerySchema, 'query')]
+  }, getUnitsReport);
 
-// Report - SuperAdmin only
-router.get('/report', authorize(1), validate(unitReportQuerySchema, 'query'), getUnitsReport);
+  // Standard REST endpoints
+  fastify.get('/', {
+    schema: {
+      description: `Get all units with pagination. ${roleDescription([1, 2])}`,
+      tags: ['Units'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(paginationSchema)
+    },
+    preHandler: [authorize(1, 2), validate(paginationSchema, 'query')]
+  }, getAllUnits);
 
-// Standard REST endpoints
-router.get('/', authorize(1, 2), validate(paginationSchema, 'query'), getAllUnits);
-router.get('/:id', authorize(1, 2), validate(idParamSchema, 'params'), getUnitById);
-router.post('/', authorize(1, 2), validate(createUnitSchema), createUnit);
-router.put('/:id', authorize(1, 2), validateRequest({
-  params: idParamSchema,
-  body: updateUnitSchema
-}), updateUnit);
-router.delete('/:id', authorize(1, 2), validate(idParamSchema, 'params'), deleteUnit);
+  fastify.get('/:id', {
+    schema: {
+      description: `Get unit detail by ID. ${roleDescription([1, 2])}`,
+      tags: ['Units'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [authorize(1, 2), validate(idParamSchema, 'params')]
+  }, getUnitById);
 
-export default router;
+  fastify.post('/', {
+    schema: {
+      description: `Create a new unit. ${roleDescription([1, 2])}`,
+      tags: ['Units'],
+      security: [{ bearerAuth: [] }],
+      body: zodToSwagger(createUnitSchema)
+    },
+    preHandler: [authorize(1, 2), validate(createUnitSchema)]
+  }, createUnit);
+
+  fastify.put('/:id', {
+    schema: {
+      description: `Update an existing unit. ${roleDescription([1, 2])}`,
+      tags: ['Units'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema),
+      body: zodToSwagger(updateUnitSchema)
+    },
+    preHandler: [authorize(1, 2), validateRequest({ params: idParamSchema, body: updateUnitSchema })]
+  }, updateUnit);
+
+  fastify.delete('/:id', {
+    schema: {
+      description: `Delete a unit. ${roleDescription([1, 2])}`,
+      tags: ['Units'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [authorize(1, 2), validate(idParamSchema, 'params')]
+  }, deleteUnit);
+};
+
+export default unitRoutes;

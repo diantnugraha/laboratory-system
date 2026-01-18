@@ -16,6 +16,8 @@ import { laboratorySchema, LaboratoryFormData } from "@/lib/schemas";
 import { toast } from "sonner";
 import { labService } from "@/services/labService";
 import { Loader2 } from "lucide-react";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { SUCCESS_MESSAGES, OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 interface LaboratoryFormDialogProps {
   open: boolean;
@@ -39,13 +41,12 @@ export function LaboratoryFormDialog({ open, onOpenChange, onSuccess }: Laborato
       await labService.create({
         name: data.name,
       });
-      toast.success("Laboratory added successfully");
+      toast.success(SUCCESS_MESSAGES.CREATED('Laboratorium'));
       form.reset();
       onOpenChange(false);
       onSuccess?.();
-    } catch (error: any) {
-      console.error('Error creating laboratory:', error);
-      toast.error(error.response?.data?.message || 'Failed to create laboratory');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.CREATE('laboratorium')));
     } finally {
       setSubmitting(false);
     }

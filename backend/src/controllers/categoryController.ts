@@ -1,7 +1,8 @@
-import { Request, Response } from 'express';
-import { prisma } from '../config/database';
-import { CategoryRepository } from '../repositories/implementations/CategoryRepository';
-import { parseId, parseQueryParam, ApiResponse } from '../types';
+import type { FastifyRequest, FastifyReply } from 'fastify';
+import { prisma } from '../config/database.js';
+import { CategoryRepository } from '../repositories/implementations/CategoryRepository.js';
+import { AppError } from '../middleware/errorHandler.js';
+import { ApiResponse } from '../types/index.js';
 
 // Initialize repository
 const categoryRepo = new CategoryRepository(prisma);
@@ -9,287 +10,144 @@ const categoryRepo = new CategoryRepository(prisma);
 /**
  * GET /api/categories - List dengan search & pagination
  */
-export const getAllCategories = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const page = parseQueryParam(req.query.page, 1);
-    const limit = parseQueryParam(req.query.limit, 20);
-    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+export const getAllCategories = async (request: FastifyRequest, reply: FastifyReply) => {
+  const { page, limit, search } = request.query as {
+    page?: string;
+    limit?: string;
+    search?: string;
+  };
 
-    // Call repository
-    const result = await categoryRepo.findAll({ search, page, limit });
+  const result = await categoryRepo.findAll({
+    search,
+    page: page ? parseInt(page, 10) : 1,
+    limit: limit ? parseInt(limit, 10) : 20,
+  });
 
-    // Handle repository result
-    if (result.isFailure()) {
-      res.status(500).json({
-        success: false,
-        message: result.error,
-      });
-      return;
-    }
-
-    const data = result.getValue();
-
-    // Return formatted response
-    const response: ApiResponse = {
-      success: true,
-      data: data.data,
-      pagination: data.pagination,
-    };
-
-    res.json(response);
-  } catch (error) {
-    console.error('getAll categories error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch categories',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
-    });
+  if (result.isFailure()) {
+    throw new AppError(500, result.error!);
   }
+
+  const data = result.getValue();
+  const response: ApiResponse = {
+    success: true,
+    data: data.data,
+    pagination: data.pagination,
+  };
+
+  return reply.send(response);
 };
 
 /**
  * GET /api/categories/:id
  */
-export const getCategoryById = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const id = parseId(req.params.id);
-    if (!id) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid ID'
-      });
-      return;
-    }
+export const getCategoryById = async (request: FastifyRequest, reply: FastifyReply) => {
+  const id = (request.params as any).id as unknown as number;
 
-    // Call repository
-    const result = await categoryRepo.findById(id);
+  const result = await categoryRepo.findById(id);
 
-    // Handle repository result
-    if (result.isFailure()) {
-      res.status(404).json({
-        success: false,
-        message: result.error,
-      });
-      return;
-    }
-
-    res.json({ success: true, data: result.getValue() });
-  } catch (error) {
-    console.error('getById category error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch category',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
-    });
+  if (result.isFailure()) {
+    throw new AppError(404, result.error!);
   }
+
+  return reply.send({ success: true, data: result.getValue() });
 };
 
 /**
  * POST /api/categories
  */
-export const createCategory = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { name } = req.body;
+export const createCategory = async (request: FastifyRequest, reply: FastifyReply) => {
+  const { name } = request.body as any;
 
-    // HTTP validation stays in controller
-    if (!name || typeof name !== 'string' || name.trim() === '') {
-      res.status(400).json({
-        success: false,
-        message: 'Name is required'
-      });
-      return;
-    }
-
-    // Check duplicate via repository
-    const duplicateResult = await categoryRepo.findByName(name.trim());
-    if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
-      res.status(409).json({
-        success: false,
-        message: 'Name already exists'
-      });
-      return;
-    }
-
-    // Create category
-    const result = await categoryRepo.create({ name: name.trim() });
-
-    if (result.isFailure()) {
-      res.status(500).json({
-        success: false,
-        message: result.error,
-      });
-      return;
-    }
-
-    res.status(201).json({
-      success: true,
-      message: 'Category created successfully',
-      data: result.getValue()
-    });
-  } catch (error) {
-    console.error('create category error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create category',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
-    });
+  // Check duplicate via repository
+  const duplicateResult = await categoryRepo.findByName(name.trim());
+  if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
+    throw new AppError(409, 'Name already exists');
   }
+
+  // Create category
+  const result = await categoryRepo.create({ name: name.trim() });
+
+  if (result.isFailure()) {
+    throw new AppError(500, result.error!);
+  }
+
+  return reply.code(201).send({
+    success: true,
+    message: 'Category created successfully',
+    data: result.getValue()
+  });
 };
 
 /**
  * PUT /api/categories/:id
  */
-export const updateCategory = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const id = parseId(req.params.id);
-    const { name } = req.body;
+export const updateCategory = async (request: FastifyRequest, reply: FastifyReply) => {
+  const id = (request.params as any).id as unknown as number;
+  const { name } = request.body as any;
 
-    // HTTP validation stays in controller
-    if (!id) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid ID'
-      });
-      return;
-    }
-
-    if (!name || typeof name !== 'string' || name.trim() === '') {
-      res.status(400).json({
-        success: false,
-        message: 'Name is required'
-      });
-      return;
-    }
-
-    // Check if category exists using repository
-    const categoryResult = await categoryRepo.findById(id);
-    if (categoryResult.isFailure()) {
-      res.status(404).json({
-        success: false,
-        message: 'Category not found',
-      });
-      return;
-    }
-
-    // Check duplicate via repository
-    const duplicateResult = await categoryRepo.findByName(name.trim(), id);
-    if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
-      res.status(409).json({
-        success: false,
-        message: 'Name already exists'
-      });
-      return;
-    }
-
-    // Update category
-    const result = await categoryRepo.update(id, { name: name.trim() });
-
-    if (result.isFailure()) {
-      res.status(500).json({
-        success: false,
-        message: result.error,
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      message: 'Category updated successfully',
-      data: result.getValue()
-    });
-  } catch (error) {
-    console.error('update category error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update category',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
-    });
+  // Check if category exists using repository
+  const categoryResult = await categoryRepo.findById(id);
+  if (categoryResult.isFailure()) {
+    throw new AppError(404, 'Category not found');
   }
+
+  // Check duplicate via repository
+  const duplicateResult = await categoryRepo.findByName(name.trim(), id);
+  if (duplicateResult.isSuccess() && duplicateResult.getValue() !== null) {
+    throw new AppError(409, 'Name already exists');
+  }
+
+  // Update category
+  const result = await categoryRepo.update(id, { name: name.trim() });
+
+  if (result.isFailure()) {
+    throw new AppError(500, result.error!);
+  }
+
+  return reply.send({
+    success: true,
+    message: 'Category updated successfully',
+    data: result.getValue()
+  });
 };
 
 /**
  * GET /api/categories/json - JSON endpoint for autocomplete
  */
-export const getCategoriesJson = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const search = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const dataTable = req.query.dataTable === 'true';
+export const getCategoriesJson = async (request: FastifyRequest, reply: FastifyReply) => {
+  const search = typeof (request.query as any).q === 'string' ? (request.query as any).q : undefined;
+  const dataTable = (request.query as any).dataTable === 'true';
 
-    const result = await categoryRepo.findForAutocomplete(search, dataTable);
+  const result = await categoryRepo.findForAutocomplete(search, dataTable);
 
-    if (result.isFailure()) {
-      res.status(500).json({
-        success: false,
-        message: result.error,
-      });
-      return;
-    }
-
-    res.json(result.getValue());
-  } catch (error) {
-    console.error('getCategoriesJson error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch categories for autocomplete',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
-    });
+  if (result.isFailure()) {
+    throw new AppError(500, result.error!);
   }
+
+  return reply.send(result.getValue());
 };
 
 /**
  * DELETE /api/categories/:id
  */
-export const deleteCategory = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const id = parseId(req.params.id);
+export const deleteCategory = async (request: FastifyRequest, reply: FastifyReply) => {
+  const id = (request.params as any).id as unknown as number;
 
-    // HTTP validation stays in controller
-    if (!id) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid ID'
-      });
-      return;
-    }
-
-    // Check if category exists using repository
-    const categoryResult = await categoryRepo.findById(id);
-    if (categoryResult.isFailure()) {
-      res.status(404).json({
-        success: false,
-        message: 'Category not found',
-      });
-      return;
-    }
-
-    // Delete category
-    const result = await categoryRepo.delete(id);
-
-    if (result.isFailure()) {
-      res.status(500).json({
-        success: false,
-        message: result.error,
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      message: 'Category deleted successfully'
-    });
-  } catch (error) {
-    console.error('delete category error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete category',
-      ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
-    });
+  // Check if category exists using repository
+  const categoryResult = await categoryRepo.findById(id);
+  if (categoryResult.isFailure()) {
+    throw new AppError(404, 'Category not found');
   }
-};
 
+  // Delete category
+  const result = await categoryRepo.delete(id);
+
+  if (result.isFailure()) {
+    throw new AppError(500, result.error!);
+  }
+
+  return reply.send({
+    success: true,
+    message: 'Category deleted successfully'
+  });
+};

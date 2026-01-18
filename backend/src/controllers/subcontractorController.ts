@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
-import { prisma } from '../config/database';
-import { SubcontractorRepository } from '../repositories/implementations/SubcontractorRepository';
-import { parseId, parseQueryParam, ApiResponse } from '../types';
+import type { FastifyRequest, FastifyReply } from 'fastify';
+import { prisma } from '../config/database.js';
+import { SubcontractorRepository } from '../repositories/implementations/SubcontractorRepository.js';
+import { parseId, parseQueryParam, ApiResponse } from '../types/index.js';
 
 // Initialize repository
 const subcontractorRepo = new SubcontractorRepository(prisma);
@@ -9,22 +9,21 @@ const subcontractorRepo = new SubcontractorRepository(prisma);
 /**
  * GET /api/subcontractors - List dengan search & pagination
  */
-export const getAllSubcontractors = async (req: Request, res: Response): Promise<void> => {
+export const getAllSubcontractors = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const page = parseQueryParam(req.query.page, 1);
-    const limit = parseQueryParam(req.query.limit, 20);
-    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const page = parseQueryParam((request.query as any).page, 1);
+    const limit = parseQueryParam((request.query as any).limit, 20);
+    const search = typeof (request.query as any).search === 'string' ? (request.query as any).search : undefined;
 
     // Call repository
     const result = await subcontractorRepo.findAll({ search, page, limit });
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
     const data = result.getValue();
@@ -35,11 +34,11 @@ export const getAllSubcontractors = async (req: Request, res: Response): Promise
       pagination: data.pagination,
     };
 
-    res.json(response);
+    return reply.send(response);
   } catch (error) {
     console.error('getAll subcontractors error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch subcontractors',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -50,15 +49,14 @@ export const getAllSubcontractors = async (req: Request, res: Response): Promise
 /**
  * GET /api/subcontractors/:id
  */
-export const getSubcontractorById = async (req: Request, res: Response): Promise<void> => {
+export const getSubcontractorById = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = parseId((request.params as any).id);
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Call repository
@@ -66,18 +64,17 @@ export const getSubcontractorById = async (req: Request, res: Response): Promise
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({ success: true, data: result.getValue() });
+    return reply.send({ success: true, data: result.getValue() });
   } catch (error) {
     console.error('getById subcontractor error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch subcontractor',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -88,123 +85,109 @@ export const getSubcontractorById = async (req: Request, res: Response): Promise
 /**
  * POST /api/subcontractors
  */
-export const createSubcontractor = async (req: Request, res: Response): Promise<void> => {
+export const createSubcontractor = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const { lab_name, address_name, phone, fax, contact, email } = req.body;
+    const { lab_name, address_name, phone, fax, contact, email } = request.body as any;
 
     // Validate lab_name (required, max 255)
     if (!lab_name || typeof lab_name !== 'string' || lab_name.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Lab name is required'
       });
-      return;
     }
     if (lab_name.trim().length > 255) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Lab name must not exceed 255 characters'
       });
-      return;
     }
 
     // Validate address_name (required, max 255)
     if (!address_name || typeof address_name !== 'string' || address_name.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Address name is required'
       });
-      return;
     }
     if (address_name.trim().length > 255) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Address name must not exceed 255 characters'
       });
-      return;
     }
 
     // Validate phone (required, max 255)
     if (!phone || typeof phone !== 'string' || phone.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Phone is required'
       });
-      return;
     }
     if (phone.trim().length > 255) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Phone must not exceed 255 characters'
       });
-      return;
     }
 
     // Validate fax (required, max 255)
     if (!fax || typeof fax !== 'string' || fax.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Fax is required'
       });
-      return;
     }
     if (fax.trim().length > 255) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Fax must not exceed 255 characters'
       });
-      return;
     }
 
     // Validate contact (required, max 255)
     if (!contact || typeof contact !== 'string' || contact.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Contact is required'
       });
-      return;
     }
     if (contact.trim().length > 255) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Contact must not exceed 255 characters'
       });
-      return;
     }
 
     // Validate email (required, max 255, format)
     if (!email || typeof email !== 'string' || email.trim() === '') {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Email is required'
       });
-      return;
     }
     if (email.trim().length > 255) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Email must not exceed 255 characters'
       });
-      return;
     }
     // Email format validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid email format'
       });
-      return;
     }
 
     // Check duplicate via repository
     const duplicateResult = await subcontractorRepo.findByLabName(lab_name.trim());
     if (duplicateResult.isSuccess() && duplicateResult.getValue() === true) {
-      res.status(409).json({
+      return reply.code(409).send({
         success: false,
         message: 'Lab name already exists'
       });
-      return;
     }
 
     // Create subcontractor via repository
@@ -218,14 +201,13 @@ export const createSubcontractor = async (req: Request, res: Response): Promise<
     });
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.status(201).json({
+    return reply.code(201).send({
       success: true,
       message: 'Subcontractor created successfully',
       data: result.getValue(),
@@ -233,7 +215,7 @@ export const createSubcontractor = async (req: Request, res: Response): Promise<
   } catch (error) {
     console.error('create subcontractor error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to create subcontractor',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -244,27 +226,25 @@ export const createSubcontractor = async (req: Request, res: Response): Promise<
 /**
  * PUT /api/subcontractors/:id
  */
-export const updateSubcontractor = async (req: Request, res: Response): Promise<void> => {
+export const updateSubcontractor = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
-    const { lab_name, address_name, phone, fax, contact, email } = req.body;
+    const id = parseId((request.params as any).id);
+    const { lab_name, address_name, phone, fax, contact, email } = request.body as any;
 
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Check exists via repository
     const existingResult = await subcontractorRepo.findById(id);
     if (existingResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Subcontractor not found',
       });
-      return;
     }
 
     const updateData: {
@@ -281,18 +261,16 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
 
     if (lab_name !== undefined) {
       if (!lab_name || typeof lab_name !== 'string' || lab_name.trim() === '') {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Lab name cannot be empty'
         });
-        return;
       }
       if (lab_name.trim().length > 255) {
-        res.status(400).json({
+        return reply.code(400).send({
           success: false,
           message: 'Lab name must not exceed 255 characters'
         });
-        return;
       }
       updateData.lab_name = lab_name.trim();
     }
@@ -300,18 +278,16 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
     if (address_name !== undefined) {
       if (address_name !== null && address_name !== undefined) {
         if (typeof address_name !== 'string' || address_name.trim() === '') {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Address name cannot be empty'
           });
-          return;
         }
         if (address_name.trim().length > 255) {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Address name must not exceed 255 characters'
           });
-          return;
         }
         updateData.address_name = address_name.trim();
       } else {
@@ -321,18 +297,16 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
     if (phone !== undefined) {
       if (phone !== null && phone !== undefined) {
         if (typeof phone !== 'string' || phone.trim() === '') {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Phone cannot be empty'
           });
-          return;
         }
         if (phone.trim().length > 255) {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Phone must not exceed 255 characters'
           });
-          return;
         }
         updateData.phone = phone.trim();
       } else {
@@ -342,18 +316,16 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
     if (fax !== undefined) {
       if (fax !== null && fax !== undefined) {
         if (typeof fax !== 'string' || fax.trim() === '') {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Fax cannot be empty'
           });
-          return;
         }
         if (fax.trim().length > 255) {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Fax must not exceed 255 characters'
           });
-          return;
         }
         updateData.fax = fax.trim();
       } else {
@@ -363,18 +335,16 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
     if (contact !== undefined) {
       if (contact !== null && contact !== undefined) {
         if (typeof contact !== 'string' || contact.trim() === '') {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Contact cannot be empty'
           });
-          return;
         }
         if (contact.trim().length > 255) {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Contact must not exceed 255 characters'
           });
-          return;
         }
         updateData.contact = contact.trim();
       } else {
@@ -384,26 +354,23 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
     if (email !== undefined) {
       if (email !== null && email !== undefined) {
         if (typeof email !== 'string' || email.trim() === '') {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Email cannot be empty'
           });
-          return;
         }
         if (email.trim().length > 255) {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Email must not exceed 255 characters'
           });
-          return;
         }
         // Email format validation
         if (!emailRegex.test(email.trim())) {
-          res.status(400).json({
+          return reply.code(400).send({
             success: false,
             message: 'Invalid email format'
           });
-          return;
         }
         updateData.email = email.trim();
       } else {
@@ -412,22 +379,20 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
     }
 
     if (Object.keys(updateData).length === 0) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'No valid data to update'
       });
-      return;
     }
 
     // Check duplicate via repository
     if (updateData.lab_name) {
       const duplicateResult = await subcontractorRepo.findByLabName(updateData.lab_name, id);
       if (duplicateResult.isSuccess() && duplicateResult.getValue() === true) {
-        res.status(409).json({
+        return reply.code(409).send({
           success: false,
           message: 'Lab name already exists'
         });
-        return;
       }
     }
 
@@ -435,14 +400,13 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
     const result = await subcontractorRepo.update(id, updateData);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'Subcontractor updated successfully',
       data: result.getValue(),
@@ -450,7 +414,7 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
   } catch (error) {
     console.error('update subcontractor error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to update subcontractor',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -461,47 +425,44 @@ export const updateSubcontractor = async (req: Request, res: Response): Promise<
 /**
  * DELETE /api/subcontractors/:id
  */
-export const deleteSubcontractor = async (req: Request, res: Response): Promise<void> => {
+export const deleteSubcontractor = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const id = parseId(req.params.id);
+    const id = parseId((request.params as any).id);
 
     if (!id) {
-      res.status(400).json({
+      return reply.code(400).send({
         success: false,
         message: 'Invalid ID'
       });
-      return;
     }
 
     // Check exists via repository
     const existingResult = await subcontractorRepo.findById(id);
     if (existingResult.isFailure()) {
-      res.status(404).json({
+      return reply.code(404).send({
         success: false,
         message: 'Subcontractor not found',
       });
-      return;
     }
 
     // Delete via repository
     const result = await subcontractorRepo.delete(id);
 
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json({
+    return reply.send({
       success: true,
       message: 'Subcontractor deleted successfully'
     });
   } catch (error) {
     console.error('delete subcontractor error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to delete subcontractor',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })
@@ -512,27 +473,26 @@ export const deleteSubcontractor = async (req: Request, res: Response): Promise<
 /**
  * GET /api/subcontractors/json - JSON API for autocomplete/select2
  */
-export const getSubcontractorsJson = async (req: Request, res: Response): Promise<void> => {
+export const getSubcontractorsJson = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   try {
-    const searchTerm = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const searchTerm = typeof (request.query as any).q === 'string' ? (request.query as any).q : undefined;
 
     // Call repository
     const result = await subcontractorRepo.findForAutocomplete(searchTerm);
 
     // Handle repository result
     if (result.isFailure()) {
-      res.status(500).json({
+      return reply.code(500).send({
         success: false,
         message: result.error,
       });
-      return;
     }
 
-    res.json(result.getValue());
+    return reply.send(result.getValue());
   } catch (error) {
     console.error('getSubcontractorsJson error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({
+    return reply.code(500).send({
       success: false,
       message: 'Failed to fetch subcontractors',
       ...(process.env.NODE_ENV === 'development' && { error: errorMessage })

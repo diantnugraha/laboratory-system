@@ -37,6 +37,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { userService, User as UserType, Role } from "@/services/userService";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 // External role IDs to exclude
 const EXTERNAL_ROLE_IDS = [16, 28];
@@ -91,9 +93,8 @@ export default function InternalUserDetailPage() {
         role_id: response.data.role_id.toString(),
         department: response.data.department || "",
       });
-    } catch (error: any) {
-      console.error('Error fetching user:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch user');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('user')));
     } finally {
       setLoading(false);
     }
@@ -129,9 +130,8 @@ export default function InternalUserDetailPage() {
       toast.success('User updated successfully');
       setIsEditing(false);
       fetchUser();
-    } catch (error: any) {
-      console.error('Error updating user:', error);
-      toast.error(error.response?.data?.message || 'Failed to update user');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.UPDATE('user')));
     } finally {
       setSaving(false);
     }
@@ -143,9 +143,8 @@ export default function InternalUserDetailPage() {
       await userService.delete(id);
       toast.success('User deleted successfully');
       router.push('/master/user');
-    } catch (error: any) {
-      console.error('Error deleting user:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete user');
+    } catch (error) {
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.DELETE('user')));
     } finally {
       setDeleting(false);
       setDeleteDialogOpen(false);
@@ -160,9 +159,8 @@ export default function InternalUserDetailPage() {
         description: response.data?.password ? `New password: ${response.data.password}` : undefined,
         duration: 10000,
       });
-    } catch (error: any) {
-      console.error('Error resending welcome email:', error);
-      toast.error(error.response?.data?.message || 'Failed to resend welcome email');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to resend welcome email'));
     } finally {
       setResendingEmail(false);
     }

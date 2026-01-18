@@ -26,6 +26,8 @@ import { Badge } from "@/components/ui/badge";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { serviceService, Service } from "@/services/serviceService";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { ServiceFormDialog } from "@/components/forms/ServiceFormDialog";
 
 const formatCurrency = (value: number) => {
@@ -112,9 +114,9 @@ export default function ServicePage() {
       });
       setServices(response.data);
       setPagination(response.pagination);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching services:', error);
-      toast.error(error.response?.data?.message || 'Failed to fetch services');
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('services')));
     } finally {
       setLoading(false);
     }
