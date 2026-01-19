@@ -21,7 +21,25 @@ import {
   FlaskConical,
   Receipt,
   Package,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -171,6 +189,107 @@ const getPriorityCharge = (priority: string) => {
     default: return 0;
   }
 };
+
+// Helper to safely parse price (handles object {value: number} or direct number/string)
+const parsePrice = (price: unknown): number => {
+  if (price === null || price === undefined) return 0;
+  if (typeof price === 'number') return isNaN(price) ? 0 : price;
+  if (typeof price === 'object' && price !== null && 'value' in price) {
+    return parsePrice((price as { value: unknown }).value);
+  }
+  if (typeof price === 'string') {
+    const parsed = parseFloat(price);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+};
+
+// Sortable Service Row Component
+interface SortableServiceRowProps {
+  svc: SampleServiceItem;
+  sampleId: string;
+  onRemove: (sampleId: string, serviceId: string) => void;
+  onUpdateDiscount: (sampleId: string, serviceId: string, discount: number) => void;
+}
+
+function SortableServiceRow({ svc, sampleId, onRemove, onUpdateDiscount }: SortableServiceRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: svc.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style} className={isDragging ? 'bg-muted/50' : ''}>
+      <TableCell className="w-[40px]">
+        <button
+          type="button"
+          className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </button>
+      </TableCell>
+      <TableCell>
+        <Badge variant={svc.type === 'package' ? 'default' : 'secondary'}>
+          {svc.type === 'package' ? 'Package' : 'Service'}
+        </Badge>
+      </TableCell>
+      <TableCell className="font-medium">
+        <div>
+          <div className="font-semibold" dangerouslySetInnerHTML={{ __html: svc.name }} />
+          {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0 && (
+            <ul className="mt-1 text-xs text-muted-foreground list-disc list-inside">
+              {svc.packageServices.map((pkgSvc, idx) => (
+                <li key={`${svc.id}-${pkgSvc.id}-${idx}`} dangerouslySetInnerHTML={{ __html: pkgSvc.name }} />
+              ))}
+            </ul>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0
+          ? 'Various Methods'
+          : svc.method || '-'}
+      </TableCell>
+      <TableCell className="text-right">{formatCurrency(svc.price)}</TableCell>
+      <TableCell className="text-center">
+        <div className="flex items-center justify-center gap-1">
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            value={svc.discount}
+            onChange={(e) => onUpdateDiscount(sampleId, svc.id, parseFloat(e.target.value) || 0)}
+            className="h-8 w-16 text-center"
+          />
+          <span className="text-muted-foreground">%</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-destructive hover:text-destructive"
+          onClick={() => onRemove(sampleId, svc.id)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
+}
 
 export default function QuotationEditPage() {
   const router = useRouter();
@@ -337,10 +456,18 @@ export default function QuotationEditPage() {
       if (details && details.length > 0) {
         const sampleMap = groupDetailsBySample(details);
 
+        // Sample names to exclude (handled in Additional Products section)
+        const excludedSampleNames = ['transportation fee', 'additional'];
+
         const loadedSamples: SampleItem[] = [];
         let sampleIndex = 0;
 
         sampleMap.forEach((details, sampleName) => {
+          // Skip excluded samples (Transportation Fee, Additional, etc.)
+          if (excludedSampleNames.includes(sampleName.toLowerCase())) {
+            return;
+          }
+
           // Get sample quantity from first detail (they should all have the same)
           const sampleQuantity = details[0]?.quantity || 1;
           const samplePriority = (details[0]?.priority as 'normal' | 'urgent' | 'very urgent') || 'normal';
@@ -362,8 +489,8 @@ export default function QuotationEditPage() {
                   itemId: detail.packageId,
                   name: detail.package.name,
                   code: detail.package.code || `PKG-${detail.packageId}`,
-                  price: detail.package.totalPrice || detail.price || 0,
-                  discount: detail.percentDiscount || 0,
+                  price: parsePrice(detail.package.totalPrice) || parsePrice(detail.price) || 0,
+                  discount: parsePrice(detail.percentDiscount) || 0,
                   quantity: 1,
                   detailId: detail.id,
                   packageServices: detail.package.services || [],
@@ -377,8 +504,8 @@ export default function QuotationEditPage() {
                   code: detail.service.code || `SVC-${detail.serviceId}`,
                   parameter: detail.service.parameter?.name,
                   method: detail.service.method?.name,
-                  price: detail.service.price || detail.price || 0,
-                  discount: detail.percentDiscount || 0,
+                  price: parsePrice(detail.service.price) || parsePrice(detail.price) || 0,
+                  discount: parsePrice(detail.percentDiscount) || 0,
                   quantity: 1,
                   detailId: detail.id,
                 };
@@ -408,8 +535,8 @@ export default function QuotationEditPage() {
           id: `product-${Date.now()}-${idx}`,
           name: detail.sampleName || '',
           quantity: detail.quantity || 1,
-          price: detail.price || 0,
-          discount: detail.percentDiscount || 0,
+          price: parsePrice(detail.price),
+          discount: parsePrice(detail.percentDiscount),
           detailId: detail.id,
         }));
         setProducts(loadedProducts);
@@ -596,7 +723,7 @@ export default function QuotationEditPage() {
       code: service.code,
       parameter: service.parameter?.name,
       method: service.method?.name,
-      price: service.price,
+      price: parsePrice(service.price),
       discount: percentDiscount,
       quantity: 1,
     };
@@ -612,7 +739,7 @@ export default function QuotationEditPage() {
     const packageServices: PackageServiceInfo[] = pkg.services?.map(svc => ({
       id: svc.id,
       name: svc.name,
-      price: typeof svc.price === 'object' ? svc.price.value : svc.price,
+      price: parsePrice(svc.price),
     })) || [];
 
     const newPackage: SampleServiceItem = {
@@ -621,7 +748,7 @@ export default function QuotationEditPage() {
       itemId: pkg.id,
       name: pkg.name,
       code: pkg.code,
-      price: pkg.price,
+      price: parsePrice(pkg.price),
       discount: percentDiscount,
       quantity: 1,
       packageServices,
@@ -648,6 +775,37 @@ export default function QuotationEditPage() {
         )
       } : s
     ));
+  };
+
+  const reorderServicesInSample = (sampleId: string, oldIndex: number, newIndex: number) => {
+    setSamples(prev => prev.map(s => {
+      if (s.id !== sampleId) return s;
+      const newServices = arrayMove(s.services, oldIndex, newIndex);
+      return { ...s, services: newServices };
+    }));
+  };
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (sampleId: string) => (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const sample = samples.find(s => s.id === sampleId);
+      if (!sample) return;
+      const oldIndex = sample.services.findIndex(svc => svc.id === active.id);
+      const newIndex = sample.services.findIndex(svc => svc.id === over.id);
+      reorderServicesInSample(sampleId, oldIndex, newIndex);
+    }
   };
 
   // Product management
@@ -713,16 +871,23 @@ export default function QuotationEditPage() {
     // Calculate samples subtotal
     samples.forEach(sample => {
       sample.services.forEach(svc => {
-        const itemPrice = svc.price * svc.quantity;
-        const itemDiscount = itemPrice * (svc.discount / 100);
-        subTotal += (itemPrice - itemDiscount) * sample.quantity;
+        const price = parsePrice(svc.price);
+        const discount = parsePrice(svc.discount);
+        const qty = parsePrice(svc.quantity) || 1;
+        const sampleQty = parsePrice(sample.quantity) || 1;
+        const itemPrice = price * qty;
+        const itemDiscount = itemPrice * (discount / 100);
+        subTotal += (itemPrice - itemDiscount) * sampleQty;
       });
     });
 
     // Calculate products subtotal
     products.forEach(product => {
-      const itemPrice = product.price * product.quantity;
-      const itemDiscount = itemPrice * (product.discount / 100);
+      const price = parsePrice(product.price);
+      const discount = parsePrice(product.discount);
+      const qty = parsePrice(product.quantity) || 1;
+      const itemPrice = price * qty;
+      const itemDiscount = itemPrice * (discount / 100);
       subTotal += itemPrice - itemDiscount;
     });
 
@@ -999,32 +1164,46 @@ export default function QuotationEditPage() {
               <FormField
                 control={form.control}
                 name="addressId"
-                render={({ field }) => (
-                  <FormItem className="space-y-2">
-                    <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Address <span className="text-destructive">*</span>
-                    </FormLabel>
-                    <Select
-                      value={String(field.value || '')}
-                      onValueChange={(val) => field.onChange(parseInt(val))}
-                      disabled={!customerId}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="h-10 bg-muted/30 hover:bg-muted/50 border-muted">
-                          <SelectValue placeholder={customerId ? "Select address" : "Select customer first"} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {availableAddresses.map((address) => (
-                          <SelectItem key={address.id} value={String(address.id)}>
-                            {address.address_type} - {address.city}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const selectedAddress = availableAddresses.find(addr => addr.id === field.value);
+                  return (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Address <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <Select
+                        value={String(field.value || '')}
+                        onValueChange={(val) => field.onChange(parseInt(val))}
+                        disabled={!customerId}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="h-10 bg-muted/30 hover:bg-muted/50 border-muted">
+                            <SelectValue placeholder={customerId ? "Select address" : "Select customer first"} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availableAddresses.map((address) => (
+                            <SelectItem key={address.id} value={String(address.id)}>
+                              {address.address_type} - {address.city}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedAddress && (
+                        <p className="text-xs text-muted-foreground pt-1">
+                          {[
+                            selectedAddress.address,
+                            selectedAddress.city,
+                            selectedAddress.state,
+                            selectedAddress.postal_code,
+                            selectedAddress.country
+                          ].filter(Boolean).join(', ')}
+                        </p>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
             </div>
           </CardContent>
@@ -1361,12 +1540,40 @@ export default function QuotationEditPage() {
 
                     {/* Sample Content */}
                     <CollapsibleContent>
+                      {/* Sample Details Section */}
+                      <div className="p-4 bg-muted/5 border-b">
+                        <p className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3">
+                          Sample Details
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs text-muted-foreground">Sample Name</label>
+                            <Input
+                              value={sample.name}
+                              onChange={(e) => updateSampleName(sample.id, e.target.value)}
+                              className="h-9"
+                              placeholder="Enter sample name"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs text-muted-foreground">Quantity</label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={sample.quantity}
+                              onChange={(e) => updateSampleQuantity(sample.id, parseInt(e.target.value) || 1)}
+                              className="h-9"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Service/Package Search */}
                       <div className="p-4 bg-muted/10 border-b">
                         <div className="grid grid-cols-2 gap-4">
                           {/* Add Service */}
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            <label className="text-sm font-semibold text-foreground uppercase tracking-wide">
                               Add Service
                             </label>
                             <Popover
@@ -1422,7 +1629,7 @@ export default function QuotationEditPage() {
                                             className="cursor-pointer"
                                           >
                                             <div className="flex flex-col">
-                                              <span>{service.code} - {service.name}</span>
+                                              <span dangerouslySetInnerHTML={{ __html: `${service.code} - ${service.name}` }} />
                                               <span className="text-xs text-muted-foreground">
                                                 {formatCurrency(service.price)}
                                               </span>
@@ -1439,7 +1646,7 @@ export default function QuotationEditPage() {
 
                           {/* Add Package */}
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            <label className="text-sm font-semibold text-foreground uppercase tracking-wide">
                               Add Package
                             </label>
                             <Popover
@@ -1495,7 +1702,7 @@ export default function QuotationEditPage() {
                                             className="cursor-pointer"
                                           >
                                             <div className="flex flex-col">
-                                              <span>{pkg.code} - {pkg.name}</span>
+                                              <span dangerouslySetInnerHTML={{ __html: `${pkg.code} - ${pkg.name}` }} />
                                               <span className="text-xs text-muted-foreground">
                                                 {formatCurrency(pkg.price)}
                                               </span>
@@ -1514,106 +1721,46 @@ export default function QuotationEditPage() {
 
                       {/* Services Table */}
                       {sample.services.length > 0 ? (
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-muted/10">
-                              <TableHead className="w-[100px]">Type</TableHead>
-                              <TableHead>Service/Package</TableHead>
-                              <TableHead>Method</TableHead>
-                              <TableHead className="text-right w-[130px]">Price</TableHead>
-                              <TableHead className="text-center w-[100px]">Discount</TableHead>
-                              <TableHead className="w-[50px]"></TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {sample.services.map((svc) => (
-                              <TableRow key={svc.id}>
-                                <TableCell>
-                                  <Badge variant={svc.type === 'package' ? 'default' : 'secondary'}>
-                                    {svc.type === 'package' ? 'Package' : 'Service'}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  <div>
-                                    <div className="font-semibold">{svc.name}</div>
-                                    {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0 && (
-                                      <ul className="mt-1 text-xs text-muted-foreground list-disc list-inside">
-                                        {svc.packageServices.map((pkgSvc, idx) => (
-                                          <li key={`${svc.id}-${pkgSvc.id}-${idx}`}>
-                                            {pkgSvc.name}
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    )}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-muted-foreground">
-                                  {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0
-                                    ? 'Various Methods'
-                                    : svc.method || '-'}
-                                </TableCell>
-                                <TableCell className="text-right">{formatCurrency(svc.price)}</TableCell>
-                                <TableCell className="text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <Input
-                                      type="number"
-                                      min={0}
-                                      max={100}
-                                      value={svc.discount}
-                                      onChange={(e) => updateServiceDiscount(sample.id, svc.id, parseFloat(e.target.value) || 0)}
-                                      className="h-8 w-16 text-center"
-                                    />
-                                    <span className="text-muted-foreground">%</span>
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 text-destructive hover:text-destructive"
-                                    onClick={() => removeServiceFromSample(sample.id, svc.id)}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </TableCell>
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleDragEnd(sample.id)}
+                        >
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-muted/10">
+                                <TableHead className="w-[40px]"></TableHead>
+                                <TableHead className="w-[100px]">Type</TableHead>
+                                <TableHead>Service/Package</TableHead>
+                                <TableHead>Method</TableHead>
+                                <TableHead className="text-right w-[130px]">Price</TableHead>
+                                <TableHead className="text-center w-[100px]">Discount</TableHead>
+                                <TableHead className="w-[50px]"></TableHead>
                               </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                            </TableHeader>
+                            <TableBody>
+                              <SortableContext
+                                items={sample.services.map(svc => svc.id)}
+                                strategy={verticalListSortingStrategy}
+                              >
+                                {sample.services.map((svc) => (
+                                  <SortableServiceRow
+                                    key={svc.id}
+                                    svc={svc}
+                                    sampleId={sample.id}
+                                    onRemove={removeServiceFromSample}
+                                    onUpdateDiscount={updateServiceDiscount}
+                                  />
+                                ))}
+                              </SortableContext>
+                            </TableBody>
+                          </Table>
+                        </DndContext>
                       ) : (
                         <div className="text-center py-6 text-muted-foreground text-sm">
                           No services added to this sample yet.
                         </div>
                       )}
-
-                      {/* Sample Details Section */}
-                      <div className="p-4 bg-muted/5 border-t">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                          Sample Details
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div className="space-y-1.5">
-                            <label className="text-xs text-muted-foreground">Sample Name</label>
-                            <Input
-                              value={sample.name}
-                              onChange={(e) => updateSampleName(sample.id, e.target.value)}
-                              className="h-9"
-                              placeholder="Enter sample name"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs text-muted-foreground">Quantity</label>
-                            <Input
-                              type="number"
-                              min={1}
-                              value={sample.quantity}
-                              onChange={(e) => updateSampleQuantity(sample.id, parseInt(e.target.value) || 1)}
-                              className="h-9"
-                            />
-                          </div>
-                        </div>
-                      </div>
                     </CollapsibleContent>
                   </Collapsible>
                 ))}

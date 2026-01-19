@@ -197,21 +197,6 @@ export class QuotationPdfService {
     return parts.join(' ');
   }
 
-  /**
-   * Format address with line breaks
-   */
-  private formatAddressMultiline(address: AddressData): string {
-    const lines: string[] = [];
-    if (address.address) lines.push(address.address);
-    if (address.city) lines.push(address.city);
-    if (address.state && address.postal_code) {
-      lines.push(`${address.state} ${address.postal_code}`);
-    } else if (address.state) {
-      lines.push(address.state);
-    }
-    if (address.country) lines.push(address.country);
-    return lines.join('<br>');
-  }
 
   /**
    * Get priority charge rate
@@ -377,24 +362,24 @@ export class QuotationPdfService {
           page-break-after: avoid;
         }
 
-        /* Fixed Header - 35mm height */
+        /* Fixed Header - compact design matching PDF */
         .page-header {
           position: absolute;
           top: 0;
           left: 0;
           right: 0;
-          height: 35mm;
-          padding: 8mm 15mm 0 15mm;
+          height: 30mm;
+          padding: 5mm 15mm 0 15mm;
           background: white;
         }
 
-        /* Fixed Footer - 38mm height */
+        /* Fixed Footer - 35mm height */
         .page-footer {
           position: absolute;
           bottom: 0;
           left: 0;
           right: 0;
-          height: 38mm;
+          height: 35mm;
           padding: 0 15mm 8mm 15mm;
           background: white;
         }
@@ -402,81 +387,96 @@ export class QuotationPdfService {
         /* Content area - between header and footer */
         .page-content {
           position: absolute;
-          top: 35mm;
-          bottom: 38mm;
+          top: 30mm;
+          bottom: 35mm;
           left: 15mm;
           right: 15mm;
           overflow: hidden;
         }
 
-        /* Header components */
-        .header-wrapper {
+        /* Horizontal line below header */
+        .header-line {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          border-bottom: 2px solid #003399;
+        }
+
+        /* Header components - exact PDF match (simplified) */
+        .header-top-row {
           display: flex;
           justify-content: space-between;
+          align-items: flex-start;
+          height: 22mm;
         }
         .logo-section {
-          width: 35%;
+          width: 50%;
+          display: flex;
+          align-items: flex-start;
+          gap: 8mm;
         }
         .logo-box {
           background: #003399;
-          padding: 8px 15px;
+          padding: 6px 14px;
           display: inline-block;
         }
         .logo-text {
-          font-size: 22pt;
+          font-size: 20pt;
           font-weight: bold;
           color: white;
-          letter-spacing: -1px;
+          letter-spacing: -0.5px;
         }
         .logo-text span {
           color: #cc0000;
         }
+        .quotation-title {
+          font-size: 18pt;
+          font-weight: bold;
+          color: #000;
+          padding-top: 4px;
+        }
         .info-section {
-          width: 60%;
+          width: 48%;
           text-align: right;
         }
         .info-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 9pt;
+          font-size: 8pt;
+          margin-bottom: 2mm;
         }
         .info-table td {
-          padding: 1px 0;
+          padding: 0.5px 0;
           vertical-align: top;
         }
         .info-label {
           font-weight: bold;
           text-align: right;
-          padding-right: 10px;
-          width: 45%;
+          padding-right: 6px;
+          width: 42%;
         }
         .info-value {
           text-align: left;
-          width: 55%;
+          width: 58%;
         }
         .barcode-container {
-          margin-top: 2px;
           text-align: right;
         }
         .barcode-img {
-          max-width: 160px;
+          max-width: 140px;
           height: auto;
-        }
-        .hr-red {
-          border: none;
-          border-top: 2px solid #cc0000;
-          margin: 2mm 0 0 0;
         }
         .page-number {
           position: absolute;
-          top: 8mm;
+          top: 5mm;
           right: 15mm;
-          font-size: 8pt;
+          font-size: 7pt;
         }
 
-        /* Footer components */
+        /* Footer components - matches PDF exactly */
         .footer-line {
-          border-top: 2px solid #003366;
+          border-top: 2px solid #003399;
           margin-bottom: 2mm;
         }
         .footer-content {
@@ -485,45 +485,53 @@ export class QuotationPdfService {
           align-items: flex-start;
         }
         .footer-left {
-          width: 48%;
-          font-size: 7.5pt;
-          line-height: 1.3;
+          width: 50%;
+          font-size: 7pt;
+          line-height: 1.45;
         }
         .footer-left strong {
-          color: #003366;
+          color: #000;
           display: block;
-          margin-bottom: 1mm;
-          font-size: 8pt;
+          margin-bottom: 0.5mm;
+          font-size: 7.5pt;
         }
         .footer-right {
           width: 48%;
           text-align: right;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
         }
         .footer-logos {
           display: flex;
           justify-content: flex-end;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
           margin-bottom: 2mm;
         }
         .ilac-logo {
-          font-size: 8pt;
+          font-size: 7pt;
           font-weight: bold;
           color: #006600;
+          border: 1px solid #006600;
+          padding: 2px 4px;
+          border-radius: 50%;
         }
         .kan-logo {
           text-align: center;
-          font-size: 6.5pt;
+          font-size: 5.5pt;
+          line-height: 1.2;
         }
         .kan-logo .kan-text {
-          font-size: 12pt;
+          font-size: 11pt;
           font-weight: bold;
           color: #cc0000;
         }
         .tuv-group {
           font-weight: bold;
-          color: #003366;
-          font-size: 9pt;
+          color: #003399;
+          font-size: 8.5pt;
+          letter-spacing: 0.5px;
         }
 
         /* Content styles */
@@ -533,72 +541,93 @@ export class QuotationPdfService {
           margin-bottom: 4mm;
         }
 
-        /* Customer section */
+        /* Lab info section in content - matches PDF exactly */
+        .lab-info-section {
+          font-size: 7.5pt;
+          line-height: 1.5;
+          margin-bottom: 5mm;
+          padding-bottom: 3mm;
+          border-bottom: 1px solid #ddd;
+        }
+        .lab-info-section strong {
+          font-weight: bold;
+        }
+
+        /* Customer section - matches PDF exactly */
         .customer-table {
           width: 100%;
           border-collapse: collapse;
-          margin-bottom: 4mm;
-          font-size: 8.5pt;
+          margin-bottom: 3mm;
+          font-size: 8pt;
+          line-height: 1.4;
         }
         .customer-table td {
-          padding: 1px 0;
+          padding: 1.5px 0;
           vertical-align: top;
         }
         .customer-left {
           width: 50%;
+          padding-right: 8mm;
         }
         .customer-right {
           width: 50%;
+          padding-left: 8mm;
         }
         .cust-label {
           font-weight: bold;
-          width: 65px;
+          width: 55px;
           vertical-align: top;
+          padding-right: 5px;
         }
         .cust-value {
           vertical-align: top;
+          line-height: 1.5;
         }
 
-        /* Services table */
+        /* Services table - exact PDF match */
         .services-table {
           width: 100%;
           border-collapse: collapse;
-          margin-bottom: 2mm;
-          font-size: 8pt;
+          margin-bottom: 3mm;
+          font-size: 7.5pt;
         }
         .services-table th,
         .services-table td {
-          border: 0.5pt solid #666;
-          padding: 3px 4px;
-          vertical-align: top;
+          border: 0.75pt solid #555;
+          padding: 2.5px 3px;
+          vertical-align: middle;
         }
         .services-table th {
-          background-color: #e8e8e8;
+          background-color: #d9d9d9;
           font-weight: bold;
           text-align: center;
+          font-size: 7.5pt;
         }
         .sample-row td {
-          background-color: #f5f5f5;
+          background-color: #efefef;
           font-weight: bold;
-          border-top: 1pt solid #333;
+          border-top: 1pt solid #222;
+          font-size: 8pt;
         }
         .priority-label {
           font-weight: normal;
+          font-size: 7pt;
         }
         .subtotal-row td {
           font-weight: bold;
-          background-color: #f0f0f0;
+          background-color: #e8e8e8;
+          font-size: 8pt;
         }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .text-left { text-align: left; }
-        .col-no { width: 4%; }
-        .col-services { width: 35%; }
-        .col-method { width: 24%; }
-        .col-price { width: 10%; }
+        .col-no { width: 3%; }
+        .col-services { width: 40%; }
+        .col-method { width: 20%; }
+        .col-price { width: 9%; }
         .col-qty { width: 5%; }
         .col-disc { width: 6%; }
-        .col-pc { width: 5%; }
+        .col-pc { width: 6%; }
         .col-total { width: 11%; }
 
         /* Package services list */
@@ -612,132 +641,156 @@ export class QuotationPdfService {
           margin-left: 3px;
         }
 
-        /* Summary section */
+        /* Summary section - matches PDF exactly */
         .summary-wrapper {
           display: flex;
           justify-content: space-between;
-          margin-top: 3mm;
-          font-size: 8pt;
+          gap: 5mm;
+          margin-top: 1mm;
+          font-size: 7.5pt;
         }
         .remarks-box {
-          width: 52%;
+          width: 55%;
+          border: 0.75pt solid #555;
+          padding: 3mm;
+          min-height: 25mm;
         }
         .remarks-box strong {
           display: block;
-          margin-bottom: 2px;
+          margin-bottom: 2mm;
+          font-size: 8pt;
         }
         .summary-box {
-          width: 45%;
+          width: 42%;
         }
         .summary-table {
           width: 100%;
           border-collapse: collapse;
+          font-size: 7.5pt;
         }
         .summary-table td {
-          padding: 2px 4px;
-          border: 0.5pt solid #666;
+          padding: 2px 5px;
+          border: 0.75pt solid #555;
         }
         .summary-label {
           text-align: right;
           font-weight: bold;
-          width: 55%;
+          width: 60%;
         }
         .summary-value {
           text-align: right;
-          width: 45%;
+          width: 40%;
+          font-family: monospace;
         }
         .grand-total-row td {
           font-weight: bold;
-          font-size: 9pt;
+          font-size: 8.5pt;
+          background-color: #f0f0f0;
         }
 
-        /* Additional services */
+        /* Additional services - matches PDF exactly */
         .additional-section {
-          margin-top: 3mm;
-          font-size: 7.5pt;
+          margin-top: 4mm;
+          font-size: 7pt;
+          line-height: 1.4;
         }
         .additional-section p {
           margin-bottom: 2mm;
+          text-align: justify;
         }
         .additional-table {
           width: 100%;
           border-collapse: collapse;
+          margin: 2mm 0;
         }
         .additional-table td {
-          padding: 3px 5px;
-          border: 0.5pt solid #666;
+          padding: 2.5px 4px;
+          border: 0.75pt solid #555;
           vertical-align: top;
+          font-size: 6.5pt;
+          line-height: 1.3;
         }
         .additional-table .label-col {
-          width: 22%;
+          width: 25%;
+          font-weight: normal;
         }
         .additional-table .value-col {
-          width: 78%;
+          width: 75%;
+        }
+        .additional-table .header-row td {
+          font-weight: bold;
+          text-align: center;
+          font-size: 7.5pt;
+          background-color: #f0f0f0;
         }
 
-        /* Signature section */
+        /* Signature section - matches PDF exactly */
         .signature-section {
-          margin-top: 5mm;
-          font-size: 8.5pt;
+          margin-top: 4mm;
+          font-size: 7.5pt;
+          line-height: 1.6;
         }
         .created-by {
-          margin-bottom: 3mm;
+          margin-bottom: 2mm;
         }
         .approval-line {
           display: inline-block;
-          width: 300px;
-          border-bottom: 1px solid #333;
+          width: 280px;
+          border-bottom: 1px solid #000;
+          margin-left: 3px;
         }
 
-        /* Terms page styles */
+        /* Terms page styles - matches PDF exactly */
         .terms-title {
-          font-size: 14pt;
+          font-size: 13pt;
           font-weight: bold;
-          margin-bottom: 4mm;
+          margin-bottom: 3mm;
         }
         .terms-columns {
           display: flex;
-          gap: 6mm;
-          font-size: 7pt;
+          gap: 5mm;
+          font-size: 6.5pt;
         }
         .terms-left {
-          width: 35%;
+          width: 38%;
         }
         .terms-right {
-          width: 65%;
+          width: 62%;
         }
         .terms-block {
           margin-bottom: 3mm;
         }
         .terms-block-title {
           font-weight: bold;
-          font-size: 8pt;
+          font-size: 7.5pt;
           margin-bottom: 1mm;
         }
         .terms-block-content {
-          font-size: 6.5pt;
-          line-height: 1.35;
+          font-size: 6pt;
+          line-height: 1.4;
           text-align: justify;
         }
         .terms-block-content ul {
           margin-left: 2mm;
           padding-left: 0;
+          list-style-type: disc;
         }
         .terms-block-content li {
-          margin-bottom: 0.5mm;
+          margin-bottom: 0.8mm;
+          margin-left: 2mm;
         }
         .standard-terms {
-          font-size: 8pt;
+          font-size: 7.5pt;
           font-weight: bold;
-          margin-bottom: 2mm;
+          margin-bottom: 1.5mm;
         }
         .standard-terms-content {
-          font-size: 5.5pt;
-          line-height: 1.25;
+          font-size: 5pt;
+          line-height: 1.3;
           text-align: justify;
         }
         .standard-terms-content p {
-          margin-bottom: 1.5mm;
+          margin-bottom: 1.2mm;
           text-indent: 0;
         }
         .standard-terms-content strong {
@@ -748,7 +801,7 @@ export class QuotationPdfService {
   }
 
   /**
-   * Build fixed header HTML
+   * Build fixed header HTML - simplified to match PDF exactly
    */
   private buildFixedHeader(
     data: QuotationPdfData,
@@ -757,11 +810,12 @@ export class QuotationPdfService {
     totalPages: number,
     isTermsPage: boolean = false
   ): string {
+    // Header for Terms & Conditions page (simplified)
     if (isTermsPage) {
       return `
         <div class="page-header">
           <div class="page-number">Page ${pageNum} from ${totalPages}</div>
-          <div class="header-wrapper">
+          <div class="header-top-row">
             <div class="logo-section">
               <div class="logo-box">
                 <span class="logo-text">TÜV<span>NORD</span></span>
@@ -783,19 +837,21 @@ export class QuotationPdfService {
               </div>
             </div>
           </div>
-          <hr class="hr-red">
+          <div class="header-line"></div>
         </div>
       `;
     }
 
+    // Header for main quotation pages - NO lab info here
     return `
       <div class="page-header">
         <div class="page-number">Page ${pageNum} from ${totalPages}</div>
-        <div class="header-wrapper">
+        <div class="header-top-row">
           <div class="logo-section">
             <div class="logo-box">
               <span class="logo-text">TÜV<span>NORD</span></span>
             </div>
+            <div class="quotation-title">QUOTATION</div>
           </div>
           <div class="info-section">
             <table class="info-table">
@@ -817,13 +873,30 @@ export class QuotationPdfService {
             </div>
           </div>
         </div>
-        <hr class="hr-red">
+        <div class="header-line"></div>
       </div>
     `;
   }
 
   /**
-   * Build fixed footer HTML
+   * Build lab info section for content area
+   */
+  private buildLabInfoSection(): string {
+    return `
+      <div class="lab-info-section">
+        <strong>Laboratorium PT TUV NORD Indonesia</strong>
+        Jl.Science Timur 1 Blok B3-F1<br>
+        Kawasan industri jababeka V<br>
+        Kel. Setajaya Kec. Cikarang Timur<br>
+        Kabupaten Bekasi - Jawa Barat - 17530<br>
+        Email cslab.id@tuv-nord.com<br>
+        Phone +62 21 29574720
+      </div>
+    `;
+  }
+
+  /**
+   * Build fixed footer HTML - matches PDF exactly
    */
   private buildFixedFooter(): string {
     return `
@@ -835,15 +908,16 @@ export class QuotationPdfService {
             Jl.Science Timur 1 Blok B3-F1<br>
             Kawasan industri jababeka V<br>
             Kel. Setajaya Kec. Cikarang Timur<br>
-            Kabupaten Bekasi - Jawa Barat - 17530<br><br>
+            Kabupaten Bekasi - Jawa Barat - 17530<br>
+            <br>
             Email cslab.id@tuv-nord.com<br>
             Phone +62 21 29574720
           </div>
           <div class="footer-right">
             <div class="footer-logos">
-              <div class="ilac-logo">ilac-MRA</div>
+              <div class="ilac-logo">ilac<br>MRA</div>
               <div class="kan-logo">
-                <div class="kan-text">KAN</div>
+                <div class="kan-text">✓ KAN</div>
                 <div>Komite Akreditasi Nasional</div>
                 <div>LP-411-IDN</div>
                 <div>LK-109-IDN</div>
@@ -857,18 +931,26 @@ export class QuotationPdfService {
   }
 
   /**
-   * Build customer info section
+   * Build customer info section - matches PDF exactly
    */
   private buildCustomerSection(data: QuotationPdfData): string {
+    const contactName = this.getContactFullName(data.contact);
+    const addressLines = [
+      data.address.address,
+      data.address.city,
+      data.address.state,
+      data.address.postal_code,
+      data.address.country
+    ].filter(Boolean).join('<br>');
+
     return `
-      <div class="page-title">QUOTATION</div>
       <table class="customer-table">
         <tr>
           <td class="customer-left">
-            <table>
+            <table style="width: 100%;">
               <tr>
                 <td class="cust-label">To</td>
-                <td class="cust-value">${this.getContactFullName(data.contact)} ${data.contact.phone ? '' : '-'}</td>
+                <td class="cust-value">${contactName}</td>
               </tr>
               <tr>
                 <td class="cust-label">Company</td>
@@ -876,12 +958,12 @@ export class QuotationPdfService {
               </tr>
               <tr>
                 <td class="cust-label">Address</td>
-                <td class="cust-value">${this.formatAddressMultiline(data.address)}</td>
+                <td class="cust-value">${addressLines}</td>
               </tr>
             </table>
           </td>
           <td class="customer-right">
-            <table>
+            <table style="width: 100%;">
               <tr>
                 <td class="cust-label">Phone</td>
                 <td class="cust-value">${data.contact.phone || '-'}</td>
@@ -1180,15 +1262,15 @@ export class QuotationPdfService {
   }
 
   /**
-   * Build additional services section
+   * Build additional services section - matches PDF exactly
    */
   private buildAdditionalServices(): string {
     return `
       <div class="additional-section">
         <p>With our experience and expertise in ITC (Inspection, Testing & Certification) business we also offer you one stop solution with special discount for another valuable services that we can provided:</p>
         <table class="additional-table">
-          <tr>
-            <td colspan="2" class="text-center" style="font-weight: bold;">Services</td>
+          <tr class="header-row">
+            <td colspan="2">Services</td>
           </tr>
           <tr>
             <td class="label-col">System Certification(Additional Scheme)</td>
@@ -1211,22 +1293,23 @@ export class QuotationPdfService {
             <td class="value-col">Consumer goods product testing, Product stability & shelf life, Environmental testing & monitoring, Industrial Hygine, Petroleum & chemical analysis, Calibration</td>
           </tr>
         </table>
-        <p style="margin-top: 2mm;">For complete information please feel free to contact our Sales Representative.</p>
+        <p>For complete information please feel free to contact our Sales Representative.</p>
       </div>
     `;
   }
 
   /**
-   * Build signature section
+   * Build signature section - matches PDF exactly
    */
   private buildSignatureSection(data: QuotationPdfData): string {
+    const creatorName = this.getCreatorFullName(data.creator);
     return `
       <div class="signature-section">
         <div class="created-by">
-          Created by&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>${this.getCreatorFullName(data.creator)}</strong>
+          Created by&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>${creatorName}</strong>
         </div>
-        <div>
-          Customer Approval: <span class="approval-line"></span>
+        <div style="margin-top: 1mm;">
+          Customer Approval:<span class="approval-line"></span>
         </div>
       </div>
     `;
@@ -1372,6 +1455,7 @@ export class QuotationPdfService {
       <div class="page">
         ${this.buildFixedHeader(data, barcodeImg, 1, totalPages)}
         <div class="page-content">
+          ${this.buildLabInfoSection()}
           ${this.buildCustomerSection(data)}
           ${productsHtml}
           ${servicesHtml}
@@ -1385,7 +1469,7 @@ export class QuotationPdfService {
 
     // Build terms page
     const termsPage = `
-      <div class="page">
+      <div class="page terms-page">
         ${this.buildFixedHeader(data, barcodeImg, totalPages, totalPages, true)}
         <div class="page-content">
           ${this.buildTermsContent(data.customer, data.created_at)}
