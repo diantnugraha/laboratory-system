@@ -47,7 +47,7 @@ export interface QuotationDetail {
   serviceMatrix: string | null;
   service?: {
     id: number;
-    code: string;
+    code?: string;
     name: string;
     price: number;
     parameter?: {
@@ -61,7 +61,7 @@ export interface QuotationDetail {
   };
   package?: {
     id: number;
-    code: string;
+    code?: string;
     name: string;
     totalPrice: number;
     services?: Array<{

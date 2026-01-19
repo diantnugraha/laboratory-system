@@ -20,6 +20,7 @@ import {
   ChevronRight,
   FlaskConical,
   Receipt,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { quotationService, QuotationFormData, QuotationDetail } from "@/services/quotationService";
 import { customerService, Address, Contact } from "@/services/customerService";
@@ -110,7 +112,15 @@ interface PackageOption {
   code: string;
   name: string;
   price: number;
-  services?: Array<{ id: number; code: string; name: string; price: { value: number } }>;
+  services?: Array<{ id: number; code: string; name: string; price: number | { value: number } }>;
+}
+
+interface PackageServiceInfo {
+  id: number;
+  name: string;
+  price: number;
+  parameter?: { id: number; name: string };
+  method?: { id: number; name: string };
 }
 
 interface SampleServiceItem {
@@ -125,6 +135,7 @@ interface SampleServiceItem {
   discount: number;
   quantity: number;
   detailId?: number; // For tracking existing detail records
+  packageServices?: PackageServiceInfo[]; // Services inside a package
 }
 
 interface SampleItem {
@@ -134,6 +145,15 @@ interface SampleItem {
   priority: 'normal' | 'urgent' | 'very urgent';
   services: SampleServiceItem[];
   isExpanded: boolean;
+}
+
+interface ProductItem {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  discount: number;
+  detailId?: number; // For tracking existing detail records
 }
 
 const formatCurrency = (value: number) => {
@@ -161,6 +181,7 @@ export default function QuotationEditPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [code, setCode] = useState('');
   const [samples, setSamples] = useState<SampleItem[]>([]);
+  const [products, setProducts] = useState<ProductItem[]>([]);
 
   // Customer state
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
@@ -185,6 +206,13 @@ export default function QuotationEditPage() {
   const [isAddingSample, setIsAddingSample] = useState(false);
   const [newSampleName, setNewSampleName] = useState('');
   const [newSampleQuantity, setNewSampleQuantity] = useState(1);
+
+  // Add product form state
+  const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [newProductQuantity, setNewProductQuantity] = useState(1);
+  const [newProductPrice, setNewProductPrice] = useState(0);
+  const [newProductDiscount, setNewProductDiscount] = useState(0);
 
   const form = useForm<FormData>({
     resolver: zodResolver(quotationFormSchema),
@@ -230,8 +258,11 @@ export default function QuotationEditPage() {
     try {
       setIsLoading(true);
 
-      // Fetch quotation data and details
-      const response = await quotationService.getById(quotationId);
+      // Fetch quotation data and details in parallel
+      const [response, detailsResponse] = await Promise.all([
+        quotationService.getById(quotationId),
+        quotationService.getDetails(quotationId),
+      ]);
 
       if (!response.success || !response.data) {
         toast.error('Quotation not found');
@@ -240,26 +271,27 @@ export default function QuotationEditPage() {
       }
 
       const quotation = response.data;
+      const details = detailsResponse.data || [];
       setCode(quotation.code);
 
       // Set form values
-      const quoDate = quotation.quoDate ? new Date(quotation.quoDate).toISOString().split('T')[0] : '';
+      const quoDate = quotation.quo_date ? new Date(quotation.quo_date).toISOString().split('T')[0] : '';
       form.setValue('quoDate', quoDate);
       form.setValue('priority', (quotation.priority as 'normal' | 'urgent' | 'very urgent') || 'normal');
-      form.setValue('percentDiscount', quotation.percentDiscount || 0);
-      form.setValue('percentVat', quotation.percentVat || 11);
-      form.setValue('minVolumeSample', quotation.minVolumeSample || '');
+      form.setValue('percentDiscount', quotation.percent_discount || 0);
+      form.setValue('percentVat', quotation.percent_vat || 11);
+      form.setValue('minVolumeSample', quotation.min_volume_sample || '');
       form.setValue('remarks', quotation.remarks || '');
-      form.setValue('samplingRequest', quotation.samplingRequest === '1' || quotation.samplingRequest === 'true');
-      form.setValue('samplingDate', quotation.samplingDate ? new Date(quotation.samplingDate).toISOString().split('T')[0] : '');
+      form.setValue('samplingRequest', quotation.sampling_request === '1' || quotation.sampling_request === 'true');
+      form.setValue('samplingDate', quotation.sampling_date ? new Date(quotation.sampling_date).toISOString().split('T')[0] : '');
 
       // Set customer data
-      if (quotation.customer && quotation.customerId) {
-        form.setValue('customerId', quotation.customerId);
+      if (quotation.customer && quotation.customer_id) {
+        form.setValue('customerId', quotation.customer_id);
 
         // Fetch full customer data to get contacts and addresses
         try {
-          const customerResponse = await customerService.getById(quotation.customerId);
+          const customerResponse = await customerService.getById(quotation.customer_id);
           if (customerResponse.data) {
             const customerData: CustomerOption = {
               id: customerResponse.data.id,
@@ -271,11 +303,11 @@ export default function QuotationEditPage() {
             setSelectedCustomer(customerData);
 
             // Set contact and address after customer is loaded
-            if (quotation.contactId) {
-              form.setValue('contactId', quotation.contactId);
+            if (quotation.contact_id) {
+              form.setValue('contactId', quotation.contact_id);
             }
-            if (quotation.addressId) {
-              form.setValue('addressId', quotation.addressId);
+            if (quotation.address_id) {
+              form.setValue('addressId', quotation.address_id);
             }
           }
         } catch (err) {
@@ -295,15 +327,15 @@ export default function QuotationEditPage() {
               phone: quotation.contact.phone || '',
               department: quotation.contact.department,
               position: '',
-              customer_id: quotation.customerId!,
+              customer_id: quotation.customer_id!,
             }] : [],
           });
         }
       }
 
       // Parse quotation details into samples
-      if (quotation.quotation_detail && quotation.quotation_detail.length > 0) {
-        const sampleMap = groupDetailsBySample(quotation.quotation_detail);
+      if (details && details.length > 0) {
+        const sampleMap = groupDetailsBySample(details);
 
         const loadedSamples: SampleItem[] = [];
         let sampleIndex = 0;
@@ -313,36 +345,46 @@ export default function QuotationEditPage() {
           const sampleQuantity = details[0]?.quantity || 1;
           const samplePriority = (details[0]?.priority as 'normal' | 'urgent' | 'very urgent') || 'normal';
 
-          const sampleServices: SampleServiceItem[] = details.map((detail, idx) => {
-            if (detail.packageId && detail.package) {
-              return {
-                id: `pkg-${Date.now()}-${sampleIndex}-${idx}`,
-                type: 'package' as const,
-                itemId: detail.packageId,
-                name: detail.package.name,
-                code: detail.package.code,
-                price: detail.package.totalPrice || detail.price || 0,
-                discount: detail.percentDiscount || 0,
-                quantity: 1,
-                detailId: detail.id,
-              };
-            } else if (detail.serviceId && detail.service) {
-              return {
-                id: `svc-${Date.now()}-${sampleIndex}-${idx}`,
-                type: 'service' as const,
-                itemId: detail.serviceId,
-                name: detail.service.name,
-                code: detail.service.code,
-                parameter: detail.service.parameter?.name,
-                method: detail.service.method?.name,
-                price: detail.service.price || detail.price || 0,
-                discount: detail.percentDiscount || 0,
-                quantity: 1,
-                detailId: detail.id,
-              };
-            }
-            return null;
-          }).filter((item): item is SampleServiceItem => item !== null);
+          // Deduplicate packages - keep only one entry per packageId
+          const seenPackageIds = new Set<number>();
+          const sampleServices: SampleServiceItem[] = details
+            .filter(detail => detail.product !== 1) // Exclude products
+            .map((detail, idx) => {
+              if (detail.packageId && detail.package) {
+                // Skip duplicate packages
+                if (seenPackageIds.has(detail.packageId)) {
+                  return null;
+                }
+                seenPackageIds.add(detail.packageId);
+                return {
+                  id: `pkg-${Date.now()}-${sampleIndex}-${idx}`,
+                  type: 'package' as const,
+                  itemId: detail.packageId,
+                  name: detail.package.name,
+                  code: detail.package.code || `PKG-${detail.packageId}`,
+                  price: detail.package.totalPrice || detail.price || 0,
+                  discount: detail.percentDiscount || 0,
+                  quantity: 1,
+                  detailId: detail.id,
+                  packageServices: detail.package.services || [],
+                };
+              } else if (detail.serviceId && detail.service) {
+                return {
+                  id: `svc-${Date.now()}-${sampleIndex}-${idx}`,
+                  type: 'service' as const,
+                  itemId: detail.serviceId,
+                  name: detail.service.name,
+                  code: detail.service.code || `SVC-${detail.serviceId}`,
+                  parameter: detail.service.parameter?.name,
+                  method: detail.service.method?.name,
+                  price: detail.service.price || detail.price || 0,
+                  discount: detail.percentDiscount || 0,
+                  quantity: 1,
+                  detailId: detail.id,
+                };
+              }
+              return null;
+            }).filter((item): item is NonNullable<typeof item> => item !== null) as SampleServiceItem[];
 
           loadedSamples.push({
             id: `sample-${Date.now()}-${sampleIndex}`,
@@ -357,6 +399,20 @@ export default function QuotationEditPage() {
         });
 
         setSamples(loadedSamples);
+      }
+
+      // Load products (items with product === 1)
+      const productDetails = details.filter(d => d.product === 1);
+      if (productDetails.length > 0) {
+        const loadedProducts: ProductItem[] = productDetails.map((detail, idx) => ({
+          id: `product-${Date.now()}-${idx}`,
+          name: detail.sampleName || '',
+          quantity: detail.quantity || 1,
+          price: detail.price || 0,
+          discount: detail.percentDiscount || 0,
+          detailId: detail.id,
+        }));
+        setProducts(loadedProducts);
       }
 
     } catch (error) {
@@ -552,6 +608,13 @@ export default function QuotationEditPage() {
   };
 
   const addPackageToSample = (sampleId: string, pkg: PackageOption) => {
+    // Map package services to PackageServiceInfo format
+    const packageServices: PackageServiceInfo[] = pkg.services?.map(svc => ({
+      id: svc.id,
+      name: svc.name,
+      price: typeof svc.price === 'object' ? svc.price.value : svc.price,
+    })) || [];
+
     const newPackage: SampleServiceItem = {
       id: `pkg-${Date.now()}`,
       type: 'package',
@@ -561,6 +624,7 @@ export default function QuotationEditPage() {
       price: pkg.price,
       discount: percentDiscount,
       quantity: 1,
+      packageServices,
     };
     setSamples(prev => prev.map(s =>
       s.id === sampleId ? { ...s, services: [...s.services, newPackage] } : s
@@ -586,17 +650,80 @@ export default function QuotationEditPage() {
     ));
   };
 
+  // Product management
+  const addProduct = () => {
+    if (!newProductName.trim()) {
+      toast.error('Product name is required');
+      return;
+    }
+    if (newProductPrice <= 0) {
+      toast.error('Product price must be greater than 0');
+      return;
+    }
+    const newProduct: ProductItem = {
+      id: `product-${Date.now()}`,
+      name: newProductName,
+      quantity: newProductQuantity,
+      price: newProductPrice,
+      discount: newProductDiscount,
+    };
+    setProducts(prev => [...prev, newProduct]);
+    setNewProductName('');
+    setNewProductQuantity(1);
+    setNewProductPrice(0);
+    setNewProductDiscount(0);
+    setIsAddingProduct(false);
+    toast.success('Product added');
+  };
+
+  const removeProduct = (productId: string) => {
+    setProducts(prev => prev.filter(p => p.id !== productId));
+  };
+
+  const updateProductName = (productId: string, name: string) => {
+    setProducts(prev => prev.map(p =>
+      p.id === productId ? { ...p, name } : p
+    ));
+  };
+
+  const updateProductQuantity = (productId: string, quantity: number) => {
+    setProducts(prev => prev.map(p =>
+      p.id === productId ? { ...p, quantity } : p
+    ));
+  };
+
+  const updateProductPrice = (productId: string, price: number) => {
+    setProducts(prev => prev.map(p =>
+      p.id === productId ? { ...p, price } : p
+    ));
+  };
+
+  const updateProductDiscount = (productId: string, discount: number) => {
+    setProducts(prev => prev.map(p =>
+      p.id === productId ? { ...p, discount } : p
+    ));
+  };
+
   // Calculate totals
   const { subTotal, discountAmount, afterDiscount, pcAmount, vatAmount, total } = useMemo(() => {
     const pc = getPriorityCharge(priority);
 
     let subTotal = 0;
+
+    // Calculate samples subtotal
     samples.forEach(sample => {
       sample.services.forEach(svc => {
         const itemPrice = svc.price * svc.quantity;
         const itemDiscount = itemPrice * (svc.discount / 100);
         subTotal += (itemPrice - itemDiscount) * sample.quantity;
       });
+    });
+
+    // Calculate products subtotal
+    products.forEach(product => {
+      const itemPrice = product.price * product.quantity;
+      const itemDiscount = itemPrice * (product.discount / 100);
+      subTotal += itemPrice - itemDiscount;
     });
 
     const discountAmount = subTotal * (percentDiscount / 100);
@@ -607,20 +734,22 @@ export default function QuotationEditPage() {
     const total = afterPc + vatAmount;
 
     return { subTotal, discountAmount, afterDiscount, pcAmount, vatAmount, total };
-  }, [samples, priority, percentDiscount, percentVat]);
+  }, [samples, products, priority, percentDiscount, percentVat]);
 
   // Available contacts and addresses
   const availableContacts = selectedCustomer?.contacts || [];
   const availableAddresses = selectedCustomer?.addresses || [];
 
   const onSubmit = async (data: FormData) => {
-    if (samples.length === 0) {
-      toast.error('Please add at least one sample');
+    // Validation: must have at least one sample or one product
+    if (samples.length === 0 && products.length === 0) {
+      toast.error('Please add at least one sample or product');
       return;
     }
 
+    // All samples must have at least one service/package
     const hasEmptySamples = samples.some(s => s.services.length === 0);
-    if (hasEmptySamples) {
+    if (samples.length > 0 && hasEmptySamples) {
       toast.error('All samples must have at least one service or package');
       return;
     }
@@ -662,6 +791,13 @@ export default function QuotationEditPage() {
               discount: svc.discount,
               id_detail: svc.detailId ? String(svc.detailId) : undefined,
             })),
+        })),
+        products: products.map(product => ({
+          name: product.name,
+          quantity: product.quantity,
+          price: product.price,
+          discount: product.discount,
+          id_detail: product.detailId,
         })),
       };
 
@@ -1020,6 +1156,53 @@ export default function QuotationEditPage() {
               />
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <FormField
+                control={form.control}
+                name="samplingRequest"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 bg-muted/30">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-sm font-medium">
+                        Sampling Request
+                      </FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Enable if sampling is required
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {form.watch('samplingRequest') && (
+                <FormField
+                  control={form.control}
+                  name="samplingDate"
+                  render={({ field }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Sampling Date
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          {...field}
+                          className="h-10 bg-muted/30 hover:bg-muted/50 focus:bg-background transition-colors border-muted"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+            </div>
+
             <FormField
               control={form.control}
               name="remarks"
@@ -1132,7 +1315,7 @@ export default function QuotationEditPage() {
                     onOpenChange={() => toggleSampleExpanded(sample.id)}
                   >
                     {/* Sample Header */}
-                    <div className="flex items-center justify-between p-4 bg-muted/20 hover:bg-muted/30 transition-colors">
+                    <div className="flex items-center justify-between p-4 bg-muted/30 hover:bg-muted/40 transition-colors">
                       <CollapsibleTrigger asChild>
                         <button type="button" className="flex items-center gap-3 flex-1 text-left">
                           {sample.isExpanded ? (
@@ -1140,38 +1323,26 @@ export default function QuotationEditPage() {
                           ) : (
                             <ChevronRight className="h-4 w-4" />
                           )}
-                          <div className="flex items-center gap-2">
-                            <Input
-                              value={sample.name}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                updateSampleName(sample.id, e.target.value);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="h-8 w-48 bg-background"
-                            />
-                            <Badge variant="outline">Qty: {sample.quantity}</Badge>
-                            <span className="text-muted-foreground text-sm">
-                              ({sample.services.length} items)
-                            </span>
-                          </div>
+                          <span className="font-medium">{sample.name}</span>
+                          <Badge variant="outline">Qty: {sample.quantity}</Badge>
+                          {sample.priority !== 'normal' && (
+                            <Badge
+                              variant={sample.priority === 'very urgent' ? 'destructive' : 'outline'}
+                              className={sample.priority === 'urgent' ? 'text-orange-600 border-orange-600' : ''}
+                            >
+                              {sample.priority}
+                            </Badge>
+                          )}
                         </button>
                       </CollapsibleTrigger>
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="number"
-                          min={1}
-                          value={sample.quantity}
-                          onChange={(e) => updateSampleQuantity(sample.id, parseInt(e.target.value) || 1)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="h-8 w-20 bg-background"
-                        />
+                      <div className="flex items-center gap-2">
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-muted-foreground hover:text-primary"
                           onClick={() => copySample(sample.id)}
+                          title="Copy sample"
                         >
                           <Copy className="h-4 w-4" />
                         </Button>
@@ -1181,6 +1352,7 @@ export default function QuotationEditPage() {
                           size="icon"
                           className="h-8 w-8 text-destructive hover:text-destructive"
                           onClick={() => removeSample(sample.id)}
+                          title="Delete sample"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -1345,55 +1517,68 @@ export default function QuotationEditPage() {
                         <Table>
                           <TableHeader>
                             <TableRow className="bg-muted/10">
-                              <TableHead className="w-[80px]">Type</TableHead>
-                              <TableHead>Name</TableHead>
-                              <TableHead>Parameter</TableHead>
+                              <TableHead className="w-[100px]">Type</TableHead>
+                              <TableHead>Service/Package</TableHead>
                               <TableHead>Method</TableHead>
-                              <TableHead className="text-right w-[120px]">Price</TableHead>
-                              <TableHead className="text-center w-[100px]">Disc (%)</TableHead>
-                              <TableHead className="text-right w-[120px]">Total</TableHead>
+                              <TableHead className="text-right w-[130px]">Price</TableHead>
+                              <TableHead className="text-center w-[100px]">Discount</TableHead>
                               <TableHead className="w-[50px]"></TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {sample.services.map((svc) => {
-                              const itemTotal = svc.price * svc.quantity * (1 - svc.discount / 100);
-                              return (
-                                <TableRow key={svc.id}>
-                                  <TableCell>
-                                    <Badge variant={svc.type === 'package' ? 'default' : 'secondary'}>
-                                      {svc.type === 'package' ? 'Pkg' : 'Svc'}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="font-medium">{svc.name}</TableCell>
-                                  <TableCell className="text-muted-foreground">{svc.parameter || '-'}</TableCell>
-                                  <TableCell className="text-muted-foreground">{svc.method || '-'}</TableCell>
-                                  <TableCell className="text-right">{formatCurrency(svc.price)}</TableCell>
-                                  <TableCell className="text-center">
+                            {sample.services.map((svc) => (
+                              <TableRow key={svc.id}>
+                                <TableCell>
+                                  <Badge variant={svc.type === 'package' ? 'default' : 'secondary'}>
+                                    {svc.type === 'package' ? 'Package' : 'Service'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  <div>
+                                    <div className="font-semibold">{svc.name}</div>
+                                    {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0 && (
+                                      <ul className="mt-1 text-xs text-muted-foreground list-disc list-inside">
+                                        {svc.packageServices.map((pkgSvc, idx) => (
+                                          <li key={`${svc.id}-${pkgSvc.id}-${idx}`}>
+                                            {pkgSvc.name}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0
+                                    ? 'Various Methods'
+                                    : svc.method || '-'}
+                                </TableCell>
+                                <TableCell className="text-right">{formatCurrency(svc.price)}</TableCell>
+                                <TableCell className="text-center">
+                                  <div className="flex items-center justify-center gap-1">
                                     <Input
                                       type="number"
                                       min={0}
                                       max={100}
                                       value={svc.discount}
                                       onChange={(e) => updateServiceDiscount(sample.id, svc.id, parseFloat(e.target.value) || 0)}
-                                      className="h-8 w-16 text-center mx-auto"
+                                      className="h-8 w-16 text-center"
                                     />
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">{formatCurrency(itemTotal)}</TableCell>
-                                  <TableCell>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-destructive hover:text-destructive"
-                                      onClick={() => removeServiceFromSample(sample.id, svc.id)}
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
+                                    <span className="text-muted-foreground">%</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
+                                    onClick={() => removeServiceFromSample(sample.id, svc.id)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
                           </TableBody>
                         </Table>
                       ) : (
@@ -1401,10 +1586,225 @@ export default function QuotationEditPage() {
                           No services added to this sample yet.
                         </div>
                       )}
+
+                      {/* Sample Details Section */}
+                      <div className="p-4 bg-muted/5 border-t">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                          Sample Details
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs text-muted-foreground">Sample Name</label>
+                            <Input
+                              value={sample.name}
+                              onChange={(e) => updateSampleName(sample.id, e.target.value)}
+                              className="h-9"
+                              placeholder="Enter sample name"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs text-muted-foreground">Quantity</label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={sample.quantity}
+                              onChange={(e) => updateSampleQuantity(sample.id, parseInt(e.target.value) || 1)}
+                              className="h-9"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </CollapsibleContent>
                   </Collapsible>
                 ))}
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Additional Products Section */}
+        <Card className="overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <div className="p-1.5 rounded-md bg-primary/10">
+                  <Package className="h-4 w-4 text-primary" />
+                </div>
+                Additional Products
+                <span className="text-sm font-normal text-muted-foreground">({products.length})</span>
+              </CardTitle>
+              {!isAddingProduct && (
+                <Button
+                  type="button"
+                  onClick={() => setIsAddingProduct(true)}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Product
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {/* Add Product Form */}
+            {isAddingProduct && (
+              <div className="p-4 border-b bg-primary/5">
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 items-end">
+                  <div className="sm:col-span-2 space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Product Name
+                    </label>
+                    <Input
+                      value={newProductName}
+                      onChange={(e) => setNewProductName(e.target.value)}
+                      placeholder="Enter product name..."
+                      className="h-10 bg-background"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Quantity
+                    </label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={newProductQuantity}
+                      onChange={(e) => setNewProductQuantity(parseInt(e.target.value) || 1)}
+                      className="h-10 bg-background"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Price
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={newProductPrice}
+                      onChange={(e) => setNewProductPrice(parseFloat(e.target.value) || 0)}
+                      className="h-10 bg-background"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Discount %
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={newProductDiscount}
+                      onChange={(e) => setNewProductDiscount(parseFloat(e.target.value) || 0)}
+                      className="h-10 bg-background"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setIsAddingProduct(false);
+                      setNewProductName('');
+                      setNewProductQuantity(1);
+                      setNewProductPrice(0);
+                      setNewProductDiscount(0);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="button" onClick={addProduct}>
+                    Add Product
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Products Table */}
+            {products.length === 0 && !isAddingProduct ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No additional products added yet.</p>
+                <p className="text-sm">Click &quot;Add Product&quot; to add extra items.</p>
+              </div>
+            ) : products.length > 0 && (
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/10">
+                    <TableHead>Product Name</TableHead>
+                    <TableHead className="text-center w-[100px]">Quantity</TableHead>
+                    <TableHead className="text-right w-[150px]">Price</TableHead>
+                    <TableHead className="text-center w-[100px]">Discount</TableHead>
+                    <TableHead className="text-right w-[150px]">Subtotal</TableHead>
+                    <TableHead className="w-[50px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {products.map((product) => {
+                    const productSubtotal = (product.price * product.quantity) * (1 - product.discount / 100);
+                    return (
+                      <TableRow key={product.id}>
+                        <TableCell>
+                          <Input
+                            value={product.name}
+                            onChange={(e) => updateProductName(product.id, e.target.value)}
+                            className="h-8"
+                            placeholder="Product name"
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={product.quantity}
+                            onChange={(e) => updateProductQuantity(product.id, parseInt(e.target.value) || 1)}
+                            className="h-8 w-20 text-center mx-auto"
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            min={0}
+                            value={product.price}
+                            onChange={(e) => updateProductPrice(product.id, parseFloat(e.target.value) || 0)}
+                            className="h-8 w-28 text-right ml-auto"
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={product.discount}
+                              onChange={(e) => updateProductDiscount(product.id, parseFloat(e.target.value) || 0)}
+                              className="h-8 w-16 text-center"
+                            />
+                            <span className="text-muted-foreground">%</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(productSubtotal)}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => removeProduct(product.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             )}
           </CardContent>
         </Card>

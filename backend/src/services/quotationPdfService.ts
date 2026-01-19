@@ -906,6 +906,59 @@ export class QuotationPdfService {
   }
 
   /**
+   * Build products (Additional Charge) table
+   */
+  private buildProductsTable(products: ProductItem[]): string {
+    if (!products || products.length === 0) return '';
+
+    let html = `
+      <table class="services-table">
+        <thead>
+          <tr>
+            <th class="col-no">No</th>
+            <th style="width: 50%;">ADDITIONAL CHARGE</th>
+            <th class="col-price">PRICE</th>
+            <th style="width: 10%;">QTY</th>
+            <th class="col-disc">DISC%</th>
+            <th class="col-total">TOTAL</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    let rowNum = 1;
+    let subTotal = 0;
+
+    for (const product of products) {
+      const basePrice = product.price * product.quantity;
+      const discountAmount = (product.discount / 100) * basePrice;
+      const total = basePrice - discountAmount;
+      subTotal += total;
+
+      html += `
+          <tr>
+            <td class="text-center">${rowNum}</td>
+            <td>${product.name}</td>
+            <td class="text-right">${this.formatCurrency(product.price)}</td>
+            <td class="text-center">${product.quantity}</td>
+            <td class="text-center">${product.discount}</td>
+            <td class="text-right">${this.formatCurrency(total)}</td>
+          </tr>`;
+      rowNum++;
+    }
+
+    html += `
+          <tr class="subtotal-row">
+            <td colspan="5" class="text-right">Sub Total (IDR)</td>
+            <td class="text-right">${this.formatCurrency(subTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="height: 3mm;"></div>`;
+
+    return html;
+  }
+
+  /**
    * Build services table header
    */
   private buildServicesTableHeader(isSpecial: boolean): string {
@@ -1180,9 +1233,21 @@ export class QuotationPdfService {
   }
 
   /**
-   * Build Terms & Conditions content
+   * Build Terms & Conditions content with dynamic payment terms and address
    */
-  private buildTermsContent(): string {
+  private buildTermsContent(customer: CustomerData, createdAt: Date): string {
+    // Dynamic payment terms based on customer TOP (Terms of Payment)
+    const paymentTerms =
+      customer.top && customer.top > 0
+        ? `Payment terms are Net ${customer.top} days.`
+        : 'Payment must be made prior to sending the report.';
+
+    // Date-based head office address (before/after 2025-09-01)
+    const useNewAddress = new Date(createdAt) >= NEW_ADDRESS_DATE;
+    const headOfficeAddress = useNewAddress
+      ? 'Arkadia Green Park, Tower G, Lantai 17, Jl. TB Simatupang Kav. 88 Kelurahan Kebagusan, Kecamatan Pasar Minggu, Kota Administrasi Jakarta Selatan Provinsi DKI Jakarta, Kode Pos 12520'
+      : 'Perkantoran Hijau Arkadia, Tower F 6th Floor, Suite 706. JL. TB. Simatupang Kav. 88 Pasar Minggu, Jakarta Selatan.';
+
     return `
       <div class="terms-title">Term & Condition:</div>
       <div class="terms-columns">
@@ -1213,7 +1278,7 @@ export class QuotationPdfService {
               Visit our website https://www.tuv-nord.com/id/en to download a sample submission form and contact our marketing team to get quotation. Submit the completed form along with your samples to<br><br>
               <strong>Head Office (Only for durable product):</strong><br>
               PT. TÜV NORD Indonesia<br>
-              Arkadia Green Park, Tower G, Lantai 17, Jl. TB Simatupang Kav. 88 Kelurahan Kebagusan, Kecamatan Pasar Minggu, Kota Administrasi Jakarta Selatan Provinsi DKI Jakarta, Kode Pos 12520<br><br>
+              ${headOfficeAddress}<br><br>
               <strong>Laboratory:</strong><br>
               Jl. Science Timur 1, Block B3-F1 Kawasan Industri Jababeka V Cibatu Cikarang - Bekasi 17530<br>
               <em>(Exit Tol Cibatu, Km. 34)</em>
@@ -1228,7 +1293,7 @@ export class QuotationPdfService {
 
             <p><strong>CONFIDENTIALITY</strong> confidentiality is maintained in all interractions with Clients. Appropriate confidentiality agreements are signed willingly. If information is subpoenaed and released through the operation of any judicial, regulatory, or similar process, the Client is notified. In TÜV NORD Laboratory name or data in any manner which might cause harm to TÜV NORD Laboratory reputation and/or business. Under no circumtances in the name of TÜV NORD Laboratory to be published, either alone or in association with that of any other party, without prior written approval.</p>
 
-            <p><strong>PAYMENT TERMS</strong> Payment must be made prior to sending the report. Minimum order per invoice is Rp 200.000,- .Prices are subject to change without notice. The payment can be transferred to PT. TÜV NORD Indonesia, Bank HSBC World Trade Centre, A/C No. 050-074269- 001.</p>
+            <p><strong>PAYMENT TERMS</strong> ${paymentTerms} Minimum order per invoice is Rp 200.000,- .Prices are subject to change without notice. The payment can be transferred to PT. TÜV NORD Indonesia, Bank HSBC World Trade Centre, A/C No. 050-074269- 001.</p>
 
             <p><strong>BILLING</strong> All fees or bills are charged direcly to the Client, unless a third party has been authorized via a signed statement indicating payment responsibility. It is assumed that the paperwork submitted with a sample describes the testing desired. If changes are made after the originally requested testing is initiated or completed. The Client must accept payment responsibility. Please notify TÜV NORD Laboratory immediately if changes in testing are necessary.</p>
 
@@ -1299,12 +1364,16 @@ export class QuotationPdfService {
     servicesHtml += this.buildSubTotalRow(grandSubTotal, isSpecial);
     servicesHtml += '</tbody></table>';
 
+    // Build products table (Additional Charge) if products exist
+    const productsHtml = this.buildProductsTable(data.products);
+
     // Build main content page
     const mainPage = `
       <div class="page">
         ${this.buildFixedHeader(data, barcodeImg, 1, totalPages)}
         <div class="page-content">
           ${this.buildCustomerSection(data)}
+          ${productsHtml}
           ${servicesHtml}
           ${this.buildRemarksSummary(data, totals, isSpecial)}
           ${this.buildAdditionalServices()}
@@ -1319,7 +1388,7 @@ export class QuotationPdfService {
       <div class="page">
         ${this.buildFixedHeader(data, barcodeImg, totalPages, totalPages, true)}
         <div class="page-content">
-          ${this.buildTermsContent()}
+          ${this.buildTermsContent(data.customer, data.created_at)}
         </div>
         ${this.buildFixedFooter()}
       </div>

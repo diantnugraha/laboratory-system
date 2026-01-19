@@ -1434,6 +1434,7 @@ export class QuotationRepository implements IQuotationRepository {
           service: {
             select: {
               id: true,
+              code: true,
               name: true,
               price: true,
               parameter: { select: { id: true, name: true } },
@@ -1443,6 +1444,7 @@ export class QuotationRepository implements IQuotationRepository {
           Renamedpackage: {
             select: {
               id: true,
+              code: true,
               name: true,
               totalPrice: true,
               listService: true,
@@ -1529,6 +1531,7 @@ export class QuotationRepository implements IQuotationRepository {
             service: d.service
               ? {
                   id: d.service.id,
+                  code: d.service.code,
                   name: d.service.name,
                   price: d.service.price,
                   parameter: d.service.parameter
@@ -1542,6 +1545,7 @@ export class QuotationRepository implements IQuotationRepository {
             package: d.Renamedpackage
               ? {
                   id: d.Renamedpackage.id,
+                  code: d.Renamedpackage.code,
                   name: d.Renamedpackage.name,
                   totalPrice: d.Renamedpackage.totalPrice,
                   services: packageServices,
