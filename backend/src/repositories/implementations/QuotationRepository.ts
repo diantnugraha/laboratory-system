@@ -1144,9 +1144,22 @@ export class QuotationRepository implements IQuotationRepository {
             for (const sample of data.samples) {
               let arrayIndex = 0;
 
+              // Debug logging
+              console.log(`\n=== Processing sample: ${sample.name} (sampleIndex: ${sampleIndex}) ===`);
+              if (sample.services) {
+                console.log('Services:', sample.services.map((s: any) => ({ id: s.serviceId, order: s.order, idDetail: s.idDetail })));
+              }
+              if (sample.packages) {
+                console.log('Packages:', sample.packages.map((p: any) => ({ id: p.packageId, order: p.order, idDetail: p.idDetail })));
+              }
+
               // Process services
               if (sample.services) {
                 for (const service of sample.services) {
+                  // Use provided order if available, otherwise use sequential arrayIndex
+                  const indexArray = service.order !== undefined ? service.order : arrayIndex;
+                  console.log(`  Service ${service.serviceId}: using index_array = ${indexArray} (order: ${service.order}, arrayIndex: ${arrayIndex})`);
+
                   if (service.idDetail) {
                     // Update existing
                     usedServiceDetailIds.push(service.idDetail);
@@ -1158,7 +1171,7 @@ export class QuotationRepository implements IQuotationRepository {
                         service_id: service.serviceId,
                         quantity: service.quantity,
                         percent_discount: service.discount,
-                        index_array: arrayIndex,
+                        index_array: indexArray,
                         index_sample: sampleIndex,
                       },
                     });
@@ -1174,21 +1187,32 @@ export class QuotationRepository implements IQuotationRepository {
                         service_id: service.serviceId,
                         quantity: service.quantity,
                         percent_discount: service.discount,
-                        index_array: arrayIndex,
+                        index_array: indexArray,
                         index_sample: sampleIndex,
                       },
                     });
                   }
-                  arrayIndex++;
+
+                  // Only increment arrayIndex if order was not provided
+                  if (service.order === undefined) {
+                    arrayIndex++;
+                  }
                 }
               }
 
               // Process packages
               if (sample.packages) {
                 for (const pkg of sample.packages) {
+                  // Track this package as used (for orphan detection)
+                  const packageKey = `${pkg.packageId}__${sampleIndex}`;
+                  usedPackageKeys.push(packageKey);
+
+                  // Use provided order if available, otherwise use sequential arrayIndex
+                  const indexArray = pkg.order !== undefined ? pkg.order : arrayIndex;
+                  console.log(`  Package ${pkg.packageId}: using index_array = ${indexArray} (order: ${pkg.order}, arrayIndex: ${arrayIndex})`);
+
                   if (pkg.idDetail) {
                     // Update existing package details
-                    usedPackageKeys.push(pkg.idDetail);
                     await tx.quotation_detail.updateMany({
                       where: {
                         package_id: pkg.packageId,
@@ -1200,7 +1224,7 @@ export class QuotationRepository implements IQuotationRepository {
                         priority: sample.priority || 'normal',
                         quantity: pkg.quantity,
                         percent_discount: pkg.discount,
-                        index_array: arrayIndex,
+                        index_array: indexArray,
                       },
                     });
                   } else {
@@ -1219,13 +1243,17 @@ export class QuotationRepository implements IQuotationRepository {
                           package_id: pkg.packageId,
                           quantity: pkg.quantity,
                           percent_discount: pkg.discount,
-                          index_array: arrayIndex,
+                          index_array: indexArray,
                           index_sample: sampleIndex,
                         },
                       });
                     }
                   }
-                  arrayIndex++;
+
+                  // Only increment arrayIndex if order was not provided
+                  if (pkg.order === undefined) {
+                    arrayIndex++;
+                  }
                 }
               }
 

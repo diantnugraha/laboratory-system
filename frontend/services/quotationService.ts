@@ -151,6 +151,7 @@ export interface SampleServiceInput {
   quantity: number;
   discount: number;
   id_detail?: number;
+  order?: number;
 }
 
 export interface SamplePackageInput {
@@ -158,6 +159,7 @@ export interface SamplePackageInput {
   quantity: number;
   discount: number;
   id_detail?: string;
+  order?: number;
 }
 
 export interface SampleInput {

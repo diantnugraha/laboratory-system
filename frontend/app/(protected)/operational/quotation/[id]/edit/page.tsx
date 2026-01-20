@@ -942,20 +942,30 @@ export default function QuotationEditPage() {
           priority: sample.priority,
           services: sample.services
             .filter(svc => svc.type === 'service')
-            .map(svc => ({
-              id: svc.itemId,
-              quantity: svc.quantity,
-              discount: svc.discount,
-              id_detail: svc.detailId,
-            })),
+            .map((svc) => {
+              // Find original index in the full services array to preserve order
+              const originalIndex = sample.services.findIndex(s => s.id === svc.id);
+              return {
+                id: svc.itemId,
+                quantity: svc.quantity,
+                discount: svc.discount,
+                id_detail: svc.detailId,
+                order: originalIndex,
+              };
+            }),
           packages: sample.services
             .filter(svc => svc.type === 'package')
-            .map(svc => ({
-              id: svc.itemId,
-              quantity: svc.quantity,
-              discount: svc.discount,
-              id_detail: svc.detailId ? String(svc.detailId) : undefined,
-            })),
+            .map((svc) => {
+              // Find original index in the full services array to preserve order
+              const originalIndex = sample.services.findIndex(s => s.id === svc.id);
+              return {
+                id: svc.itemId,
+                quantity: svc.quantity,
+                discount: svc.discount,
+                id_detail: svc.detailId ? String(svc.detailId) : undefined,
+                order: originalIndex,
+              };
+            }),
         })),
         products: products.map(product => ({
           name: product.name,
@@ -965,6 +975,14 @@ export default function QuotationEditPage() {
           id_detail: product.detailId,
         })),
       };
+
+      // Debug: Log the payload to see what orders are being sent
+      console.log('=== QUOTATION UPDATE PAYLOAD ===');
+      payload.samples?.forEach((sample, idx) => {
+        console.log(`Sample ${idx}: ${sample.name}`);
+        console.log('Services:', sample.services?.map(s => ({ id: s.id, id_detail: s.id_detail, order: s.order })));
+        console.log('Packages:', sample.packages?.map(p => ({ id: p.id, id_detail: p.id_detail, order: p.order })));
+      });
 
       await quotationService.update(quotationId, payload);
       toast.success('Quotation updated successfully');

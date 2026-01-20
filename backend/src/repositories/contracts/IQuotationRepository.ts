@@ -62,6 +62,7 @@ export interface ServiceDetailInput {
   quantity: number;
   discount: number;
   idDetail?: number; // For updates
+  order?: number; // Display order within sample
 }
 
 /**
@@ -72,6 +73,7 @@ export interface PackageDetailInput {
   quantity: number;
   discount: number;
   idDetail?: string; // Format: {packageId}__{indexSample}
+  order?: number; // Display order within sample
 }
 
 /**
