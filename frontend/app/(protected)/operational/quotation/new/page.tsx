@@ -145,8 +145,8 @@ const formatCurrency = (value: number) => {
 
 const getPriorityCharge = (priority: string) => {
   switch (priority) {
-    case 'urgent': return 25;
-    case 'very urgent': return 50;
+    case 'urgent': return 50;
+    case 'very urgent': return 100;
     default: return 0;
   }
 };
@@ -439,7 +439,6 @@ export default function QuotationNewPage() {
   };
 
   const addServiceToSample = (sampleId: string, service: ServiceOption) => {
-    const pc = getPriorityCharge(priority);
     const newService: SampleServiceItem = {
       id: `svc-${Date.now()}`,
       type: 'service',
@@ -449,7 +448,7 @@ export default function QuotationNewPage() {
       parameter: service.parameter?.name,
       method: service.method?.name,
       price: service.price,
-      discount: percentDiscount,
+      discount: 0,
       quantity: 1,
     };
     setSamples(prev => prev.map(s =>
@@ -467,7 +466,7 @@ export default function QuotationNewPage() {
       name: pkg.name,
       code: pkg.code,
       price: pkg.price,
-      discount: percentDiscount,
+      discount: 0,
       quantity: 1,
     };
     setSamples(prev => prev.map(s =>
@@ -1266,7 +1265,17 @@ export default function QuotationNewPage() {
                                   <TableCell className="font-medium">{svc.name}</TableCell>
                                   <TableCell className="text-muted-foreground">{svc.parameter || '-'}</TableCell>
                                   <TableCell className="text-muted-foreground">{svc.method || '-'}</TableCell>
-                                  <TableCell className="text-right">{formatCurrency(svc.price)}</TableCell>
+                                  <TableCell className="text-right">
+                                    {svc.discount > 0 ? (
+                                      <div>
+                                        <span className="line-through text-muted-foreground text-xs">{formatCurrency(svc.price)}</span>
+                                        <br />
+                                        <span className="text-green-600 font-medium">{formatCurrency(svc.price * (1 - svc.discount / 100))}</span>
+                                      </div>
+                                    ) : (
+                                      formatCurrency(svc.price)
+                                    )}
+                                  </TableCell>
                                   <TableCell className="text-center">
                                     <Input
                                       type="number"

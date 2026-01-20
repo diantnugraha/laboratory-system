@@ -82,9 +82,9 @@ const getPriorityBadge = (priority: string | null) => {
   if (!priority || priority === 'normal') return <Badge variant="outline">Normal</Badge>;
   switch (priority) {
     case "urgent":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent (+25% PC)</Badge>;
+      return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent (+50% PC)</Badge>;
     case "very urgent":
-      return <Badge variant="destructive">Very Urgent (+50% PC)</Badge>;
+      return <Badge variant="destructive">Very Urgent (+100% PC)</Badge>;
     default:
       return <Badge variant="outline">Normal</Badge>;
   }
@@ -402,6 +402,14 @@ export default function QuotationDetailPage() {
               </p>
               {getLabBadge(quotation.lab)}
             </div>
+            {percentDiscount > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Discount
+                </p>
+                <Badge variant="outline" className="text-green-600 border-green-600">{percentDiscount}%</Badge>
+              </div>
+            )}
             {quotation.sampling_request && (
               <>
                 <div className="space-y-1">
@@ -594,12 +602,12 @@ export default function QuotationDetailPage() {
                       <TableBody>
                         {serviceItems.map((item) => (
                           <TableRow key={item.id}>
-                            <TableCell>
+                            <TableCell className="align-top">
                               <Badge variant={item.packageId ? 'default' : 'secondary'}>
                                 {item.packageId ? 'Package' : 'Service'}
                               </Badge>
                             </TableCell>
-                            <TableCell className="font-medium">
+                            <TableCell className="font-medium align-top">
                               <div>
                                 <div className="font-semibold">
                                   <RenderHTML html={item.package?.name || item.service?.name || '-'} />
@@ -615,15 +623,28 @@ export default function QuotationDetailPage() {
                                 )}
                               </div>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="align-top">
                               {item.packageId && item.package?.services
                                 ? 'Various Methods'
                                 : item.service?.method?.name || '-'}
                             </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(item.package?.totalPrice || item.service?.price || item.price || 0)}
+                            <TableCell className="text-right align-top">
+                              {(() => {
+                                const originalPrice = item.package?.totalPrice || item.service?.price || item.price || 0;
+                                const discount = item.percentDiscount || 0;
+                                if (discount > 0) {
+                                  return (
+                                    <div>
+                                      <span className="line-through text-muted-foreground text-xs">{formatCurrency(originalPrice)}</span>
+                                      <br />
+                                      <span className="text-green-600 font-medium">{formatCurrency(originalPrice * (1 - discount / 100))}</span>
+                                    </div>
+                                  );
+                                }
+                                return formatCurrency(originalPrice);
+                              })()}
                             </TableCell>
-                            <TableCell className="text-right">{item.percentDiscount}%</TableCell>
+                            <TableCell className="text-right align-top">{item.percentDiscount}%</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

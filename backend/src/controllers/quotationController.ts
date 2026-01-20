@@ -84,6 +84,7 @@ function parseSamples(samplesInput: unknown): SampleInput[] | undefined {
             quantity: parseInt(svc.quantity || '1', 10),
             discount: parseFloat(svc.discount || '0'),
             idDetail: svc.id_detail ? parseInt(svc.id_detail, 10) : undefined,
+            order: svc.order !== undefined ? parseInt(svc.order, 10) : undefined,
           });
         }
       }
@@ -98,6 +99,7 @@ function parseSamples(samplesInput: unknown): SampleInput[] | undefined {
             quantity: parseInt(pkg.quantity || '1', 10),
             discount: parseFloat(pkg.discount || '0'),
             idDetail: pkg.id_detail,
+            order: pkg.order !== undefined ? parseInt(pkg.order, 10) : undefined,
           });
         }
       }

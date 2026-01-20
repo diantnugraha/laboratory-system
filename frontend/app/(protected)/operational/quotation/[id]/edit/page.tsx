@@ -184,8 +184,8 @@ const formatCurrency = (value: number) => {
 
 const getPriorityCharge = (priority: string) => {
   switch (priority) {
-    case 'urgent': return 25;
-    case 'very urgent': return 50;
+    case 'urgent': return 50;
+    case 'very urgent': return 100;
     default: return 0;
   }
 };
@@ -230,7 +230,7 @@ function SortableServiceRow({ svc, sampleId, onRemove, onUpdateDiscount }: Sorta
 
   return (
     <TableRow ref={setNodeRef} style={style} className={isDragging ? 'bg-muted/50' : ''}>
-      <TableCell className="w-[40px]">
+      <TableCell className="w-[40px] align-top">
         <button
           type="button"
           className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded"
@@ -240,12 +240,12 @@ function SortableServiceRow({ svc, sampleId, onRemove, onUpdateDiscount }: Sorta
           <GripVertical className="h-4 w-4 text-muted-foreground" />
         </button>
       </TableCell>
-      <TableCell>
+      <TableCell className="align-top">
         <Badge variant={svc.type === 'package' ? 'default' : 'secondary'}>
           {svc.type === 'package' ? 'Package' : 'Service'}
         </Badge>
       </TableCell>
-      <TableCell className="font-medium">
+      <TableCell className="font-medium align-top">
         <div>
           <div className="font-semibold" dangerouslySetInnerHTML={{ __html: svc.name }} />
           {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0 && (
@@ -257,13 +257,23 @@ function SortableServiceRow({ svc, sampleId, onRemove, onUpdateDiscount }: Sorta
           )}
         </div>
       </TableCell>
-      <TableCell className="text-muted-foreground">
+      <TableCell className="text-muted-foreground align-top">
         {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0
           ? 'Various Methods'
           : svc.method || '-'}
       </TableCell>
-      <TableCell className="text-right">{formatCurrency(svc.price)}</TableCell>
-      <TableCell className="text-center">
+      <TableCell className="text-right align-top">
+        {svc.discount > 0 ? (
+          <div>
+            <span className="line-through text-muted-foreground text-xs">{formatCurrency(svc.price)}</span>
+            <br />
+            <span className="text-green-600 font-medium">{formatCurrency(svc.price * (1 - svc.discount / 100))}</span>
+          </div>
+        ) : (
+          formatCurrency(svc.price)
+        )}
+      </TableCell>
+      <TableCell className="text-center align-top">
         <div className="flex items-center justify-center gap-1">
           <Input
             type="number"
@@ -276,7 +286,7 @@ function SortableServiceRow({ svc, sampleId, onRemove, onUpdateDiscount }: Sorta
           <span className="text-muted-foreground">%</span>
         </div>
       </TableCell>
-      <TableCell>
+      <TableCell className="align-top">
         <Button
           type="button"
           variant="ghost"
@@ -724,7 +734,7 @@ export default function QuotationEditPage() {
       parameter: service.parameter?.name,
       method: service.method?.name,
       price: parsePrice(service.price),
-      discount: percentDiscount,
+      discount: 0,
       quantity: 1,
     };
     setSamples(prev => prev.map(s =>
@@ -749,7 +759,7 @@ export default function QuotationEditPage() {
       name: pkg.name,
       code: pkg.code,
       price: parsePrice(pkg.price),
-      discount: percentDiscount,
+      discount: 0,
       quantity: 1,
       packageServices,
     };
