@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(python -c \"import base64; print\\(base64.b64encode\\(open\\(r''C:\\\\Users\\\\diann\\\\Documents\\\\Project Quo\\\\next.js-html-generator\\\\src\\\\assets\\\\tuv-nord-logo.png'', ''rb''\\).read\\(\\)\\).decode\\(\\)\\)\")"
     ]
   }
 }

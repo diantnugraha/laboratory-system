@@ -1,6 +1,21 @@
 import path from 'path';
 import fs from 'fs';
-import { browserPool } from './browserPool';
+import { browserPool } from './browserPool.js';
+
+/**
+ * TÜV NORD Logo as base64
+ */
+const TUV_NORD_LOGO = 'data:image/png;base64,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';
+
+/**
+ * Lab Info constants
+ */
+const LAB_INFO = {
+  name: 'Laboratorium PT TUV NORD Indonesia',
+  address: 'Jl.Science Timur 1 Blok B3-F1, Kawasan industri jababeka V, Kel. Setajaya Kec. Cikarang Timur, Kabupaten Bekasi - Jawa Barat - 17530',
+  phone: '+62 21 29574720',
+  email: 'cslab.id@tuv-nord.com',
+};
 
 /**
  * PDF Document Types
@@ -146,6 +161,7 @@ export interface COAData {
 /**
  * PDF Service Class
  * Handles PDF document generation using Puppeteer
+ * Design based on TÜV NORD reference template
  */
 export class PDFService {
   private templatesDir: string;
@@ -165,26 +181,372 @@ export class PDFService {
   }
 
   /**
-   * Format number to Indonesian currency format
+   * Format number to Indonesian decimal format (space as thousand separator)
    */
   private formatCurrency(amount: number): string {
     return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
+      style: 'decimal',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
   }
 
   /**
-   * Format date to Indonesian format
+   * Format date to English format (January 19, 2026)
    */
-  private formatDate(date: string): string {
-    return new Date(date).toLocaleDateString('id-ID', {
-      day: 'numeric',
+  private formatDateEnglish(date: string): string {
+    return new Date(date).toLocaleDateString('en-US', {
       month: 'long',
+      day: 'numeric',
       year: 'numeric',
     });
+  }
+
+  /**
+   * Space out characters in a string (for quotation numbers)
+   */
+  private spaceOut(value: string): string {
+    return value.split('').join(' ');
+  }
+
+  /**
+   * Get shared CSS styles matching TÜV NORD reference design
+   */
+  private getSharedStyles(): string {
+    return `
+      @page {
+        size: A4;
+        margin: 0;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 10px;
+        line-height: 1.25;
+        color: #000;
+      }
+      .page {
+        width: 210mm;
+        min-height: 297mm;
+        padding: 15mm;
+        background: white;
+        position: relative;
+      }
+      .tuv-blue { color: #005b9a; }
+      .bg-tuv-blue { background-color: #005b9a; }
+
+      /* Header styles */
+      .header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 6mm;
+      }
+      .logo-section {
+        display: flex;
+        flex-direction: column;
+      }
+      .logo-img {
+        height: 26mm;
+        width: auto;
+      }
+      .document-title {
+        font-size: 26px;
+        font-weight: bold;
+        letter-spacing: 0.08em;
+        margin-top: 18mm;
+      }
+      .header-right {
+        padding-top: 2mm;
+      }
+      .header-line {
+        height: 2px;
+        background: #005b9a;
+        width: 100%;
+        margin-bottom: 10mm;
+      }
+      .header-info {
+        font-size: 11px;
+        line-height: 1.25;
+      }
+      .header-info-row {
+        display: flex;
+        margin-bottom: 2px;
+      }
+      .header-info-label {
+        font-weight: bold;
+        width: 34mm;
+      }
+      .document-no {
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        margin-top: 2px;
+      }
+
+      /* Customer info styles */
+      .customer-section {
+        display: flex;
+        gap: 18mm;
+        margin-bottom: 4mm;
+        font-size: 11px;
+        line-height: 1.25;
+      }
+      .customer-left, .customer-right {
+        flex: 1;
+      }
+      .customer-row {
+        display: flex;
+        margin-bottom: 1px;
+      }
+      .customer-label {
+        font-weight: bold;
+        width: 26mm;
+        flex-shrink: 0;
+      }
+      .customer-label-right {
+        font-weight: bold;
+        width: 32mm;
+        flex-shrink: 0;
+      }
+
+      /* Table styles */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        border: 1px solid #000;
+        padding: 8px;
+        vertical-align: top;
+      }
+      th {
+        font-weight: bold;
+        text-align: center;
+        font-size: 11px;
+      }
+      .text-center { text-align: center; }
+      .text-right { text-align: right; }
+      .text-left { text-align: left; }
+
+      /* Summary table */
+      .summary-section {
+        display: flex;
+        gap: 5mm;
+        margin-top: 4mm;
+      }
+      .remarks-box {
+        flex: 1;
+        border: 1px solid #000;
+        padding: 8px;
+        min-height: 25mm;
+      }
+      .remarks-box strong {
+        display: block;
+        margin-bottom: 2mm;
+      }
+      .summary-table {
+        width: auto;
+        min-width: 200px;
+      }
+      .summary-table td {
+        padding: 4px 8px;
+        font-size: 10px;
+      }
+      .summary-label {
+        text-align: right;
+        font-weight: bold;
+      }
+      .summary-value {
+        text-align: right;
+        min-width: 100px;
+      }
+      .grand-total td {
+        font-weight: bold;
+        font-size: 11px;
+      }
+
+      /* Services grid */
+      .services-grid {
+        margin-top: 5mm;
+        margin-bottom: 5mm;
+        font-size: 10px;
+      }
+      .services-grid p {
+        margin-bottom: 4mm;
+      }
+      .services-grid table td {
+        padding: 8px;
+        vertical-align: top;
+      }
+      .services-grid .label-col {
+        width: 54mm;
+      }
+
+      /* Signature section */
+      .signature-section {
+        margin-top: 10mm;
+        font-size: 11px;
+      }
+      .signature-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 3mm;
+      }
+      .signature-label {
+        width: 40mm;
+      }
+      .signature-line {
+        flex: 1;
+        max-width: 200px;
+        border-bottom: 1px solid #000;
+        height: 20px;
+      }
+
+      /* Footer styles */
+      .footer {
+        margin-top: auto;
+        padding-top: 10mm;
+      }
+      .page-number {
+        text-align: right;
+        font-size: 10px;
+        margin-bottom: 6mm;
+      }
+      .footer-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        font-size: 10px;
+        line-height: 1.25;
+      }
+      .footer-left {
+        max-width: 120mm;
+      }
+      .footer-left strong {
+        display: block;
+        margin-bottom: 0.5mm;
+      }
+      .footer-right {
+        text-align: right;
+      }
+      .footer-logos {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-bottom: 2mm;
+      }
+      .ilac-logo {
+        font-size: 7px;
+        font-weight: bold;
+        color: #006600;
+        border: 1px solid #006600;
+        padding: 2px 4px;
+        border-radius: 50%;
+        text-align: center;
+        line-height: 1.2;
+      }
+      .kan-logo {
+        text-align: center;
+        font-size: 6px;
+        line-height: 1.2;
+      }
+      .kan-logo .kan-check {
+        font-size: 11px;
+        font-weight: bold;
+        color: #cc0000;
+      }
+      .tuv-group {
+        font-weight: bold;
+        color: #005b9a;
+        font-size: 9px;
+        letter-spacing: 0.5px;
+      }
+      .footer-lines {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 6mm;
+      }
+      .footer-line {
+        height: 2px;
+        background: #005b9a;
+        width: 78mm;
+      }
+    `;
+  }
+
+  /**
+   * Build header HTML
+   */
+  private buildHeader(title: string, code: string, date: string, expiryDate?: string): string {
+    return `
+      <div class="header-container">
+        <div class="logo-section">
+          <img src="${TUV_NORD_LOGO}" alt="TÜV NORD" class="logo-img" />
+          <div class="document-title">${title}</div>
+        </div>
+        <div class="header-right">
+          <div class="header-line"></div>
+          <div class="header-info">
+            <div class="header-info-row">
+              <span class="header-info-label">${title === 'QUOTATION' ? 'Quotation Date' : 'Date'}</span>
+              <span>${this.formatDateEnglish(date)}</span>
+            </div>
+            ${expiryDate ? `
+            <div class="header-info-row">
+              <span class="header-info-label">Expiration Date</span>
+              <span>${this.formatDateEnglish(expiryDate)}</span>
+            </div>
+            ` : ''}
+            <div class="header-info-row" style="margin-top: 3mm;">
+              <span class="header-info-label">${title === 'QUOTATION' ? 'Quotation No.' : 'No.'}</span>
+              <span></span>
+            </div>
+            <div class="document-no">${this.spaceOut(code)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Build footer HTML
+   */
+  private buildFooter(page: number, totalPages: number): string {
+    return `
+      <div class="footer">
+        <div class="page-number">Page ${page} from ${totalPages}</div>
+        <div class="footer-content">
+          <div class="footer-left">
+            <strong>${LAB_INFO.name}</strong>
+            <div>${LAB_INFO.address}</div>
+            <div>Email ${LAB_INFO.email}</div>
+            <div>Phone ${LAB_INFO.phone}</div>
+          </div>
+          <div class="footer-right">
+            <div class="footer-logos">
+              <div class="ilac-logo">ilac<br/>MRA</div>
+              <div class="kan-logo">
+                <div class="kan-check">✓ KAN</div>
+                <div>Komite Akreditasi Nasional</div>
+                <div>LP-411-IDN</div>
+                <div>LK-109-IDN</div>
+              </div>
+            </div>
+            <div class="tuv-group">TÜVNORDGROUP</div>
+          </div>
+        </div>
+        <div class="footer-lines">
+          <div class="footer-line"></div>
+          <div class="footer-line"></div>
+        </div>
+      </div>
+    `;
   }
 
   /**
@@ -205,22 +567,12 @@ export class PDFService {
           landscape: options.landscape || false,
           printBackground: true,
           margin: options.margin || {
-            top: '20mm',
-            right: '15mm',
-            bottom: '20mm',
-            left: '15mm',
+            top: '0',
+            right: '0',
+            bottom: '0',
+            left: '0',
           },
         };
-
-        if (options.displayHeaderFooter) {
-          pdfOptions.displayHeaderFooter = true;
-          pdfOptions.headerTemplate = options.headerTemplate || '';
-          pdfOptions.footerTemplate = options.footerTemplate || `
-            <div style="font-size: 10px; width: 100%; text-align: center; color: #666;">
-              <span class="pageNumber"></span> / <span class="totalPages"></span>
-            </div>
-          `;
-        }
 
         const pdfBuffer = await page.pdf(pdfOptions);
         return Buffer.from(pdfBuffer);
@@ -237,25 +589,23 @@ export class PDFService {
    */
   async generateSPPC(data: SPPCData): Promise<Buffer> {
     const html = this.buildSPPCTemplate(data);
-    return this.generatePDF(html, {
-      displayHeaderFooter: true,
-    });
+    return this.generatePDF(html);
   }
 
   /**
-   * Build SPPC HTML Template
+   * Build SPPC HTML Template - TÜV NORD style
    */
   private buildSPPCTemplate(data: SPPCData): string {
     const samplesHtml = data.samples.map((sample, idx) => `
-      <tr class="sample-header">
-        <td colspan="4"><strong>${idx + 1}. ${sample.code} - ${sample.name}</strong> (${sample.matrix})</td>
+      <tr style="background-color: #f5f5f5;">
+        <td colspan="4" style="font-weight: bold;">${idx + 1}. ${sample.code} - ${sample.name} (${sample.matrix})</td>
       </tr>
       ${sample.parameters.map((param, pIdx) => `
         <tr>
-          <td style="padding-left: 20px;">${idx + 1}.${pIdx + 1}</td>
+          <td class="text-center">${idx + 1}.${pIdx + 1}</td>
           <td>${param.name}</td>
           <td>${param.method}</td>
-          <td style="text-align: right;">${this.formatCurrency(param.price)}</td>
+          <td class="text-right">${this.formatCurrency(param.price)}</td>
         </tr>
       `).join('')}
     `).join('');
@@ -266,113 +616,93 @@ export class PDFService {
       <head>
         <meta charset="UTF-8">
         <style>
-          body { font-family: Arial, sans-serif; font-size: 12px; line-height: 1.5; }
-          .header { text-align: center; margin-bottom: 20px; }
-          .header h1 { margin: 0; font-size: 16px; }
-          .header p { margin: 5px 0; }
-          .info-table { width: 100%; margin-bottom: 20px; }
-          .info-table td { padding: 3px 0; vertical-align: top; }
-          .info-label { width: 120px; font-weight: bold; }
-          .services-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          .services-table th, .services-table td { border: 1px solid #333; padding: 8px; }
-          .services-table th { background-color: #f0f0f0; }
-          .sample-header td { background-color: #f9f9f9; }
-          .totals-table { width: 50%; margin-left: auto; }
-          .totals-table td { padding: 5px; }
-          .totals-table .label { text-align: right; }
-          .totals-table .value { text-align: right; width: 150px; }
-          .totals-table .total-row { font-weight: bold; border-top: 2px solid #333; }
-          .signature-section { margin-top: 50px; display: flex; justify-content: space-between; }
-          .signature-box { width: 200px; text-align: center; }
-          .signature-line { border-bottom: 1px solid #333; height: 60px; margin-bottom: 5px; }
+          ${this.getSharedStyles()}
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>SURAT PERSETUJUAN PENGUJIAN & KALIBRASI</h1>
-          <p>No: ${data.orderCode}</p>
-        </div>
+        <div class="page">
+          ${this.buildHeader('SPPC', data.orderCode, data.orderDate)}
 
-        <table class="info-table">
-          <tr>
-            <td class="info-label">Tanggal</td>
-            <td>: ${this.formatDate(data.orderDate)}</td>
-          </tr>
-          <tr>
-            <td class="info-label">Pelanggan</td>
-            <td>: ${data.customerName}</td>
-          </tr>
-          <tr>
-            <td class="info-label">Kontak</td>
-            <td>: ${data.contactName}</td>
-          </tr>
-          <tr>
-            <td class="info-label">Alamat</td>
-            <td>: ${data.address}</td>
-          </tr>
-          <tr>
-            <td class="info-label">Telepon</td>
-            <td>: ${data.phone}</td>
-          </tr>
-          <tr>
-            <td class="info-label">Email</td>
-            <td>: ${data.email}</td>
-          </tr>
-        </table>
-
-        <table class="services-table">
-          <thead>
-            <tr>
-              <th style="width: 50px;">No</th>
-              <th>Parameter</th>
-              <th style="width: 150px;">Metode</th>
-              <th style="width: 120px;">Harga</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${samplesHtml}
-          </tbody>
-        </table>
-
-        <table class="totals-table">
-          <tr>
-            <td class="label">Sub Total</td>
-            <td class="value">${this.formatCurrency(data.subTotal)}</td>
-          </tr>
-          ${data.discountValue > 0 ? `
-          <tr>
-            <td class="label">Diskon (${data.discountPercent}%)</td>
-            <td class="value">- ${this.formatCurrency(data.discountValue)}</td>
-          </tr>
-          ` : ''}
-          <tr>
-            <td class="label">PPN (${data.vatPercent}%)</td>
-            <td class="value">${this.formatCurrency(data.vatValue)}</td>
-          </tr>
-          <tr class="total-row">
-            <td class="label">Total</td>
-            <td class="value">${this.formatCurrency(data.total)}</td>
-          </tr>
-        </table>
-
-        ${data.remarks ? `
-        <div style="margin-top: 20px;">
-          <strong>Catatan:</strong>
-          <p>${data.remarks}</p>
-        </div>
-        ` : ''}
-
-        <div class="signature-section">
-          <div class="signature-box">
-            <p>Pelanggan</p>
-            <div class="signature-line"></div>
-            <p>(${data.contactName})</p>
+          <div class="customer-section">
+            <div class="customer-left">
+              <div class="customer-row">
+                <span class="customer-label">To</span>
+                <span>${data.contactName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Company</span>
+                <span>${data.customerName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Address</span>
+                <span>${data.address}</span>
+              </div>
+            </div>
+            <div class="customer-right">
+              <div class="customer-row">
+                <span class="customer-label-right">Phone</span>
+                <span>${data.phone || '-'}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Email Address</span>
+                <span>${data.email || ''}</span>
+              </div>
+            </div>
           </div>
-          <div class="signature-box">
-            <p>Laboratory</p>
-            <div class="signature-line"></div>
-            <p>(_________________)</p>
+
+          <table style="margin-bottom: 4mm; font-size: 11px;">
+            <thead>
+              <tr>
+                <th style="width: 44px;">No</th>
+                <th>Parameter</th>
+                <th style="width: 140px;">Method</th>
+                <th style="width: 140px;">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${samplesHtml}
+            </tbody>
+          </table>
+
+          <div class="summary-section">
+            <div class="remarks-box">
+              <strong>Remarks :</strong>
+              ${data.remarks ? `<div>${data.remarks}</div>` : ''}
+            </div>
+            <table class="summary-table">
+              <tr>
+                <td class="summary-label">Total (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.subTotal)}</td>
+              </tr>
+              ${data.discountValue > 0 ? `
+              <tr>
+                <td class="summary-label">Discount (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.discountValue)}</td>
+              </tr>
+              ` : ''}
+              <tr>
+                <td class="summary-label">VAT (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.vatValue)}</td>
+              </tr>
+              <tr class="grand-total">
+                <td class="summary-label">Grand Total (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.total)}</td>
+              </tr>
+            </table>
           </div>
+
+          <div class="signature-section">
+            <div class="signature-row">
+              <span class="signature-label">Customer Approval:</span>
+              <div class="signature-line"></div>
+            </div>
+            <div class="signature-row">
+              <span class="signature-label">Laboratory:</span>
+              <div class="signature-line"></div>
+            </div>
+          </div>
+
+          ${this.buildFooter(1, 1)}
         </div>
       </body>
       </html>
@@ -384,29 +714,25 @@ export class PDFService {
    */
   async generateQuotation(data: QuotationData): Promise<Buffer> {
     const html = this.buildQuotationTemplate(data);
-    return this.generatePDF(html, {
-      displayHeaderFooter: true,
-    });
+    return this.generatePDF(html);
   }
 
   /**
-   * Build Quotation HTML Template
+   * Build Quotation HTML Template - TÜV NORD style
    */
   private buildQuotationTemplate(data: QuotationData): string {
     const servicesHtml = data.services.map(service => `
       <tr>
-        <td style="text-align: center;">${service.no}</td>
+        <td class="text-left">${service.no}</td>
         <td>${service.description}</td>
-        <td style="text-align: center;">${service.quantity}</td>
-        <td style="text-align: center;">${service.unit}</td>
-        <td style="text-align: right;">${this.formatCurrency(service.unitPrice)}</td>
-        <td style="text-align: right;">${this.formatCurrency(service.total)}</td>
+        <td class="text-right">${this.formatCurrency(service.unitPrice)}</td>
+        <td class="text-left">${service.quantity}</td>
+        <td class="text-left">${data.discountPercent || 0}</td>
+        <td class="text-right">${this.formatCurrency(service.total)}</td>
       </tr>
     `).join('');
 
-    const termsHtml = data.termsAndConditions?.map((term, idx) =>
-      `<li>${term}</li>`
-    ).join('') || '';
+    const totalBeforeDiscount = data.services.reduce((sum, s) => sum + s.unitPrice * s.quantity, 0);
 
     return `
       <!DOCTYPE html>
@@ -414,125 +740,131 @@ export class PDFService {
       <head>
         <meta charset="UTF-8">
         <style>
-          body { font-family: Arial, sans-serif; font-size: 12px; line-height: 1.5; }
-          .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
-          .header h1 { margin: 0; font-size: 18px; color: #333; }
-          .info-section { display: flex; justify-content: space-between; margin-bottom: 20px; }
-          .info-box { width: 48%; }
-          .info-table { width: 100%; }
-          .info-table td { padding: 3px 0; vertical-align: top; }
-          .info-label { font-weight: bold; width: 100px; }
-          .services-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          .services-table th, .services-table td { border: 1px solid #333; padding: 8px; }
-          .services-table th { background-color: #2c3e50; color: white; }
-          .totals-table { width: 40%; margin-left: auto; }
-          .totals-table td { padding: 5px; }
-          .totals-table .label { text-align: right; }
-          .totals-table .value { text-align: right; width: 150px; }
-          .totals-table .total-row { font-weight: bold; background-color: #ecf0f1; }
-          .terms-section { margin-top: 30px; }
-          .terms-section h3 { margin-bottom: 10px; }
-          .terms-section ol { margin: 0; padding-left: 20px; }
-          .terms-section li { margin-bottom: 5px; }
+          ${this.getSharedStyles()}
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>QUOTATION / PENAWARAN HARGA</h1>
-          <p>No: ${data.quotationCode}</p>
-        </div>
+        <div class="page">
+          ${this.buildHeader('QUOTATION', data.quotationCode, data.quotationDate, data.validUntil)}
 
-        <div class="info-section">
-          <div class="info-box">
-            <table class="info-table">
-              <tr>
-                <td class="info-label">Kepada</td>
-                <td>: ${data.customerName}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Attn</td>
-                <td>: ${data.contactName}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Alamat</td>
-                <td>: ${data.address}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Telepon</td>
-                <td>: ${data.phone}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Email</td>
-                <td>: ${data.email}</td>
-              </tr>
-            </table>
+          <div class="customer-section">
+            <div class="customer-left">
+              <div class="customer-row">
+                <span class="customer-label">To</span>
+                <span>${data.contactName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Company</span>
+                <span>${data.customerName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Address</span>
+                <span>${data.address}</span>
+              </div>
+            </div>
+            <div class="customer-right">
+              <div class="customer-row">
+                <span class="customer-label-right">Phone</span>
+                <span>${data.phone || '-'}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Email Address</span>
+                <span>${data.email || ''}</span>
+              </div>
+            </div>
           </div>
-          <div class="info-box">
-            <table class="info-table">
-              <tr>
-                <td class="info-label">Tanggal</td>
-                <td>: ${this.formatDate(data.quotationDate)}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Berlaku s/d</td>
-                <td>: ${this.formatDate(data.validUntil)}</td>
-              </tr>
-            </table>
-          </div>
-        </div>
 
-        <table class="services-table">
-          <thead>
+          <table style="margin-bottom: 3mm; font-size: 11px;">
+            <thead>
+              <tr>
+                <th style="width: 44px;">No</th>
+                <th>ADDITIONAL CHARGE</th>
+                <th style="width: 140px;">PRICE</th>
+                <th style="width: 70px;">QTY</th>
+                <th style="width: 90px;">DISC%</th>
+                <th style="width: 140px;">TOTAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${servicesHtml}
+            </tbody>
+          </table>
+
+          <table style="width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 3mm;">
             <tr>
-              <th style="width: 40px;">No</th>
-              <th>Deskripsi</th>
-              <th style="width: 60px;">Qty</th>
-              <th style="width: 60px;">Satuan</th>
-              <th style="width: 120px;">Harga Satuan</th>
-              <th style="width: 120px;">Jumlah</th>
+              <td style="border: 1px solid #000; padding: 8px; width: 65%; vertical-align: top;">
+                <strong>Remarks :</strong>
+                ${data.remarks ? `<div style="margin-top: 2mm;">${data.remarks}</div>` : ''}
+              </td>
+              <td style="border: 1px solid #000; padding: 0; vertical-align: top;">
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="border: 1px solid #000; padding: 4px 8px; font-weight: bold; text-align: right;">Total (IDR)</td>
+                    <td style="border: 1px solid #000; padding: 4px 8px; font-weight: bold; text-align: right; width: 140px;">${this.formatCurrency(totalBeforeDiscount)}</td>
+                  </tr>
+                  <tr>
+                    <td style="border: 1px solid #000; padding: 4px 8px; font-weight: bold; text-align: right;">Discount (IDR)</td>
+                    <td style="border: 1px solid #000; padding: 4px 8px; text-align: right;">${this.formatCurrency(data.discountValue)}</td>
+                  </tr>
+                  <tr>
+                    <td style="border: 1px solid #000; padding: 4px 8px; font-weight: bold; text-align: right;">Priority Chrg (IDR)</td>
+                    <td style="border: 1px solid #000; padding: 4px 8px; text-align: right;">0</td>
+                  </tr>
+                  <tr>
+                    <td style="border: 1px solid #000; padding: 4px 8px; font-weight: bold; text-align: right;">Sub Total (IDR)</td>
+                    <td style="border: 1px solid #000; padding: 4px 8px; text-align: right;">${this.formatCurrency(data.subTotal)}</td>
+                  </tr>
+                  <tr>
+                    <td style="border: 1px solid #000; padding: 4px 8px; font-weight: bold; text-align: right;">VAT (IDR)</td>
+                    <td style="border: 1px solid #000; padding: 4px 8px; text-align: right;">${this.formatCurrency(data.vatValue)}</td>
+                  </tr>
+                  <tr>
+                    <td style="border: 1px solid #000; padding: 4px 8px; font-weight: bold; text-align: right;">Grand Total (IDR)</td>
+                    <td style="border: 1px solid #000; padding: 4px 8px; font-weight: bold; text-align: right;">${this.formatCurrency(data.total)}</td>
+                  </tr>
+                </table>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            ${servicesHtml}
-          </tbody>
-        </table>
+          </table>
 
-        <table class="totals-table">
-          <tr>
-            <td class="label">Sub Total</td>
-            <td class="value">${this.formatCurrency(data.subTotal)}</td>
-          </tr>
-          ${data.discountValue > 0 ? `
-          <tr>
-            <td class="label">Diskon (${data.discountPercent}%)</td>
-            <td class="value">- ${this.formatCurrency(data.discountValue)}</td>
-          </tr>
-          ` : ''}
-          <tr>
-            <td class="label">PPN (${data.vatPercent}%)</td>
-            <td class="value">${this.formatCurrency(data.vatValue)}</td>
-          </tr>
-          <tr class="total-row">
-            <td class="label">Total</td>
-            <td class="value">${this.formatCurrency(data.total)}</td>
-          </tr>
-        </table>
+          <div class="services-grid">
+            <p>With our experience and expertise in ITC (Inspection, Testing & Certification) business we also offer you one stop solution with special discount for another valuable services that we can provided:</p>
+            <table>
+              <thead>
+                <tr>
+                  <th colspan="2">Services</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="label-col">System Certification<br/>(Additional Scheme)</td>
+                  <td>ISO 9001, ISO 14001, ISO 45001, ISO 27001, ISO 37001, ISO 50001, IATF, ISO 22000, FSSC 22000, HACCP, ISPO, ISCC, etc.</td>
+                </tr>
+                <tr>
+                  <td>Product Certification</td>
+                  <td>SNI, CE, GS, etc.</td>
+                </tr>
+                <tr>
+                  <td>Inspection</td>
+                  <td>Rack Inspection, QA/QC Inspection, etc.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-        ${termsHtml ? `
-        <div class="terms-section">
-          <h3>Syarat & Ketentuan:</h3>
-          <ol>
-            ${termsHtml}
-          </ol>
+          <div class="signature-section">
+            <div class="signature-row">
+              <span class="signature-label">Created by</span>
+              <span style="font-weight: bold;">_________________</span>
+            </div>
+            <div class="signature-row" style="margin-top: 4mm;">
+              <span class="signature-label">Customer Approval:</span>
+              <div class="signature-line"></div>
+            </div>
+          </div>
+
+          ${this.buildFooter(1, 1)}
         </div>
-        ` : ''}
-
-        ${data.remarks ? `
-        <div style="margin-top: 20px;">
-          <strong>Catatan:</strong>
-          <p>${data.remarks}</p>
-        </div>
-        ` : ''}
       </body>
       </html>
     `;
@@ -543,21 +875,19 @@ export class PDFService {
    */
   async generateInvoice(data: InvoiceData): Promise<Buffer> {
     const html = this.buildInvoiceTemplate(data);
-    return this.generatePDF(html, {
-      displayHeaderFooter: true,
-    });
+    return this.generatePDF(html);
   }
 
   /**
-   * Build Invoice HTML Template
+   * Build Invoice HTML Template - TÜV NORD style
    */
   private buildInvoiceTemplate(data: InvoiceData): string {
     const ordersHtml = data.orders.map((order, idx) => `
       <tr>
-        <td style="text-align: center;">${idx + 1}</td>
+        <td class="text-left">${idx + 1}</td>
         <td>${order.code}</td>
         <td>${order.description}</td>
-        <td style="text-align: right;">${this.formatCurrency(order.total)}</td>
+        <td class="text-right">${this.formatCurrency(order.total)}</td>
       </tr>
     `).join('');
 
@@ -567,132 +897,113 @@ export class PDFService {
       <head>
         <meta charset="UTF-8">
         <style>
-          body { font-family: Arial, sans-serif; font-size: 12px; line-height: 1.5; }
-          .header { text-align: center; margin-bottom: 30px; }
-          .header h1 { margin: 0; font-size: 20px; color: #c0392b; }
-          .invoice-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
-          .invoice-box { width: 48%; }
-          .info-table { width: 100%; }
-          .info-table td { padding: 3px 0; vertical-align: top; }
-          .info-label { font-weight: bold; width: 100px; }
-          .orders-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          .orders-table th, .orders-table td { border: 1px solid #333; padding: 10px; }
-          .orders-table th { background-color: #c0392b; color: white; }
-          .totals-table { width: 50%; margin-left: auto; }
-          .totals-table td { padding: 8px; }
-          .totals-table .label { text-align: right; font-weight: bold; }
-          .totals-table .value { text-align: right; width: 150px; }
-          .totals-table .total-row { font-size: 14px; background-color: #fadbd8; }
-          .bank-info { margin-top: 30px; padding: 15px; background-color: #f9f9f9; border: 1px solid #ddd; }
-          .bank-info h3 { margin: 0 0 10px 0; }
+          ${this.getSharedStyles()}
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>INVOICE</h1>
-        </div>
+        <div class="page">
+          ${this.buildHeader('INVOICE', data.invoiceCode, data.invoiceDate)}
 
-        <div class="invoice-info">
-          <div class="invoice-box">
-            <table class="info-table">
-              <tr>
-                <td class="info-label">No. Invoice</td>
-                <td>: ${data.invoiceCode}</td>
-              </tr>
+          <div class="customer-section">
+            <div class="customer-left">
+              <div class="customer-row">
+                <span class="customer-label">Invoice No.</span>
+                <span>${data.invoiceCode}</span>
+              </div>
               ${data.fakturNo ? `
-              <tr>
-                <td class="info-label">No. Faktur</td>
-                <td>: ${data.fakturNo}</td>
-              </tr>
+              <div class="customer-row">
+                <span class="customer-label">Faktur No.</span>
+                <span>${data.fakturNo}</span>
+              </div>
               ` : ''}
-              <tr>
-                <td class="info-label">Tanggal</td>
-                <td>: ${this.formatDate(data.invoiceDate)}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Jatuh Tempo</td>
-                <td>: ${this.formatDate(data.dueDate)}</td>
-              </tr>
-            </table>
-          </div>
-          <div class="invoice-box">
-            <table class="info-table">
-              <tr>
-                <td class="info-label">Kepada</td>
-                <td>: ${data.customerName}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Attn</td>
-                <td>: ${data.contactName}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Alamat</td>
-                <td>: ${data.address}</td>
-              </tr>
+              <div class="customer-row">
+                <span class="customer-label">Date</span>
+                <span>${this.formatDateEnglish(data.invoiceDate)}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Due Date</span>
+                <span>${this.formatDateEnglish(data.dueDate)}</span>
+              </div>
+            </div>
+            <div class="customer-right">
+              <div class="customer-row">
+                <span class="customer-label-right">To</span>
+                <span>${data.contactName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Company</span>
+                <span>${data.customerName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Address</span>
+                <span>${data.address}</span>
+              </div>
               ${data.npwp ? `
+              <div class="customer-row">
+                <span class="customer-label-right">NPWP</span>
+                <span>${data.npwp}</span>
+              </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <table style="margin-bottom: 4mm; font-size: 11px;">
+            <thead>
               <tr>
-                <td class="info-label">NPWP</td>
-                <td>: ${data.npwp}</td>
+                <th style="width: 44px;">No</th>
+                <th style="width: 120px;">Order Code</th>
+                <th>Description</th>
+                <th style="width: 150px;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ordersHtml}
+            </tbody>
+          </table>
+
+          <div style="display: flex; justify-content: flex-end;">
+            <table class="summary-table" style="width: auto;">
+              <tr>
+                <td class="summary-label">Sub Total (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.subTotal)}</td>
+              </tr>
+              ${data.discountValue > 0 ? `
+              <tr>
+                <td class="summary-label">Discount (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.discountValue)}</td>
               </tr>
               ` : ''}
+              <tr>
+                <td class="summary-label">VAT (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.vatValue)}</td>
+              </tr>
+              <tr class="grand-total">
+                <td class="summary-label">Grand Total (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.total)}</td>
+              </tr>
             </table>
           </div>
-        </div>
 
-        <table class="orders-table">
-          <thead>
-            <tr>
-              <th style="width: 40px;">No</th>
-              <th style="width: 120px;">Kode Order</th>
-              <th>Deskripsi</th>
-              <th style="width: 150px;">Jumlah</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${ordersHtml}
-          </tbody>
-        </table>
-
-        <table class="totals-table">
-          <tr>
-            <td class="label">Sub Total</td>
-            <td class="value">${this.formatCurrency(data.subTotal)}</td>
-          </tr>
-          ${data.discountValue > 0 ? `
-          <tr>
-            <td class="label">Diskon</td>
-            <td class="value">- ${this.formatCurrency(data.discountValue)}</td>
-          </tr>
+          ${data.bankName ? `
+          <div style="margin-top: 8mm; padding: 10px; border: 1px solid #000;">
+            <strong style="display: block; margin-bottom: 3mm;">Payment Information:</strong>
+            <div class="customer-row">
+              <span style="font-weight: bold; width: 100px; display: inline-block;">Bank</span>
+              <span>: ${data.bankName}</span>
+            </div>
+            <div class="customer-row">
+              <span style="font-weight: bold; width: 100px; display: inline-block;">Account Name</span>
+              <span>: ${data.accountName}</span>
+            </div>
+            <div class="customer-row">
+              <span style="font-weight: bold; width: 100px; display: inline-block;">Account No.</span>
+              <span>: ${data.accountNumber}</span>
+            </div>
+          </div>
           ` : ''}
-          <tr>
-            <td class="label">PPN</td>
-            <td class="value">${this.formatCurrency(data.vatValue)}</td>
-          </tr>
-          <tr class="total-row">
-            <td class="label">TOTAL</td>
-            <td class="value">${this.formatCurrency(data.total)}</td>
-          </tr>
-        </table>
 
-        ${data.bankName ? `
-        <div class="bank-info">
-          <h3>Informasi Pembayaran:</h3>
-          <table class="info-table">
-            <tr>
-              <td class="info-label">Bank</td>
-              <td>: ${data.bankName}</td>
-            </tr>
-            <tr>
-              <td class="info-label">Atas Nama</td>
-              <td>: ${data.accountName}</td>
-            </tr>
-            <tr>
-              <td class="info-label">No. Rekening</td>
-              <td>: ${data.accountNumber}</td>
-            </tr>
-          </table>
+          ${this.buildFooter(1, 1)}
         </div>
-        ` : ''}
       </body>
       </html>
     `;
@@ -703,33 +1014,31 @@ export class PDFService {
    */
   async generateCOA(data: COAData): Promise<Buffer> {
     const html = this.buildCOATemplate(data);
-    return this.generatePDF(html, {
-      displayHeaderFooter: true,
-    });
+    return this.generatePDF(html);
   }
 
   /**
-   * Build COA HTML Template
+   * Build COA HTML Template - TÜV NORD style
    */
   private buildCOATemplate(data: COAData): string {
+    const hasSpecification = data.parameters.some(p => p.specification);
+    const hasStatus = data.parameters.some(p => p.status);
+
     const parametersHtml = data.parameters.map((param, idx) => `
       <tr>
-        <td style="text-align: center;">${idx + 1}</td>
+        <td class="text-center">${idx + 1}</td>
         <td>${param.name}</td>
         <td>${param.method}</td>
-        <td style="text-align: center;">${param.result}</td>
-        <td style="text-align: center;">${param.unit}</td>
-        ${param.specification ? `<td style="text-align: center;">${param.specification}</td>` : ''}
-        ${param.status ? `
-          <td style="text-align: center; color: ${param.status === 'pass' ? 'green' : 'red'};">
+        <td class="text-center">${param.result}</td>
+        <td class="text-center">${param.unit}</td>
+        ${hasSpecification ? `<td class="text-center">${param.specification || '-'}</td>` : ''}
+        ${hasStatus ? `
+          <td class="text-center" style="color: ${param.status === 'pass' ? '#006600' : '#cc0000'}; font-weight: bold;">
             ${param.status === 'pass' ? 'PASS' : 'FAIL'}
           </td>
         ` : ''}
       </tr>
     `).join('');
-
-    const hasSpecification = data.parameters.some(p => p.specification);
-    const hasStatus = data.parameters.some(p => p.status);
 
     return `
       <!DOCTYPE html>
@@ -737,111 +1046,93 @@ export class PDFService {
       <head>
         <meta charset="UTF-8">
         <style>
-          body { font-family: Arial, sans-serif; font-size: 11px; line-height: 1.4; }
-          .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #27ae60; padding-bottom: 15px; }
-          .header h1 { margin: 0; font-size: 16px; color: #27ae60; }
-          .header h2 { margin: 5px 0; font-size: 14px; color: #333; }
-          .info-section { display: flex; justify-content: space-between; margin-bottom: 15px; }
-          .info-box { width: 48%; }
-          .info-table { width: 100%; }
-          .info-table td { padding: 2px 0; vertical-align: top; }
-          .info-label { font-weight: bold; width: 100px; }
-          .results-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-          .results-table th, .results-table td { border: 1px solid #333; padding: 6px; }
-          .results-table th { background-color: #27ae60; color: white; font-size: 10px; }
-          .conclusion { margin-top: 20px; padding: 10px; background-color: #e8f8f5; border-left: 4px solid #27ae60; }
-          .signature-section { margin-top: 40px; display: flex; justify-content: flex-end; }
-          .signature-box { width: 200px; text-align: center; }
-          .signature-line { border-bottom: 1px solid #333; height: 50px; margin-bottom: 5px; }
+          ${this.getSharedStyles()}
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>CERTIFICATE OF ANALYSIS</h1>
-          <h2>No: ${data.coaCode}</h2>
-        </div>
+        <div class="page">
+          ${this.buildHeader('CERTIFICATE OF ANALYSIS', data.coaCode, data.analysisDate)}
 
-        <div class="info-section">
-          <div class="info-box">
-            <table class="info-table">
-              <tr>
-                <td class="info-label">Order No</td>
-                <td>: ${data.orderCode}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Sample Code</td>
-                <td>: ${data.sampleCode}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Sample Name</td>
-                <td>: ${data.sampleName}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Matrix</td>
-                <td>: ${data.matrix}</td>
-              </tr>
-            </table>
+          <div class="customer-section">
+            <div class="customer-left">
+              <div class="customer-row">
+                <span class="customer-label">Order No.</span>
+                <span>${data.orderCode}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Sample Code</span>
+                <span>${data.sampleCode}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Sample Name</span>
+                <span>${data.sampleName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Matrix</span>
+                <span>${data.matrix}</span>
+              </div>
+            </div>
+            <div class="customer-right">
+              <div class="customer-row">
+                <span class="customer-label-right">Customer</span>
+                <span>${data.customerName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Contact</span>
+                <span>${data.contactName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Received Date</span>
+                <span>${this.formatDateEnglish(data.receivedDate)}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Analysis Date</span>
+                <span>${this.formatDateEnglish(data.analysisDate)}</span>
+              </div>
+            </div>
           </div>
-          <div class="info-box">
-            <table class="info-table">
+
+          <table style="margin-bottom: 4mm; font-size: 10px;">
+            <thead>
               <tr>
-                <td class="info-label">Customer</td>
-                <td>: ${data.customerName}</td>
+                <th style="width: 30px;">No</th>
+                <th>Parameter</th>
+                <th style="width: 120px;">Method</th>
+                <th style="width: 80px;">Result</th>
+                <th style="width: 60px;">Unit</th>
+                ${hasSpecification ? '<th style="width: 80px;">Spec</th>' : ''}
+                ${hasStatus ? '<th style="width: 60px;">Status</th>' : ''}
               </tr>
-              <tr>
-                <td class="info-label">Contact</td>
-                <td>: ${data.contactName}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Received Date</td>
-                <td>: ${this.formatDate(data.receivedDate)}</td>
-              </tr>
-              <tr>
-                <td class="info-label">Analysis Date</td>
-                <td>: ${this.formatDate(data.analysisDate)}</td>
-              </tr>
-            </table>
+            </thead>
+            <tbody>
+              ${parametersHtml}
+            </tbody>
+          </table>
+
+          ${data.conclusion ? `
+          <div style="margin-top: 5mm; padding: 10px; border-left: 4px solid #005b9a; background-color: #f5f9fc;">
+            <strong>Conclusion:</strong>
+            <p style="margin-top: 2mm;">${data.conclusion}</p>
           </div>
-        </div>
+          ` : ''}
 
-        <table class="results-table">
-          <thead>
-            <tr>
-              <th style="width: 30px;">No</th>
-              <th>Parameter</th>
-              <th style="width: 120px;">Method</th>
-              <th style="width: 80px;">Result</th>
-              <th style="width: 60px;">Unit</th>
-              ${hasSpecification ? '<th style="width: 80px;">Spec</th>' : ''}
-              ${hasStatus ? '<th style="width: 50px;">Status</th>' : ''}
-            </tr>
-          </thead>
-          <tbody>
-            ${parametersHtml}
-          </tbody>
-        </table>
-
-        ${data.conclusion ? `
-        <div class="conclusion">
-          <strong>Conclusion:</strong>
-          <p>${data.conclusion}</p>
-        </div>
-        ` : ''}
-
-        ${data.remarks ? `
-        <div style="margin-top: 15px;">
-          <strong>Remarks:</strong>
-          <p>${data.remarks}</p>
-        </div>
-        ` : ''}
-
-        <div class="signature-section">
-          <div class="signature-box">
-            <p>Approved by</p>
-            <div class="signature-line"></div>
-            <p>${data.approvedBy || '_________________'}</p>
-            ${data.approvedDate ? `<p style="font-size: 10px;">${this.formatDate(data.approvedDate)}</p>` : ''}
+          ${data.remarks ? `
+          <div style="margin-top: 4mm;">
+            <strong>Remarks:</strong>
+            <p style="margin-top: 2mm;">${data.remarks}</p>
           </div>
+          ` : ''}
+
+          <div class="signature-section" style="display: flex; justify-content: flex-end; margin-top: 15mm;">
+            <div style="text-align: center; width: 200px;">
+              <p>Approved by</p>
+              <div style="border-bottom: 1px solid #000; height: 50px; margin: 5px 0;"></div>
+              <p style="font-weight: bold;">${data.approvedBy || '_________________'}</p>
+              ${data.approvedDate ? `<p style="font-size: 9px;">${this.formatDateEnglish(data.approvedDate)}</p>` : ''}
+            </div>
+          </div>
+
+          ${this.buildFooter(1, 1)}
         </div>
       </body>
       </html>
