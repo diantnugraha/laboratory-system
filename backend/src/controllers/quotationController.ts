@@ -762,7 +762,7 @@ export const previewQuotationPdf = async (request: FastifyRequest, reply: Fastif
       sampleMap.set(sampleIndex, {
         name: detail.sampleName,
         priority: detail.priority,
-        quantity: detail.quantity,
+        quantity: 1, // Sample quantity is always 1 for quotations (detail.quantity is service quantity, not sample quantity)
         services: [],
       });
     }
