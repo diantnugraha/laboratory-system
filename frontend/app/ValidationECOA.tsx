@@ -270,7 +270,7 @@ export default function ValidationECOA() {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © 2025 SIMLab TUV Nord Indonesia. All rights reserved.
+          © 2026 LabFLow TUV Nord Indonesia. All rights reserved.
         </p>
       </div>
     </div>

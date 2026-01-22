@@ -3,7 +3,7 @@ import { Providers } from './providers';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'SIMLab',
+  title: 'LabFlow',
   description: 'Laboratory Information Management System',
   icons: {
     icon: [

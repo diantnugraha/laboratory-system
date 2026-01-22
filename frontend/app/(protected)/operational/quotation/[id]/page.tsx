@@ -9,7 +9,6 @@ import {
   Trash2,
   FileText,
   User,
-  MapPin,
   Calendar,
   Loader2,
   Package,
@@ -67,34 +66,16 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-const getStatusVariant = (status: string) => {
-  switch (status) {
-    case "Created":
-      return "secondary";
-    case "Order":
-      return "default";
-    default:
-      return "secondary";
-  }
-};
-
-const getPriorityBadge = (priority: string | null) => {
-  if (!priority || priority === 'normal') return <Badge variant="outline">Normal</Badge>;
-  switch (priority) {
+const getPriorityText = (priority: string | null): string => {
+  if (!priority || priority === 'normal') return 'Normal (0% PC)';
+  switch (priority.toLowerCase()) {
     case "urgent":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent (+50% PC)</Badge>;
+      return 'Urgent (+50% PC)';
     case "very urgent":
-      return <Badge variant="destructive">Very Urgent (+100% PC)</Badge>;
+      return 'Very Urgent (+100% PC)';
     default:
-      return <Badge variant="outline">Normal</Badge>;
+      return 'Normal (0% PC)';
   }
-};
-
-const getLabBadge = (lab: string | null) => {
-  if (lab === '2') {
-    return <Badge variant="outline" className="text-green-600 border-green-600">Environmental</Badge>;
-  }
-  return <Badge variant="outline">Standard</Badge>;
 };
 
 const getContactFullName = (contact: Quotation['contact']) => {
@@ -285,11 +266,6 @@ export default function QuotationDetailPage() {
           </Button>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold text-foreground">{quotation.code}</h1>
-            <Badge variant={getStatusVariant(quotation.quo_status)}>
-              {quotation.quo_status}
-            </Badge>
-            {getPriorityBadge(quotation.priority)}
-            {getLabBadge(quotation.lab)}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -368,14 +344,6 @@ export default function QuotationDetailPage() {
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Status
-              </p>
-              <Badge variant={getStatusVariant(quotation.quo_status)}>
-                {quotation.quo_status}
-              </Badge>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Quotation Date
               </p>
               <p className="text-sm font-medium">{formatDate(quotation.quo_date)}</p>
@@ -388,15 +356,9 @@ export default function QuotationDetailPage() {
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Priority
+                Priority Charge
               </p>
-              {getPriorityBadge(quotation.priority)}
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Lab Type
-              </p>
-              {getLabBadge(quotation.lab)}
+              <p className="text-sm font-medium">{getPriorityText(quotation.priority)}</p>
             </div>
             {percentDiscount > 0 && (
               <div className="space-y-1">
@@ -503,22 +465,8 @@ export default function QuotationDetailPage() {
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Address Info */}
-      {quotation.address && (
-        <Card className="overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
-            <CardTitle className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-primary/10">
-                <MapPin className="h-4 w-4 text-primary" />
-              </div>
-              Address
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {quotation.address && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t">
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   Address Type
@@ -529,30 +477,18 @@ export default function QuotationDetailPage() {
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   Full Address
                 </p>
-                <p className="text-sm font-medium">{quotation.address.address}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  City
+                <p className="text-sm font-medium leading-relaxed">
+                  {quotation.address.address}
+                  {quotation.address.city && `, ${quotation.address.city}`}
+                  {quotation.address.state && `, ${quotation.address.state}`}
+                  {quotation.address.postal_code && ` ${quotation.address.postal_code}`}
+                  {quotation.address.country && `, ${quotation.address.country}`}
                 </p>
-                <p className="text-sm font-medium">{quotation.address.city}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  State/Province
-                </p>
-                <p className="text-sm font-medium">{quotation.address.state}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Country
-                </p>
-                <p className="text-sm font-medium">{quotation.address.country}</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
       {/* Samples & Services */}
       {sampleGroups.length > 0 && (

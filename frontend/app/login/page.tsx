@@ -73,7 +73,7 @@ export default function Login() {
             </div>
             <div className="space-y-1">
               <CardTitle className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-                SIMLab
+                LabFlow
               </CardTitle>
               <CardDescription className="text-muted-foreground">
                 Sign in to access your laboratory dashboard
@@ -174,16 +174,12 @@ export default function Login() {
               <Shield className="h-4 w-4 mr-2 group-hover:text-primary transition-colors" />
               <span className="group-hover:text-primary transition-colors">Validation ECOA</span>
             </Button>
-
-            <p className="text-xs text-muted-foreground text-center">
-              Demo: Use any email and password to login
-            </p>
           </CardContent>
         </Card>
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © 2024 SIMLab. All rights reserved.
+          © 2026 LabFlow. All rights reserved.
         </p>
       </div>
     </div>
