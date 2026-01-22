@@ -34,11 +34,9 @@ function getIlacMraLogoBuffer(): Buffer {
 function getKanLogoBuffer(): Buffer | null {
   if (!cachedLogos.kan) {
     try {
-      // Try PNG first
       const logoPath = path.join(__dirname, '../assets/pdf/kan-logo.png');
       cachedLogos.kan = fs.readFileSync(logoPath);
     } catch {
-      // If PNG doesn't exist, return null (SVG not supported by PDFKit)
       return null;
     }
   }
@@ -206,7 +204,7 @@ interface PackageDetail { id: number; name: string; totalPrice: number | null; s
 interface SampleItem { name: string; priority: string; quantity: number; services: Array<{ service?: ServiceDetail; package?: PackageDetail; quantity: number; discount: number; price: number; isProduct?: boolean; }>; }
 interface ProductItem { name: string; price: number; quantity: number; discount: number; }
 interface CreatorData { first_name: string; middle_name?: string | null; surname: string; }
-export interface QuotationPdfData { id: number; code: string; quo_date: Date; created_at: Date; expired_date: Date; priority: string; lab?: string | null; percent_vat: number; percent_discount: number; remarks?: string | null; customer: CustomerData; contact: ContactData; address: AddressData; creator: CreatorData; samples: SampleItem[]; products: ProductItem[]; }
+export interface QuotationPdfData { id: number; code: string; quo_date: Date; created_at: Date; expired_date: Date; priority: string; lab?: string | null; percent_vat: number; percent_discount: number; remarks?: string | null; customer: CustomerData; contact: ContactData; address: AddressData; creator: CreatorData; samples: SampleItem[]; products: ProductItem[]; totals?: { total: number; discount: number; priorityCharge: number; subTotal: number; vat: number; grandTotal: number; }; }
 
 export class QuotationPdfService {
   private formatCurrency(amount: number): string {
@@ -242,7 +240,21 @@ export class QuotationPdfService {
     }
   }
 
-  private calculateTotals(data: QuotationPdfData, isSpecial: boolean) {
+  private calculateTotals(data: QuotationPdfData, _isSpecial: boolean) {
+    // Use pre-calculated totals from database if available (same as frontend)
+    if (data.totals) {
+      return {
+        totalBasePrice: Math.round(data.totals.total),
+        totalDiscount: Math.round(data.totals.discount),
+        totalPriorityCharge: Math.round(data.totals.priorityCharge),
+        subTotal: Math.round(data.totals.subTotal),
+        vat: Math.round(data.totals.vat),
+        grandTotal: Math.round(data.totals.grandTotal),
+        productSubTotal: 0,
+      };
+    }
+
+    // Fallback: calculate from items (legacy behavior)
     let totalBasePrice = 0, totalDiscount = 0, totalPriorityCharge = 0, productSubTotal = 0;
 
     for (const product of data.products || []) {
@@ -256,12 +268,11 @@ export class QuotationPdfService {
     for (const sample of data.samples || []) {
       const priorityRate = this.getPriorityRate(sample.priority), sampleQty = Number(sample.quantity) || 1;
       for (const item of sample.services || []) {
-        // BUGFIX: Prioritize service.price from master data over item.price from quotation_detail
         let itemPrice = item.package ? (Number(item.package.totalPrice) || 0) : item.service ? (Number(item.service.price) || Number(item.price) || 0) : item.isProduct ? (Number(item.price) || 0) : 0;
         const itemQty = Number(item.quantity) || 1, itemDiscount = Number(item.discount) || 0;
         const basePrice = itemPrice * itemQty * sampleQty, discountAmount = (itemDiscount / 100) * basePrice, afterDiscount = basePrice - discountAmount;
         let priorityCharge = 0;
-        if (!isSpecial) {
+        if (!_isSpecial) {
           if (item.service) { const canApplyPc = item.service.parameter_id !== 0 || item.service.parameter_id === undefined; if (canApplyPc || item.service.use_pc) priorityCharge = (priorityRate / 100) * afterDiscount; }
           else if (item.package) priorityCharge = (priorityRate / 100) * afterDiscount;
         }
@@ -321,14 +332,14 @@ export class QuotationPdfService {
     const y = MARGIN_TOP;
 
     // Draw TUV NORD logo
-    doc.image(getTuvNordLogoBuffer(), x, y, { width: mm(55), height: mm(16) });
+    doc.image(getTuvNordLogoBuffer(), x, y, { width: mm(40), height: mm(20) });
 
     // Draw "QUOTATION" title (only on first page)
     if (pageIndex === 0) {
       doc.font('Helvetica-Bold')
          .fontSize(22)
          .fillColor('#000000')
-         .text('QUOTATION', x, y + mm(20), { characterSpacing: 0.5 });
+         .text('QUOTATION', x, y + mm(25), { characterSpacing: 0.5 });
     }
 
     // Right section - Blue line, table, barcode
@@ -339,7 +350,7 @@ export class QuotationPdfService {
     doc.moveTo(rightX, rightY)
        .lineTo(PAGE_WIDTH - MARGIN_RIGHT, rightY)
        .lineWidth(mm(0.5))
-       .strokeColor('#0066a1')
+       .strokeColor('#0c2ad5')
        .stroke();
 
     // Info table
@@ -397,38 +408,46 @@ export class QuotationPdfService {
        .text('Phone +62 21 29574720', leftColX, contentY + mm(19));
 
     // Blue line LEFT
-    const lineLeftY = contentY + mm(22);
+    const lineLeftY = contentY + mm(24);
     doc.moveTo(leftColX, lineLeftY)
        .lineTo(leftColX + (CONTENT_WIDTH / 2) - mm(5), lineLeftY)
        .lineWidth(mm(0.5))
-       .strokeColor('#0066a1')
+       .strokeColor('#0c2ad5')
        .stroke();
 
-    // Right section - Logos
-    const ilacX = rightColX;
+    // Right section - Logos (geser ke kanan agar di bawah "Page X from Y")
+    const ilacX = rightColX + mm(45);
     const ilacY = contentY;
+
+    // ILAC-MRA logo (kiri)
     doc.image(getIlacMraLogoBuffer(), ilacX, ilacY, { height: mm(12) });
 
-    const kanX = ilacX + mm(20);
+    // KAN logo (kanan ILAC-MRA) - geser ke atas agar text di bawahnya
+    const kanX = ilacX + mm(14);
+    const kanY = ilacY - mm(8);
     const kanLogo = getKanLogoBuffer();
     if (kanLogo) {
-      doc.image(kanLogo, kanX, ilacY, { height: mm(12) });
+      doc.image(kanLogo, kanX, kanY, { height: mm(25) });
     }
-    doc.font('Helvetica').fontSize(5)
-       .text('Komite Akreditasi Nasional', kanX - mm(2), ilacY + mm(13), { width: mm(20), align: 'center' })
-       .text('LP-411-IDN', kanX - mm(2), ilacY + mm(15.5), { width: mm(20), align: 'center' })
-       .text('LK-109-IDN', kanX - mm(2), ilacY + mm(17.5), { width: mm(20), align: 'center' });
 
-    const groupLogoY = ilacY + mm(20);
-    doc.image(getTuvNordGroupLogoBuffer(), rightColX + mm(5), groupLogoY, { height: mm(8) });
+    // Text LP/LK di bawah KAN logo
+    const kanLogoWidth = mm(30);
+    doc.font('Helvetica').fontSize(5)
+       .text('LP-411-IDN', kanX, ilacY + mm(12), { width: kanLogoWidth, align: 'center' })
+       .text('LK-109-IDN', kanX, ilacY + mm(14), { width: kanLogoWidth, align: 'center' });
+
+    // TUV NORD Group logo di bawah text LP/LK
+    const groupLogoX = ilacX + mm(20);
+    const groupLogoY = ilacY + mm(17);
+    doc.image(getTuvNordGroupLogoBuffer(), groupLogoX, groupLogoY, { height: mm(1.5) });
 
     // Blue line RIGHT
-    const lineRightY = contentY + mm(22);
-    const rightLineWidth = (CONTENT_WIDTH / 2) - mm(15);
+    const lineRightY = contentY + mm(24);
+    const rightLineWidth = (CONTENT_WIDTH / 2) - mm(10);
     doc.moveTo(rightColX, lineRightY)
        .lineTo(rightColX + rightLineWidth, lineRightY)
        .lineWidth(mm(0.5))
-       .strokeColor('#0066a1')
+       .strokeColor('#0c2ad5')
        .stroke();
   }
 
@@ -678,8 +697,10 @@ export class QuotationPdfService {
       // Sample header row
       doc.rect(x, y, CONTENT_WIDTH, mm(5)).fillAndStroke('#f0f0f0', '#000');
       doc.fillColor('#000').font('Helvetica-Bold').fontSize(8);
-      doc.text(sample.name, x + mm(1), y + mm(1.5), { width: CONTENT_WIDTH - colTotal - mm(2), align: 'left', lineGap: 0 });
-      doc.fontSize(7).text(`Priority: ${priorityLabel}`, x + CONTENT_WIDTH - colTotal + mm(1), y + mm(1.5), { width: colTotal - mm(2), align: 'right', lineGap: 0 });
+      // Sample name on the left, priority inline on the right (horizontal layout)
+      const priorityText = `Priority: ${priorityLabel.charAt(0).toUpperCase() + priorityLabel.slice(1)}`;
+      doc.text(`${sample.name}`, x + mm(1), y + mm(1.5), { width: CONTENT_WIDTH - mm(45), align: 'left', lineGap: 0 });
+      doc.font('Helvetica').fontSize(7).text(priorityText, x + CONTENT_WIDTH - mm(43), y + mm(1.5), { width: mm(40), align: 'right', lineGap: 0 });
       y += mm(5);
 
       // Service rows
@@ -834,6 +855,13 @@ export class QuotationPdfService {
 
     // Border around the whole section
     const sectionHeight = mm(25);
+
+    // Check if remarks summary section fits
+    if (y + sectionHeight > CONTENT_END_Y) {
+      doc.addPage();
+      y = CONTENT_START_Y;
+    }
+
     doc.rect(x, y, CONTENT_WIDTH, sectionHeight).stroke('#000');
 
     // Left section - Remarks
@@ -892,6 +920,12 @@ export class QuotationPdfService {
     let y = startY;
     const x = MARGIN_LEFT;
 
+    // Check if we have enough space for intro + header + at least one row (approx 20mm)
+    if (y + mm(20) > CONTENT_END_Y) {
+      doc.addPage();
+      y = CONTENT_START_Y;
+    }
+
     // Intro text
     doc.font('Helvetica').fontSize(8).fillColor('#000');
     const introText = 'With our experience and expertise in ITC (Inspection, Testing & Certification) business we also offer you one stop solution with special discount for another valuable services that we can provided:';
@@ -919,6 +953,18 @@ export class QuotationPdfService {
     services.forEach(([type, desc]) => {
       const rowHeight = mm(8);
 
+      // Check if this row would exceed content area
+      if (y + rowHeight > CONTENT_END_Y) {
+        doc.addPage();
+        y = CONTENT_START_Y;
+
+        // Redraw table header on new page
+        doc.rect(x, y, CONTENT_WIDTH, mm(5)).fillAndStroke('#e6e6e6', '#000');
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#000');
+        doc.text('Services (continued)', x + mm(1), y + mm(1.5), { width: CONTENT_WIDTH - mm(2), align: 'center' });
+        y += mm(5);
+      }
+
       doc.rect(x, y, col1Width, rowHeight).stroke('#000');
       doc.rect(x + col1Width, y, col2Width, rowHeight).stroke('#000');
 
@@ -929,7 +975,12 @@ export class QuotationPdfService {
       y += rowHeight;
     });
 
-    // Note
+    // Note - check if it fits
+    if (y + mm(7) > CONTENT_END_Y) {
+      doc.addPage();
+      y = CONTENT_START_Y;
+    }
+
     y += mm(2);
     doc.font('Helvetica').fontSize(8);
     doc.text('For complete information please feel free to contact our Sales Representative.', x, y, { width: CONTENT_WIDTH });
@@ -940,6 +991,12 @@ export class QuotationPdfService {
   private drawSignatureSection(doc: PDFKit.PDFDocument, data: QuotationPdfData, startY: number): number {
     let y = startY;
     const x = MARGIN_LEFT;
+
+    // Check if signature section fits (approx 15mm needed)
+    if (y + mm(15) > CONTENT_END_Y) {
+      doc.addPage();
+      y = CONTENT_START_Y;
+    }
 
     // Created by
     doc.font('Helvetica').fontSize(9).fillColor('#000');
@@ -1072,16 +1129,17 @@ export class QuotationPdfService {
 
       'HAZARDOUS SUBSTANCES AND PATHOGEN any sample containing or suspected to contain a pathogen or substance that is considered hazardous must be clearly indentifief as such on the container and communicated to TÜV NORD Laboratory before shipping.',
 
-      'ANALYSIS TÜV NORD Laboratory strives to provide a seven (7) until ten (10) working day turnaround. Rush analysis is offered contingent upon pre-notification and approval of TÜV NORD Laboratory.',
+      'ANALYSIS TÜV NORD Laboratory strives to provide a seven (7) until ten (10) working day turnaround. Rush analysis is offered contingent upon pre-notification and approval of TÜV NORD Laboratory. However, a rush fee of 100% surcharge of the list fee will be added to the invoice for each analysis completed in fewer than (5) working days at the request of the Client. TÜV NORD Laboratory reserves the right to outsource an analysis entirely at TÜV NORD Laboratory expense and without prior notification to Client, unless Client requests otherwise. Reported result relate only to the items tested and test reports shall not be reproduced except in full.',
 
-      'LITIGATION All costs associated with litigation or dispute shall be paid by the Client.',
+      'LITIGATION All costs associated with litigation or dispute, incluing complieance for all document, for oral or written testimony or preparation of same, or for any others purpose related to work provided by TÜV NORD Laboratory in connection with analyses/reports performed/completed for the Client, shall be paid by the Client. Such costs include, but are not limited to, hourly charges, travel accomodations, mileage, counsel, and all other expenses associated with said litigation or dispute.',
 
-      'WARRANTY AND LIMITS OF LIABILITY TÜV NORD Laboratory warrants that all services will be performed in a timely manner by competent personel.'
+      'WARRANTY AND LIMITS OF OF LIABILITY TÜV NORD Laboratory warrants that all services will be performed in a timely manner by competent personel. Any services performed by TÜV NORD Laboratory under proper technical direction by Client. Which are determined by Client to have been performed improperly in light of the above warranty and which after investigation by the TÜV NORD Laboratory are acknowledged in writing by TÜV NORD Laboratory President Director to have been performed improperly. Shall be corrected by TÜV NORD Laboratory without charge to Client, provided that Client provides TÜV NORD Laboratory with a written request for such correction within two (2) weeks after Client knew or should reasonably have known of problem. The liability of the TÜV NORD Laboratory in respect of any claims for loss, damage or expense of whatoever nature and howsoever arising in respect of any breach of contract and/or any failure to exercise due sklikk and care by the TÜV NORD Laboratory shall in no circumtances exceed a total aggregate sum equal to ten (10) times the amount of the fee or commission payable in respect of the specific services required under the particular contract with the TÜV NORD Laboratory which gives rise to such claims for indirect or consequential loss including loss of profit and/or loss of future bussniness and/or loss of productions and/or cancellation of contracts entered into by the Client. The TÜV NORD Laboratory shall not in any event be liable for any loss or damage caused by delay in performanc or non-performance of any of its services where the same is occasioned by any cause whatsoever that is beyond the TÜV NORD Laboratory control including but not limited to war, civil disturbance, requisitioning, governmental or parliamentary restriction, prohibitions or enactment of any kind, import or export regulations, strike or trade dipute (whetever incolving its own employees or those of any other person), difficulties in obtaining workmen or materials, breakdown of machinery, fire or accident. Should any such event occur the TÜV NORD Laboratory may cancel or suspend any contract for the provision of services without incurring any liability whatsoever. The TÜV NORD Laboratory will not be liable to the Client for any loss or damage whatsoever sustained by the Client as a result of any failure by the TÜV NORD Laboratory to comply with any time estimate given by the TÜV NORD Laboratory relating to the provision of its services. TÜV NORD Laboratory accepted no legal responsibility for the purpose for which the Client uses the test result or report, or for any consequence of such use. TÜV NORD Laboratory provide no guidance regarding and accept no legal responsibility for the purpose for which the Client uses the test result or reports, and shall have no legal responsibility forany consequence of such use. Client agrees ti indemnify and defend TÜV NORD Laboratory all claims, damages, liabilities, and expenses relating ti Clients use of TÜV NORD Laboratorys services or Clients Marketing, distribution, sale, or other dissemination of Clients products or services. The allocations of liability in this WARRANTY AND LIMITS OF LIABILITY section represent the agreed and bargained-for understanding between the Client and TÜV NORD Laboratory, TÜV NORD Laboratory fees for the services provided hereunder reflect such allocations.',
     ];
 
     standardTerms.forEach(term => {
+      const textHeight = doc.heightOfString(term, { width: colWidth, align: 'justify' });
       doc.text(term, rightX, rightY, { width: colWidth, align: 'justify' });
-      rightY += mm(8);
+      rightY += textHeight + mm(2);
     });
   }
 

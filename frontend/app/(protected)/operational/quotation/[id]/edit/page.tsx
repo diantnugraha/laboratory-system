@@ -872,9 +872,9 @@ export default function QuotationEditPage() {
     ));
   };
 
-  // Calculate totals
+  // Calculate totals - priority charge is based on quotation-level priority
   const { subTotal, discountAmount, afterDiscount, pcAmount, vatAmount, total } = useMemo(() => {
-    const pc = getPriorityCharge(priority);
+    const pc = getPriorityCharge(priority); // Use quotation-level priority
 
     let subTotal = 0;
 
@@ -891,7 +891,7 @@ export default function QuotationEditPage() {
       });
     });
 
-    // Calculate products subtotal
+    // Calculate products subtotal (products don't have priority charge)
     products.forEach(product => {
       const price = parsePrice(product.price);
       const discount = parsePrice(product.discount);
@@ -903,7 +903,7 @@ export default function QuotationEditPage() {
 
     const discountAmount = subTotal * (percentDiscount / 100);
     const afterDiscount = subTotal - discountAmount;
-    const pcAmount = afterDiscount * (pc / 100);
+    const pcAmount = Math.round(afterDiscount * (pc / 100)); // Priority charge from after discount
     const afterPc = afterDiscount + pcAmount;
     const vatAmount = afterPc * (percentVat / 100);
     const total = afterPc + vatAmount;

@@ -220,7 +220,7 @@ export default function QuotationDetailPage() {
   const productDetails = details.filter(d => d.product === 1);
 
   // Priority charge rates: normal = 0%, urgent = 50%, very urgent = 100%
-  const getPriorityChargeRate = (priority: string): number => {
+  const getPriorityChargeRate = (priority: string | null): number => {
     switch (priority?.toLowerCase()) {
       case 'urgent':
         return 0.5; // 50%
@@ -231,22 +231,17 @@ export default function QuotationDetailPage() {
     }
   };
 
-  // Calculate subtotal and priority charge from displayed items (consolidated)
-  const calculateTotals = () => {
+  // Calculate subtotal from displayed items (consolidated)
+  const calculateSubtotal = () => {
     let subTotal = 0;
-    let priorityCharge = 0;
 
     sampleGroups.forEach(group => {
-      const priorityRate = getPriorityChargeRate(group.priority);
-
       group.items.filter(item => item.product !== 1).forEach(item => {
         const price = item.package?.totalPrice || item.service?.price || item.price || 0;
         const quantity = item.quantity || 1;
         const discount = item.percentDiscount || 0;
         const itemTotal = price * quantity * (1 - discount / 100);
         subTotal += itemTotal;
-        // Priority charge is calculated from item price
-        priorityCharge += itemTotal * priorityRate;
       });
     });
 
@@ -259,17 +254,18 @@ export default function QuotationDetailPage() {
       subTotal += itemTotal;
     });
 
-    return { subTotal, priorityCharge };
+    return subTotal;
   };
 
-  // Calculate totals
-  const { subTotal, priorityCharge } = calculateTotals();
+  // Calculate totals - priority is from quotation level, not sample level
+  const subTotal = calculateSubtotal();
   const percentDiscount = quotation.percent_discount || 0;
   const percentVat = quotation.percent_vat || 0;
+  const priorityRate = getPriorityChargeRate(quotation.priority);
 
   const discountAmount = Math.round(subTotal * (percentDiscount / 100));
   const afterDiscount = subTotal - discountAmount;
-  const pcAmount = Math.round(priorityCharge); // Priority charge from items
+  const pcAmount = Math.round(afterDiscount * priorityRate); // Priority charge from quotation priority
   const afterPc = afterDiscount + pcAmount;
   const vatAmount = Math.round(afterPc * (percentVat / 100));
   const calculatedTotal = afterPc + vatAmount;
@@ -579,12 +575,12 @@ export default function QuotationDetailPage() {
                       <div className="flex items-center gap-3">
                         <span className="font-medium">{group.sampleName}</span>
                         <Badge variant="outline">Qty: {group.quantity}</Badge>
-                        {group.priority !== 'normal' && (
+                        {quotation.priority && quotation.priority !== 'normal' && (
                           <Badge
-                            variant={group.priority === 'very urgent' ? 'destructive' : 'outline'}
-                            className={group.priority === 'urgent' ? 'text-orange-600 border-orange-600' : ''}
+                            variant={quotation.priority === 'very urgent' ? 'destructive' : 'outline'}
+                            className={quotation.priority === 'urgent' ? 'text-orange-600 border-orange-600' : ''}
                           >
-                            {group.priority}
+                            {quotation.priority === 'urgent' ? 'Urgent (+50% PC)' : 'Very Urgent (+100% PC)'}
                           </Badge>
                         )}
                       </div>
@@ -723,7 +719,7 @@ export default function QuotationDetailPage() {
             )}
             {pcAmount > 0 && (
               <div className="flex justify-between items-center text-sm text-orange-600">
-                <span>Priority Charge</span>
+                <span>Priority Charge ({Math.round(priorityRate * 100)}%)</span>
                 <span>+ {formatCurrency(pcAmount)}</span>
               </div>
             )}

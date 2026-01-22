@@ -790,6 +790,33 @@ export const previewQuotationPdf = async (request: FastifyRequest, reply: Fastif
   const expiredDate = new Date(quotation.quoDate);
   expiredDate.setMonth(expiredDate.getMonth() + 1);
 
+  // Get values directly from database - NO CALCULATION, just reference!
+  // Use quotationRaw for snake_case fields from Prisma
+  const percentVat = quotationRaw.percent_vat ?? quotation.percentVat ?? 11;
+  const percentDiscount = quotationRaw.percent_discount ?? quotation.percentDiscount ?? 0;
+
+  // Get priority rate from quotation priority
+  const getPriorityRate = (priority: string | null): number => {
+    switch (priority?.toLowerCase()) {
+      case 'urgent': return 50;
+      case 'very urgent': case 'very-urgent': return 100;
+      default: return 0;
+    }
+  };
+  const priorityRate = getPriorityRate(quotationRaw.priority ?? quotation.priority);
+
+  // Get stored values from database (sub_total is the base total before discount)
+  const storedSubTotal = quotationRaw.sub_total ?? quotation.subTotal ?? 0;
+  const storedTotal = quotationRaw.total ?? quotation.total ?? 0;
+
+  // Calculate derived values based on stored sub_total (same formula as frontend display)
+  const discountAmount = Math.round(storedSubTotal * (percentDiscount / 100));
+  const afterDiscount = storedSubTotal - discountAmount;
+  const priorityCharge = Math.round(afterDiscount * (priorityRate / 100));
+  const afterPc = afterDiscount + priorityCharge;
+  const vat = Math.round(afterPc * (percentVat / 100));
+  const grandTotal = afterPc + vat;
+
   // Prepare PDF data - use snake_case as Prisma returns raw data
   const pdfData: QuotationPdfData = {
     id: quotation.id,
@@ -799,8 +826,8 @@ export const previewQuotationPdf = async (request: FastifyRequest, reply: Fastif
     expired_date: expiredDate,
     priority: quotation.priority || 'normal',
     lab: quotationRaw.lab || quotation.lab,
-    percent_vat: quotation.percentVat,
-    percent_discount: quotation.percentDiscount,
+    percent_vat: quotationRaw.percent_vat ?? quotation.percentVat,
+    percent_discount: quotationRaw.percent_discount ?? quotation.percentDiscount,
     remarks: quotation.remarks,
     customer: {
       id: quotation.customer?.id || 0,
@@ -827,6 +854,14 @@ export const previewQuotationPdf = async (request: FastifyRequest, reply: Fastif
     },
     samples: Array.from(sampleMap.values()),
     products,
+    totals: {
+      total: storedSubTotal,       // Subtotal from database (sebelum quotation-level discount)
+      discount: discountAmount,    // Quotation-level discount
+      priorityCharge: priorityCharge,
+      subTotal: afterPc,           // After discount + priority charge
+      vat: vat,
+      grandTotal: grandTotal,
+    },
   };
 
   // Check query param for html preview (debugging)
