@@ -14,7 +14,8 @@ import {
   Package,
   FlaskConical,
   Receipt,
-  Eye
+  Eye,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +39,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { quotationService, Quotation, QuotationDetail } from "@/services/quotationService";
 import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
@@ -57,6 +65,11 @@ const formatDate = (dateString: string | null) => {
     return dateString;
   }
 };
+
+// Minimum quotation values (same as backend)
+const MIN_TOTAL = 200000;
+const MIN_VAT = 22000;
+const MIN_GRAND_TOTAL = 222000;
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('id-ID', {
@@ -248,8 +261,11 @@ export default function QuotationDetailPage() {
   const afterDiscount = subTotal - discountAmount;
   const pcAmount = Math.round(afterDiscount * priorityRate); // Priority charge from quotation priority
   const afterPc = afterDiscount + pcAmount;
-  const vatAmount = Math.round(afterPc * (percentVat / 100));
-  const calculatedTotal = afterPc + vatAmount;
+
+  // Apply minimum total rule (same as backend)
+  const isMinimumApplied = afterPc < MIN_TOTAL;
+  const vatAmount = isMinimumApplied ? MIN_VAT : Math.round(afterPc * (percentVat / 100));
+  const calculatedTotal = isMinimumApplied ? MIN_GRAND_TOTAL : afterPc + vatAmount;
 
   return (
     <div className="space-y-6">
@@ -268,60 +284,66 @@ export default function QuotationDetailPage() {
             <h1 className="text-2xl font-semibold text-foreground">{quotation.code}</h1>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={pdfLoading}
-            onClick={async () => {
-              setPdfLoading(true);
-              const toastId = toast.loading('Generating PDF preview...');
-              try {
-                await quotationService.openPdfPreview(id as string);
-                toast.dismiss(toastId);
-                toast.success('PDF preview opened in new tab');
-              } catch (error) {
-                toast.dismiss(toastId);
-                toast.error(getErrorMessage(error) || 'Failed to open PDF preview');
-              } finally {
-                setPdfLoading(false);
-              }
-            }}
-            className="gap-2"
-          >
-            {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-            {pdfLoading ? 'Generating...' : 'Preview PDF'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(`/operational/quotation/${id}/edit`)}
-            className="gap-2"
-          >
-            <Edit className="h-4 w-4" />
-            Edit
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" size="sm" className="gap-2" disabled={deleting}>
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Quotation</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete this quotation? This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
+        {/* Actions Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2">
+              Actions
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              disabled={pdfLoading}
+              onClick={async () => {
+                setPdfLoading(true);
+                const toastId = toast.loading('Generating PDF preview...');
+                try {
+                  await quotationService.openPdfPreview(id as string);
+                  toast.dismiss(toastId);
+                  toast.success('PDF preview opened in new tab');
+                } catch (error) {
+                  toast.dismiss(toastId);
+                  toast.error(getErrorMessage(error) || 'Failed to open PDF preview');
+                } finally {
+                  setPdfLoading(false);
+                }
+              }}
+            >
+              {pdfLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Eye className="h-4 w-4 mr-2" />}
+              {pdfLoading ? 'Generating...' : 'Preview PDF'}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push(`/operational/quotation/${id}/edit`)}>
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <DropdownMenuItem
+                  onSelect={(e) => e.preventDefault()}
+                  className="text-destructive focus:text-destructive"
+                  disabled={deleting}
+                >
+                  {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                  Delete
+                </DropdownMenuItem>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Quotation</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete this quotation? This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Quotation Info */}
@@ -638,7 +660,7 @@ export default function QuotationDetailPage() {
         <CardContent className="pt-6">
           <div className="max-w-md ml-auto space-y-3">
             <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
+              <span className="text-muted-foreground">Total</span>
               <span className="font-medium">{formatCurrency(subTotal)}</span>
             </div>
             {quotation.percent_discount > 0 && (
@@ -657,6 +679,15 @@ export default function QuotationDetailPage() {
               <div className="flex justify-between items-center text-sm text-orange-600">
                 <span>Priority Charge ({Math.round(priorityRate * 100)}%)</span>
                 <span>+ {formatCurrency(pcAmount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Sub Total</span>
+              <span className="font-medium">{formatCurrency(afterPc)}</span>
+            </div>
+            {isMinimumApplied && (
+              <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-md">
+                Minimum order IDR 200,000 applied
               </div>
             )}
             <div className="flex justify-between items-center text-sm">

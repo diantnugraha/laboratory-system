@@ -162,6 +162,11 @@ interface SampleItem {
   isDetailsExpanded: boolean;
 }
 
+// Minimum quotation values (same as backend)
+const MIN_TOTAL = 200000;
+const MIN_VAT = 22000;
+const MIN_GRAND_TOTAL = 222000;
+
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -828,7 +833,7 @@ export default function QuotationNewPage() {
   };
 
   // Calculate totals
-  const { subTotal, discountAmount, afterDiscount, pcAmount, vatAmount, total } = useMemo(() => {
+  const { subTotal, discountAmount, afterDiscount, pcAmount, afterPc, vatAmount, total, isMinimumApplied } = useMemo(() => {
     const pc = getPriorityCharge(priority);
 
     let subTotal = 0;
@@ -844,10 +849,23 @@ export default function QuotationNewPage() {
     const afterDiscount = subTotal - discountAmount;
     const pcAmount = afterDiscount * (pc / 100);
     const afterPc = afterDiscount + pcAmount;
-    const vatAmount = afterPc * (percentVat / 100);
-    const total = afterPc + vatAmount;
 
-    return { subTotal, discountAmount, afterDiscount, pcAmount, vatAmount, total };
+    // Apply minimum total rule (same as backend)
+    // Only affects VAT and Grand Total, not the subtotal display
+    let isMinimumApplied = false;
+    let finalVatAmount: number;
+    let finalTotal: number;
+
+    if (afterPc < MIN_TOTAL) {
+      isMinimumApplied = true;
+      finalVatAmount = MIN_VAT;
+      finalTotal = MIN_GRAND_TOTAL;
+    } else {
+      finalVatAmount = afterPc * (percentVat / 100);
+      finalTotal = afterPc + finalVatAmount;
+    }
+
+    return { subTotal, discountAmount, afterDiscount, pcAmount, afterPc, vatAmount: finalVatAmount, total: finalTotal, isMinimumApplied };
   }, [samples, priority, percentDiscount, percentVat]);
 
   // Available contacts and addresses
@@ -1713,7 +1731,7 @@ export default function QuotationNewPage() {
           <CardContent className="pt-6">
             <div className="max-w-md ml-auto space-y-3">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
+                <span className="text-muted-foreground">Total</span>
                 <span className="font-medium">{formatCurrency(subTotal)}</span>
               </div>
               {percentDiscount > 0 && (
@@ -1732,6 +1750,15 @@ export default function QuotationNewPage() {
                 <div className="flex justify-between items-center text-sm text-orange-600">
                   <span>Priority Charge ({getPriorityCharge(priority)}%)</span>
                   <span>+ {formatCurrency(pcAmount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Sub Total</span>
+                <span className="font-medium">{formatCurrency(afterPc)}</span>
+              </div>
+              {isMinimumApplied && (
+                <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-md">
+                  Minimum order IDR 200,000 applied
                 </div>
               )}
               <div className="flex justify-between items-center text-sm">

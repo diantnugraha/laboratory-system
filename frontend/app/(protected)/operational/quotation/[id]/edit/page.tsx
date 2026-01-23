@@ -22,6 +22,7 @@ import {
   Receipt,
   Package,
   GripVertical,
+  Pencil,
 } from "lucide-react";
 import {
   DndContext,
@@ -163,6 +164,7 @@ interface SampleItem {
   priority: 'normal' | 'urgent' | 'very urgent';
   services: SampleServiceItem[];
   isExpanded: boolean;
+  isDetailsExpanded: boolean;
 }
 
 interface ProductItem {
@@ -173,6 +175,11 @@ interface ProductItem {
   discount: number;
   detailId?: number; // For tracking existing detail records
 }
+
+// Minimum quotation values (same as backend)
+const MIN_TOTAL = 200000;
+const MIN_VAT = 22000;
+const MIN_GRAND_TOTAL = 222000;
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('id-ID', {
@@ -530,6 +537,7 @@ export default function QuotationEditPage() {
             priority: samplePriority,
             services: sampleServices,
             isExpanded: true,
+            isDetailsExpanded: false,
           });
 
           sampleIndex++;
@@ -665,6 +673,7 @@ export default function QuotationEditPage() {
       priority: priority,
       services: [],
       isExpanded: true,
+      isDetailsExpanded: false,
     };
     setSamples(prev => [...prev, newSample]);
     setNewSampleName('');
@@ -701,6 +710,7 @@ export default function QuotationEditPage() {
         detailId: undefined, // Remove detail ID for copied items
       })),
       isExpanded: true,
+      isDetailsExpanded: false,
     };
     setSamples(prev => [...prev, newSample]);
     toast.success(`Sample copied as "${newName}"`);
@@ -709,6 +719,12 @@ export default function QuotationEditPage() {
   const toggleSampleExpanded = (sampleId: string) => {
     setSamples(prev => prev.map(s =>
       s.id === sampleId ? { ...s, isExpanded: !s.isExpanded } : s
+    ));
+  };
+
+  const toggleSampleDetails = (sampleId: string) => {
+    setSamples(prev => prev.map(s =>
+      s.id === sampleId ? { ...s, isDetailsExpanded: !s.isDetailsExpanded } : s
     ));
   };
 
@@ -873,7 +889,7 @@ export default function QuotationEditPage() {
   };
 
   // Calculate totals - priority charge is based on quotation-level priority
-  const { subTotal, discountAmount, afterDiscount, pcAmount, vatAmount, total } = useMemo(() => {
+  const { subTotal, discountAmount, afterDiscount, pcAmount, afterPc, vatAmount, total, isMinimumApplied } = useMemo(() => {
     const pc = getPriorityCharge(priority); // Use quotation-level priority
 
     let subTotal = 0;
@@ -905,10 +921,22 @@ export default function QuotationEditPage() {
     const afterDiscount = subTotal - discountAmount;
     const pcAmount = Math.round(afterDiscount * (pc / 100)); // Priority charge from after discount
     const afterPc = afterDiscount + pcAmount;
-    const vatAmount = afterPc * (percentVat / 100);
-    const total = afterPc + vatAmount;
 
-    return { subTotal, discountAmount, afterDiscount, pcAmount, vatAmount, total };
+    // Apply minimum total rule (same as backend)
+    let isMinimumApplied = false;
+    let finalVatAmount: number;
+    let finalTotal: number;
+
+    if (afterPc < MIN_TOTAL) {
+      isMinimumApplied = true;
+      finalVatAmount = MIN_VAT;
+      finalTotal = MIN_GRAND_TOTAL;
+    } else {
+      finalVatAmount = afterPc * (percentVat / 100);
+      finalTotal = afterPc + finalVatAmount;
+    }
+
+    return { subTotal, discountAmount, afterDiscount, pcAmount, afterPc, vatAmount: finalVatAmount, total: finalTotal, isMinimumApplied };
   }, [samples, products, priority, percentDiscount, percentVat]);
 
   // Available contacts and addresses
@@ -1522,26 +1550,41 @@ export default function QuotationEditPage() {
                     onOpenChange={() => toggleSampleExpanded(sample.id)}
                   >
                     {/* Sample Header */}
-                    <div className="flex items-center justify-between p-4 bg-muted/30 hover:bg-muted/40 transition-colors">
-                      <CollapsibleTrigger asChild>
-                        <button type="button" className="flex items-center gap-3 flex-1 text-left">
-                          {sample.isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
+                    <div className="flex items-center justify-between p-4 bg-muted/20 hover:bg-muted/30 transition-colors">
+                      <div className="flex items-center gap-3 flex-1">
+                        <CollapsibleTrigger asChild>
+                          <button type="button" className="flex items-center gap-3 text-left">
+                            {sample.isExpanded ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                            <span className="font-medium">{sample.name}</span>
+                            <Badge variant="outline">Qty: {sample.quantity}</Badge>
+                          </button>
+                        </CollapsibleTrigger>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className={cn(
+                            "h-6 w-6 -ml-1",
+                            sample.isDetailsExpanded ? "text-primary" : "text-muted-foreground hover:text-foreground"
                           )}
-                          <span className="font-medium">{sample.name}</span>
-                          <Badge variant="outline">Qty: {sample.quantity}</Badge>
-                          {sample.priority !== 'normal' && (
-                            <Badge
-                              variant={sample.priority === 'very urgent' ? 'destructive' : 'outline'}
-                              className={sample.priority === 'urgent' ? 'text-orange-600 border-orange-600' : ''}
-                            >
-                              {sample.priority}
-                            </Badge>
-                          )}
-                        </button>
-                      </CollapsibleTrigger>
+                          onClick={() => toggleSampleDetails(sample.id)}
+                          title="Edit Sample Details"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        {sample.priority !== 'normal' && (
+                          <Badge
+                            variant={sample.priority === 'very urgent' ? 'destructive' : 'outline'}
+                            className={sample.priority === 'urgent' ? 'text-orange-600 border-orange-600' : ''}
+                          >
+                            {sample.priority}
+                          </Badge>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"
@@ -1568,33 +1611,37 @@ export default function QuotationEditPage() {
 
                     {/* Sample Content */}
                     <CollapsibleContent>
-                      {/* Sample Details Section */}
-                      <div className="p-4 bg-muted/5 border-b">
-                        <p className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3">
-                          Sample Details
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div className="space-y-1.5">
-                            <label className="text-xs text-muted-foreground">Sample Name</label>
-                            <Input
-                              value={sample.name}
-                              onChange={(e) => updateSampleName(sample.id, e.target.value)}
-                              className="h-9"
-                              placeholder="Enter sample name"
-                            />
+                      {/* Sample Details Section - Collapsible */}
+                      <Collapsible open={sample.isDetailsExpanded}>
+                        <CollapsibleContent>
+                          <div className="p-4 bg-muted/5 border-b">
+                            <p className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3">
+                              Sample Details
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div className="space-y-1.5">
+                                <label className="text-xs text-muted-foreground">Sample Name</label>
+                                <Input
+                                  value={sample.name}
+                                  onChange={(e) => updateSampleName(sample.id, e.target.value)}
+                                  className="h-9"
+                                  placeholder="Enter sample name"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-xs text-muted-foreground">Quantity</label>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  value={sample.quantity}
+                                  onChange={(e) => updateSampleQuantity(sample.id, parseInt(e.target.value) || 1)}
+                                  className="h-9"
+                                />
+                              </div>
+                            </div>
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs text-muted-foreground">Quantity</label>
-                            <Input
-                              type="number"
-                              min={1}
-                              value={sample.quantity}
-                              onChange={(e) => updateSampleQuantity(sample.id, parseInt(e.target.value) || 1)}
-                              className="h-9"
-                            />
-                          </div>
-                        </div>
-                      </div>
+                        </CollapsibleContent>
+                      </Collapsible>
 
                       {/* Service/Package Search */}
                       <div className="p-4 bg-muted/10 border-b">
@@ -1997,7 +2044,7 @@ export default function QuotationEditPage() {
           <CardContent className="pt-6">
             <div className="max-w-md ml-auto space-y-3">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
+                <span className="text-muted-foreground">Total</span>
                 <span className="font-medium">{formatCurrency(subTotal)}</span>
               </div>
               {percentDiscount > 0 && (
@@ -2016,6 +2063,15 @@ export default function QuotationEditPage() {
                 <div className="flex justify-between items-center text-sm text-orange-600">
                   <span>Priority Charge ({getPriorityCharge(priority)}%)</span>
                   <span>+ {formatCurrency(pcAmount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Sub Total</span>
+                <span className="font-medium">{formatCurrency(afterPc)}</span>
+              </div>
+              {isMinimumApplied && (
+                <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-md">
+                  Minimum order IDR 200,000 applied
                 </div>
               )}
               <div className="flex justify-between items-center text-sm">

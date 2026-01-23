@@ -199,6 +199,8 @@ export const getAllQuotations = async (request: FastifyRequest, reply: FastifyRe
       samplingDate: item.sampling_date,
       subTotal: item.sub_total,
       total: item.total,
+      percentVat: item.percent_vat,
+      percentPc: item.percent_pc,
       priority: item.priority,
       lab: item.lab,
       customer: item.customer ? {

@@ -243,13 +243,24 @@ export class QuotationPdfService {
   private calculateTotals(data: QuotationPdfData, _isSpecial: boolean) {
     // Use pre-calculated totals from database if available (same as frontend)
     if (data.totals) {
+      // Apply minimum total rule even for pre-calculated totals
+      let subTotal = Math.round(data.totals.subTotal);
+      let vat = Math.round(data.totals.vat);
+      let grandTotal = Math.round(data.totals.grandTotal);
+
+      if (subTotal < MIN_TOTAL) {
+        subTotal = MIN_TOTAL;
+        vat = MIN_VAT;
+        grandTotal = MIN_GRAND_TOTAL;
+      }
+
       return {
         totalBasePrice: Math.round(data.totals.total),
         totalDiscount: Math.round(data.totals.discount),
         totalPriorityCharge: Math.round(data.totals.priorityCharge),
-        subTotal: Math.round(data.totals.subTotal),
-        vat: Math.round(data.totals.vat),
-        grandTotal: Math.round(data.totals.grandTotal),
+        subTotal,
+        vat,
+        grandTotal,
         productSubTotal: 0,
       };
     }
@@ -684,7 +695,7 @@ export class QuotationPdfService {
 
     for (const sample of data.samples) {
       const priorityRate = this.getPriorityRate(sample.priority);
-      const priorityLabel = sample.priority?.toLowerCase() || 'normal';
+      const priorityLabel = data.priority?.toLowerCase() || 'normal';
       const sampleQty = Number(sample.quantity) || 1;
 
       // Check if need new page for sample header
@@ -738,10 +749,11 @@ export class QuotationPdfService {
         const total = afterDiscount + ((pcRate / 100) * afterDiscount);
         grandSubTotal += total;
 
-        // Calculate dynamic row height based on item name
+        // Calculate dynamic row height based on item name and method name (both support HTML)
         doc.font('Helvetica').fontSize(8);
-        const nameHeight = doc.heightOfString(itemName + (hasPackage ? ' :' : ''), { width: colServices - mm(2) });
-        let baseRowHeight = Math.max(mm(5), nameHeight + mm(2.5));
+        const nameHeight = heightOfHtmlString(doc, itemName + (hasPackage ? ' :' : ''), { width: colServices - mm(2), fontSize: 8 });
+        const methodHeight = heightOfHtmlString(doc, methodName, { width: colMethod - mm(2), fontSize: 8 });
+        let baseRowHeight = Math.max(mm(5), nameHeight + mm(2.5), methodHeight + mm(2.5));
 
         // If it's a package, calculate total height including nested services with dynamic text wrapping and HTML support
         let packageServicesHeight = 0;
@@ -776,8 +788,11 @@ export class QuotationPdfService {
           doc.rect(x + colNo + colServices + colMethod + colQty, y, colTotal, totalRowHeight).stroke('#000');
 
           doc.text(rowNum.toString(), x + mm(1), y + mm(1.2), { width: colNo - mm(2), align: 'center', lineGap: 0 });
-          doc.text(itemName + (hasPackage ? ' :' : ''), x + colNo + mm(1), y + mm(1.2), { width: colServices - mm(2), align: 'left', lineGap: 0 });
-          doc.text(methodName, x + colNo + colServices + mm(1), y + mm(1.2), { width: colMethod - mm(2), align: 'left', lineGap: 0 });
+          // Render service name with HTML support
+          renderHtmlText(doc, itemName + (hasPackage ? ' :' : ''), x + colNo + mm(1), y + mm(1.2), { width: colServices - mm(2), align: 'left', baseFont: 'Helvetica', baseFontSize: 8 });
+          // Render method name with HTML support
+          renderHtmlText(doc, methodName, x + colNo + colServices + mm(1), y + mm(1.2), { width: colMethod - mm(2), align: 'left', baseFont: 'Helvetica', baseFontSize: 8 });
+          doc.font('Helvetica').fontSize(8).fillColor('#000');
           doc.text(qty.toString(), x + colNo + colServices + colMethod + mm(1), y + mm(1.2), { width: colQty - mm(2), align: 'center', lineGap: 0 });
           doc.text(this.formatCurrency(total), x + colNo + colServices + colMethod + colQty + mm(1), y + mm(1.2), { width: colTotal - mm(2), align: 'right', lineGap: 0 });
         } else {
@@ -791,8 +806,11 @@ export class QuotationPdfService {
           doc.rect(x + colNo + colServices + colMethod + colPrice + colQty + colDisc + colPc, y, colTotal, totalRowHeight).stroke('#000');
 
           doc.text(rowNum.toString(), x + mm(1), y + mm(1.2), { width: colNo - mm(2), align: 'center', lineGap: 0 });
-          doc.text(itemName + (hasPackage ? ' :' : ''), x + colNo + mm(1), y + mm(1.2), { width: colServices - mm(2), align: 'left', lineGap: 0 });
-          doc.text(methodName, x + colNo + colServices + mm(1), y + mm(1.2), { width: colMethod - mm(2), align: 'left', lineGap: 0 });
+          // Render service name with HTML support
+          renderHtmlText(doc, itemName + (hasPackage ? ' :' : ''), x + colNo + mm(1), y + mm(1.2), { width: colServices - mm(2), align: 'left', baseFont: 'Helvetica', baseFontSize: 8 });
+          // Render method name with HTML support
+          renderHtmlText(doc, methodName, x + colNo + colServices + mm(1), y + mm(1.2), { width: colMethod - mm(2), align: 'left', baseFont: 'Helvetica', baseFontSize: 8 });
+          doc.font('Helvetica').fontSize(8).fillColor('#000');
           doc.text(this.formatCurrency(itemPrice), x + colNo + colServices + colMethod + mm(1), y + mm(1.2), { width: colPrice - mm(2), align: 'right', lineGap: 0 });
           doc.text(qty.toString(), x + colNo + colServices + colMethod + colPrice + mm(1), y + mm(1.2), { width: colQty - mm(2), align: 'center', lineGap: 0 });
           doc.text(itemDiscount.toString(), x + colNo + colServices + colMethod + colPrice + colQty + mm(1), y + mm(1.2), { width: colDisc - mm(2), align: 'center', lineGap: 0 });

@@ -123,6 +123,8 @@ export interface QuotationListItem {
   samplingDate: string | null;
   subTotal: number;
   total: number;
+  percentVat: number;
+  percentPc: number | null;
   priority: string | null;
   lab: string | null;
   customer: {

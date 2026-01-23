@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Plus, Search } from 'lucide-react';
 import { DataTable, Column } from "@/components/shared/DataTable";
-import { quotationService, QuotationListItem } from "@/services/quotationService";
+import { preorderService, PreOrderListItem } from "@/services/preorderService";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,36 +14,6 @@ import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
-
-// Minimum order constants
-const MIN_TOTAL = 200000;
-const MIN_GRAND_TOTAL = 222000;
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(value);
-};
-
-// Calculate Grand Total with minimum order applied
-const calculateGrandTotal = (item: QuotationListItem): number => {
-  const subTotal = item.total; // total field stores sub_total after discount
-  const percentVat = item.percentVat ?? 11;
-  const percentPc = item.percentPc ?? 0;
-
-  // Apply minimum if subTotal is below threshold
-  if (subTotal < MIN_TOTAL) {
-    return MIN_GRAND_TOTAL;
-  }
-
-  const afterPc = subTotal + (subTotal * percentPc / 100);
-  const vat = afterPc * percentVat / 100;
-  const grandTotal = Math.round(afterPc + vat);
-
-  return grandTotal;
-};
 
 const formatDate = (dateString: string | null) => {
   if (!dateString) return '-';
@@ -59,36 +29,38 @@ const formatDate = (dateString: string | null) => {
   }
 };
 
-const getStatusVariant = (status: string) => {
-  switch (status) {
-    case "Created":
-      return "secondary";
-    case "Order":
-      return "default";
-    default:
-      return "secondary";
-  }
-};
-
 const getPriorityBadge = (priority: string | null) => {
-  switch (priority) {
+  switch (priority?.toLowerCase()) {
     case "urgent":
       return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent</Badge>;
     case "very urgent":
       return <Badge variant="destructive">Very Urgent</Badge>;
+    case "special request":
+      return <Badge variant="outline" className="text-purple-600 border-purple-600">Special</Badge>;
     case "normal":
     default:
       return <Badge variant="outline" className="text-green-600 border-green-600">Normal</Badge>;
   }
 };
 
-const columns: Column<QuotationListItem>[] = [
+const getLabLabel = (lab: number) => {
+  switch (lab) {
+    case 1:
+      return "CTS";
+    case 2:
+      return "NCTS";
+    default:
+      return "-";
+  }
+};
+
+const columns: Column<PreOrderListItem>[] = [
   {
     key: "code",
     label: "Code",
     render: (item) => (
       <Link
-        href={`/operational/quotation/${item.id}`}
+        href={`/operational/preorder/${item.id}`}
         className="text-primary hover:underline font-medium"
       >
         <RenderHTML html={item.code} />
@@ -99,34 +71,36 @@ const columns: Column<QuotationListItem>[] = [
     key: "customer",
     label: "Customer",
     render: (item) => {
-      // Handle both API response formats: customer.name or customer.customer_name
       const customerData = item.customer as { name?: string; customer_name?: string } | null;
       const customerName = customerData?.name || customerData?.customer_name;
       return customerName ? <RenderHTML html={customerName} /> : '-';
     },
   },
   {
-    key: "quoDate",
-    label: "Date",
+    key: "contact",
+    label: "Contact",
+    render: (item) => item.contact?.name || '-',
+  },
+  {
+    key: "receivedDate",
+    label: "Received Date",
     render: (item) => {
-      // Handle both formats: quoDate (transformed) or quo_date (raw)
-      const rawItem = item as unknown as { quo_date?: string };
-      return formatDate(item.quoDate || rawItem.quo_date || null);
+      const rawItem = item as unknown as { received_date?: string };
+      return formatDate(item.receivedDate || rawItem.received_date || null);
     },
   },
   {
-    key: "expiredDate",
-    label: "Valid Until",
+    key: "sampleQuantity",
+    label: "Sample Qty",
     render: (item) => {
-      // Handle both formats: expiredDate (transformed) or expired_date (raw)
-      const rawItem = item as unknown as { expired_date?: string };
-      return formatDate(item.expiredDate || rawItem.expired_date || null);
+      const rawItem = item as unknown as { sample_quantity?: number };
+      return item.sampleQuantity || rawItem.sample_quantity || 0;
     },
   },
   {
-    key: "total",
-    label: "Grand Total",
-    render: (item) => formatCurrency(calculateGrandTotal(item)),
+    key: "lab",
+    label: "Lab",
+    render: (item) => getLabLabel(item.lab),
   },
   {
     key: "priority",
@@ -134,24 +108,33 @@ const columns: Column<QuotationListItem>[] = [
     render: (item) => getPriorityBadge(item.priority),
   },
   {
-    key: "quoStatus",
-    label: "Status",
+    key: "order",
+    label: "Order",
     render: (item) => {
-      // Handle both formats: quoStatus (transformed) or quo_status (raw)
-      const rawItem = item as unknown as { quo_status?: string };
-      const status = item.quoStatus || rawItem.quo_status || 'Created';
+      if (item.order?.code) {
+        return (
+          <Link
+            href={`/operational/order/${item.order.id}`}
+            className="text-primary hover:underline"
+          >
+            {item.order.code}
+          </Link>
+        );
+      }
       return (
-        <Badge variant={getStatusVariant(status)}>
-          {status}
-        </Badge>
+        <Link href={`/operational/order/new?preorderId=${item.id}`}>
+          <Badge variant="outline" className="cursor-pointer hover:bg-primary hover:text-primary-foreground">
+            Create Order
+          </Badge>
+        </Link>
       );
     },
   },
 ];
 
-export default function QuotationPage() {
+export default function PreOrderPage() {
   const router = useRouter();
-  const [quotations, setQuotations] = useState<QuotationListItem[]>([]);
+  const [preorders, setPreorders] = useState<PreOrderListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [pagination, setPagination] = useState({
@@ -163,30 +146,30 @@ export default function QuotationPage() {
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
-  const fetchQuotations = useCallback(async (page: number = 1, search?: string, limit: number = 30) => {
+  const fetchPreorders = useCallback(async (page: number = 1, search?: string, limit: number = 30) => {
     try {
       setLoading(true);
-      const response = await quotationService.getAll({
+      const response = await preorderService.getAll({
         page,
         limit,
         search: search && search.length >= 2 ? search : undefined,
       });
-      setQuotations(response.data);
+      setPreorders(response.data);
       setPagination(response.pagination);
     } catch (error) {
-      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('quotations')));
+      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('pre orders')));
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchQuotations(1, debouncedSearch, pagination.limit);
-  }, [fetchQuotations, debouncedSearch, pagination.limit]);
+    fetchPreorders(1, debouncedSearch, pagination.limit);
+  }, [fetchPreorders, debouncedSearch, pagination.limit]);
 
   const handlePageChange = (page: number) => {
     setPagination(prev => ({ ...prev, page }));
-    fetchQuotations(page, debouncedSearch, pagination.limit);
+    fetchPreorders(page, debouncedSearch, pagination.limit);
   };
 
   const handleSearch = (query: string) => {
@@ -198,10 +181,10 @@ export default function QuotationPage() {
     <div className="space-y-4">
       {/* Title and Add Button Row */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">Quotation</h1>
-        <Button onClick={() => router.push("/operational/quotation/new")} className="gap-2">
+        <h1 className="text-2xl font-semibold text-foreground">Pre Order</h1>
+        <Button onClick={() => router.push("/operational/preorder/new")} className="gap-2">
           <Plus className="h-4 w-4" />
-          Add Quotation
+          Add Pre Order
         </Button>
       </div>
 
@@ -210,7 +193,7 @@ export default function QuotationPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search quotations..."
+            placeholder="Search pre orders..."
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             className="pl-9"
@@ -226,7 +209,7 @@ export default function QuotationPage() {
       <DataTable
         title=""
         columns={columns}
-        data={quotations}
+        data={preorders}
         loading={loading}
         searchPlaceholder=""
         pagination={pagination}
