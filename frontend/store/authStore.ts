@@ -23,10 +23,11 @@ interface AuthState {
   isAuthenticated: boolean
   isLoading: boolean
   _hasHydrated: boolean
-  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>
+  login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>
   logout: () => Promise<void>
   setAuth: (user: User | null, token: string | null) => void
   setHasHydrated: (state: boolean) => void
+  refreshUserProfile: () => Promise<boolean>
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -38,10 +39,17 @@ export const useAuthStore = create<AuthState>()(
       isLoading: true,
       _hasHydrated: false,
 
-      login: async (username: string, password: string) => {
+      login: async (email: string, password: string) => {
         try {
-          const response = await api.post('/auth/login', { username, password })
+          const response = await api.post('/auth/login', { email, password })
           const { user, token } = response.data.data
+
+          // Debug logging
+          console.log('=== FRONTEND LOGIN DEBUG ===')
+          console.log('Response data:', response.data)
+          console.log('User received:', user)
+          console.log('User role_name:', user.role_name)
+          console.log('===========================')
 
           set({
             user,
@@ -89,6 +97,29 @@ export const useAuthStore = create<AuthState>()(
 
       setHasHydrated: (hydrated: boolean) => {
         set({ _hasHydrated: hydrated, isLoading: !hydrated })
+      },
+
+      refreshUserProfile: async () => {
+        try {
+          const response = await api.get('/auth/profile')
+          const userData = response.data.data?.user
+
+          if (!userData) {
+            console.error('No user data in response:', response.data)
+            return false
+          }
+
+          set({
+            user: userData,
+            isAuthenticated: true,
+          })
+
+          console.log('User profile refreshed:', userData)
+          return true
+        } catch (error) {
+          console.error('Failed to refresh user profile:', error)
+          return false
+        }
       },
     }),
     {

@@ -142,14 +142,29 @@ export const login = async (request: FastifyRequest, reply: FastifyReply) => {
     // Don't fail the login request, just log the error
   }
 
-  // Prepare user data (exclude password)
-  const { password: _, ...userData } = user;
+  // Prepare user data (exclude password and flatten role)
+  const { password: _, role, ...userData } = user;
+
+  // Debug logging
+  console.log('=== LOGIN DEBUG ===');
+  console.log('User from DB:', JSON.stringify(user, null, 2));
+  console.log('Role object:', role);
+  console.log('Role name:', role?.name);
+
+  // Flatten role data for frontend
+  const userResponse = {
+    ...userData,
+    role_name: role?.name || null
+  };
+
+  console.log('User response:', JSON.stringify(userResponse, null, 2));
+  console.log('==================');
 
   return reply.send({
     success: true,
     message: SUCCESS_MESSAGES.LOGIN_SUCCESS,
     data: {
-      user: userData,
+      user: userResponse,
       token
     }
   });
@@ -175,9 +190,18 @@ export const getProfile = async (request: FastifyRequest, reply: FastifyReply) =
     throw new NotFoundError(RESOURCE_ERRORS.USER_NOT_FOUND);
   }
 
+  // Flatten role data for frontend
+  const { role, ...userData } = user;
+  const userResponse = {
+    ...userData,
+    role_name: role?.name || null
+  };
+
   return reply.send({
     success: true,
-    user
+    data: {
+      user: userResponse
+    }
   });
 };
 
