@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useParams } from 'next/navigation';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -86,9 +86,9 @@ import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { quotationService, QuotationFormData, QuotationDetail } from "@/services/quotationService";
-import { customerService, Address, Contact } from "@/services/customerService";
-import { serviceService } from "@/services/serviceService";
-import { packageService } from "@/services/packageService";
+import { Address, Contact } from "@/services/customerService";
+import { useCustomerStore } from "@/store/customerStore";
+import { useServiceStore, ServiceOption, PackageOption } from "@/store/serviceStore";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
@@ -108,31 +108,6 @@ const quotationFormSchema = z.object({
 });
 
 type FormData = z.infer<typeof quotationFormSchema>;
-
-interface CustomerOption {
-  id: number;
-  code: string;
-  customer_name: string;
-  addresses: Address[];
-  contacts: Contact[];
-}
-
-interface ServiceOption {
-  id: number;
-  code: string;
-  name: string;
-  price: number;
-  parameter?: { id: number; name: string };
-  method?: { id: number; name: string };
-}
-
-interface PackageOption {
-  id: number;
-  code: string;
-  name: string;
-  price: number;
-  services?: Array<{ id: number; code: string; name: string; price: number | { value: number } }>;
-}
 
 interface PackageServiceInfo {
   id: number;
@@ -319,24 +294,40 @@ export default function QuotationEditPage() {
   const [samples, setSamples] = useState<SampleItem[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
 
-  // Customer state
-  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
-  const [customerSearchResults, setCustomerSearchResults] = useState<CustomerOption[]>([]);
-  const [loadingCustomerSearch, setLoadingCustomerSearch] = useState(false);
-  const [openCustomerPopover, setOpenCustomerPopover] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(null);
+  // Customer/Contact/Address state from Zustand store
+  const {
+    searchQuery: customerSearchQuery,
+    searchResults: customerSearchResults,
+    isSearching: loadingCustomerSearch,
+    popoverOpen: openCustomerPopover,
+    selectedCustomer,
+    contacts: availableContacts,
+    addresses: availableAddresses,
+    setSearchQuery: setCustomerSearchQuery,
+    setPopoverOpen: setOpenCustomerPopover,
+    searchCustomers,
+    selectCustomer,
+    loadCustomerWithContact,
+  } = useCustomerStore();
 
-  // Service search state (per sample)
-  const [serviceSearchQueries, setServiceSearchQueries] = useState<Record<string, string>>({});
-  const [serviceSearchResults, setServiceSearchResults] = useState<ServiceOption[]>([]);
-  const [loadingServiceSearch, setLoadingServiceSearch] = useState(false);
-  const [openServicePopover, setOpenServicePopover] = useState<string | null>(null);
-
-  // Package search state (per sample)
-  const [packageSearchQueries, setPackageSearchQueries] = useState<Record<string, string>>({});
-  const [packageSearchResults, setPackageSearchResults] = useState<PackageOption[]>([]);
-  const [loadingPackageSearch, setLoadingPackageSearch] = useState(false);
-  const [openPackagePopover, setOpenPackagePopover] = useState<string | null>(null);
+  // Service/Package search state from Zustand store
+  const {
+    serviceSearchQueries,
+    packageSearchQueries,
+    serviceSearchResults,
+    packageSearchResults,
+    loadingServiceSearch,
+    loadingPackageSearch,
+    openServicePopover,
+    openPackagePopover,
+    setServiceQuery,
+    setPackageQuery,
+    setServicePopoverOpen,
+    setPackagePopoverOpen,
+    searchServices,
+    searchPackages,
+    reset: resetServiceStore,
+  } = useServiceStore();
 
   // Add sample form state
   const [isAddingSample, setIsAddingSample] = useState(false);
@@ -421,51 +412,39 @@ export default function QuotationEditPage() {
       form.setValue('samplingRequest', quotation.sampling_request === '1' || quotation.sampling_request === 'true');
       form.setValue('samplingDate', quotation.sampling_date ? new Date(quotation.sampling_date).toISOString().split('T')[0] : '');
 
-      // Set customer data
+      // Set customer data using Zustand store
       if (quotation.customer && quotation.customer_id) {
         form.setValue('customerId', quotation.customer_id);
 
-        // Fetch full customer data to get contacts and addresses
-        try {
-          const customerResponse = await customerService.getById(quotation.customer_id);
-          if (customerResponse.data) {
-            const customerData: CustomerOption = {
-              id: customerResponse.data.id,
-              code: customerResponse.data.code,
-              customer_name: customerResponse.data.customer_name,
-              addresses: customerResponse.data.addresses || [],
-              contacts: customerResponse.data.contacts || [],
-            };
-            setSelectedCustomer(customerData);
+        // Build contact object from quotation data
+        const currentContact = quotation.contact ? {
+          id: quotation.contact.id,
+          title: '',
+          first_name: quotation.contact.first_name,
+          middle_name: quotation.contact.middle_name,
+          surname: quotation.contact.surname,
+          username: '',
+          job_title: null,
+          department: quotation.contact.department,
+          email: quotation.contact.email || '',
+          phone: quotation.contact.phone || '',
+          fax: null,
+          mobile_phone: null,
+          status: 'active',
+        } as Contact : null;
 
-            // Set contact and address after customer is loaded
-            if (quotation.contact_id) {
-              form.setValue('contactId', quotation.contact_id);
-            }
-            if (quotation.address_id) {
-              form.setValue('addressId', quotation.address_id);
-            }
-          }
-        } catch (err) {
-          console.error('Error fetching customer details:', err);
-          // Fallback - set basic customer info
-          setSelectedCustomer({
-            id: quotation.customer.id,
-            code: quotation.customer.code,
-            customer_name: quotation.customer.customer_name,
-            addresses: quotation.address ? [quotation.address] : [],
-            contacts: quotation.contact ? [{
-              id: quotation.contact.id,
-              first_name: quotation.contact.first_name,
-              middle_name: quotation.contact.middle_name,
-              surname: quotation.contact.surname,
-              email: quotation.contact.email || '',
-              phone: quotation.contact.phone || '',
-              department: quotation.contact.department,
-              position: '',
-              customer_id: quotation.customer_id!,
-            }] : [],
-          });
+        // Build address object from quotation data
+        const currentAddress = quotation.address ? quotation.address as Address : null;
+
+        // Load customer with contact and address via Zustand store
+        await loadCustomerWithContact(quotation.customer_id, currentContact, currentAddress);
+
+        // Set contact and address form values
+        if (quotation.contact_id) {
+          form.setValue('contactId', quotation.contact_id);
+        }
+        if (quotation.address_id) {
+          form.setValue('addressId', quotation.address_id);
         }
       }
 
@@ -573,92 +552,31 @@ export default function QuotationEditPage() {
     loadQuotationData();
   }, [loadQuotationData]);
 
-  // Debounced customer search
+  // Debounced customer search using Zustand store
   useEffect(() => {
-    if (customerSearchQuery.length < 2) {
-      setCustomerSearchResults([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      setLoadingCustomerSearch(true);
-      try {
-        const response = await customerService.getJson({ q: customerSearchQuery });
-        const items = response.items || (response as any).data || [];
-        setCustomerSearchResults(items.map((c: any) => ({
-          id: c.id,
-          code: c.code || '',
-          customer_name: c.customer_name,
-          addresses: c.addresses || [],
-          contacts: c.contacts || [],
-        })));
-      } catch (error) {
-        console.error('Error searching customers:', error);
-        setCustomerSearchResults([]);
-      } finally {
-        setLoadingCustomerSearch(false);
-      }
+    const timer = setTimeout(() => {
+      searchCustomers(customerSearchQuery);
     }, 300);
     return () => clearTimeout(timer);
-  }, [customerSearchQuery]);
+  }, [customerSearchQuery, searchCustomers]);
 
-  // Debounced service search
+  // Debounced service search using Zustand store
   useEffect(() => {
     const activeSearch = openServicePopover ? serviceSearchQueries[openServicePopover] : '';
-    if (!activeSearch || activeSearch.length < 2) {
-      setServiceSearchResults([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      setLoadingServiceSearch(true);
-      try {
-        const response = await serviceService.getJson({ q: activeSearch });
-        const items = response.items || response.data || [];
-        setServiceSearchResults(items.map((s: any) => ({
-          id: s.id,
-          code: s.code || '',
-          name: s.name,
-          price: s.price || 0,
-          parameter: s.parameter,
-          method: s.method,
-        })));
-      } catch (error) {
-        console.error('Error searching services:', error);
-        setServiceSearchResults([]);
-      } finally {
-        setLoadingServiceSearch(false);
-      }
+    const timer = setTimeout(() => {
+      searchServices(activeSearch);
     }, 300);
     return () => clearTimeout(timer);
-  }, [serviceSearchQueries, openServicePopover]);
+  }, [serviceSearchQueries, openServicePopover, searchServices]);
 
-  // Debounced package search
+  // Debounced package search using Zustand store
   useEffect(() => {
     const activeSearch = openPackagePopover ? packageSearchQueries[openPackagePopover] : '';
-    if (!activeSearch || activeSearch.length < 2) {
-      setPackageSearchResults([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      setLoadingPackageSearch(true);
-      try {
-        const response = await packageService.getJson({ q: activeSearch });
-        const items = response.items || response.data || [];
-        setPackageSearchResults(items.map((p: any) => ({
-          id: p.id,
-          code: p.code || '',
-          name: p.name,
-          price: p.price?.value || 0,
-          services: p.services,
-        })));
-      } catch (error) {
-        console.error('Error searching packages:', error);
-        setPackageSearchResults([]);
-      } finally {
-        setLoadingPackageSearch(false);
-      }
+    const timer = setTimeout(() => {
+      searchPackages(activeSearch);
     }, 300);
     return () => clearTimeout(timer);
-  }, [packageSearchQueries, openPackagePopover]);
+  }, [packageSearchQueries, openPackagePopover, searchPackages]);
 
   // Sample management
   const addSample = () => {
@@ -756,8 +674,8 @@ export default function QuotationEditPage() {
     setSamples(prev => prev.map(s =>
       s.id === sampleId ? { ...s, services: [...s.services, newService] } : s
     ));
-    setServiceSearchQueries(prev => ({ ...prev, [sampleId]: '' }));
-    setOpenServicePopover(null);
+    setServiceQuery(sampleId, '');
+    setServicePopoverOpen(null);
   };
 
   const addPackageToSample = (sampleId: string, pkg: PackageOption) => {
@@ -782,8 +700,8 @@ export default function QuotationEditPage() {
     setSamples(prev => prev.map(s =>
       s.id === sampleId ? { ...s, services: [...s.services, newPackage] } : s
     ));
-    setPackageSearchQueries(prev => ({ ...prev, [sampleId]: '' }));
-    setOpenPackagePopover(null);
+    setPackageQuery(sampleId, '');
+    setPackagePopoverOpen(null);
   };
 
   const removeServiceFromSample = (sampleId: string, serviceId: string) => {
@@ -938,10 +856,6 @@ export default function QuotationEditPage() {
 
     return { subTotal, discountAmount, afterDiscount, pcAmount, afterPc, vatAmount: finalVatAmount, total: finalTotal, isMinimumApplied };
   }, [samples, products, priority, percentDiscount, percentVat]);
-
-  // Available contacts and addresses
-  const availableContacts = selectedCustomer?.contacts || [];
-  const availableAddresses = selectedCustomer?.addresses || [];
 
   const onSubmit = async (data: FormData) => {
     // Validation: must have at least one sample or one product
@@ -1161,12 +1075,9 @@ export default function QuotationEditPage() {
                                     key={customer.id}
                                     value={String(customer.id)}
                                     onSelect={() => {
-                                      field.onChange(customer.id);
-                                      setSelectedCustomer(customer);
-                                      form.setValue('contactId', 0);
+                                      // Also reset addressId when customer changes
                                       form.setValue('addressId', 0);
-                                      setOpenCustomerPopover(false);
-                                      setCustomerSearchQuery("");
+                                      selectCustomer(customer, form.setValue);
                                     }}
                                     className="cursor-pointer"
                                   >
@@ -1654,8 +1565,8 @@ export default function QuotationEditPage() {
                             <Popover
                               open={openServicePopover === sample.id}
                               onOpenChange={(open) => {
-                                setOpenServicePopover(open ? sample.id : null);
-                                if (!open) setServiceSearchQueries(prev => ({ ...prev, [sample.id]: '' }));
+                                setServicePopoverOpen(open ? sample.id : null);
+                                if (!open) setServiceQuery(sample.id, '');
                               }}
                             >
                               <PopoverTrigger asChild>
@@ -1676,10 +1587,7 @@ export default function QuotationEditPage() {
                                       type="text"
                                       placeholder="Type at least 2 characters..."
                                       value={serviceSearchQueries[sample.id] || ''}
-                                      onChange={(e) => setServiceSearchQueries(prev => ({
-                                        ...prev,
-                                        [sample.id]: e.target.value
-                                      }))}
+                                      onChange={(e) => setServiceQuery(sample.id, e.target.value)}
                                       className="flex h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                                     />
                                   </div>
@@ -1727,8 +1635,8 @@ export default function QuotationEditPage() {
                             <Popover
                               open={openPackagePopover === sample.id}
                               onOpenChange={(open) => {
-                                setOpenPackagePopover(open ? sample.id : null);
-                                if (!open) setPackageSearchQueries(prev => ({ ...prev, [sample.id]: '' }));
+                                setPackagePopoverOpen(open ? sample.id : null);
+                                if (!open) setPackageQuery(sample.id, '');
                               }}
                             >
                               <PopoverTrigger asChild>
@@ -1749,10 +1657,7 @@ export default function QuotationEditPage() {
                                       type="text"
                                       placeholder="Type at least 2 characters..."
                                       value={packageSearchQueries[sample.id] || ''}
-                                      onChange={(e) => setPackageSearchQueries(prev => ({
-                                        ...prev,
-                                        [sample.id]: e.target.value
-                                      }))}
+                                      onChange={(e) => setPackageQuery(sample.id, e.target.value)}
                                       className="flex h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                                     />
                                   </div>

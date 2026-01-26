@@ -1,4 +1,4 @@
-import { RepositoryResult, PaginatedData } from '../results/RepositoryResult';
+import { RepositoryResult, PaginatedData } from '../results/RepositoryResult.js';
 
 /**
  * Sample Status Constants
@@ -11,6 +11,8 @@ export const SampleStatus = {
   CUSTOMER_RETEST: 'Customer Retest',
   VERIFIED_BY_QC: 'Verified by QC',
   APPROVED_BY_TM: 'Approved by TM',
+  ECOA_DRAFT_SENT: 'ECOA Draft Sent',
+  COA_RELEASED: 'COA Released',
   CANCEL: 'Cancel',
 } as const;
 
@@ -42,13 +44,12 @@ export interface CreateSampleDTO {
   standartId?: number | null;
   name: string;
   description?: string | null;
-  sampleType?: string | null;
-  sampleCondition?: string | null;
-  samplingDate?: Date | null;
+  volume?: string | null;
+  sampleStorage?: string | null;
   receivedDate?: Date | null;
   quantity?: number;
-  unit?: string | null;
-  status: string;
+  priority?: string;
+  status?: string;
   dueDate?: Date | null;
   coaReleaseDueDate?: Date | null;
   createdBy: number;
@@ -61,12 +62,11 @@ export interface UpdateSampleDTO {
   standartId?: number | null;
   name?: string;
   description?: string | null;
-  sampleType?: string | null;
-  sampleCondition?: string | null;
-  samplingDate?: Date | null;
+  volume?: string | null;
+  sampleStorage?: string | null;
   receivedDate?: Date | null;
   quantity?: number;
-  unit?: string | null;
+  priority?: string;
   status?: string;
   dueDate?: Date | null;
   coaReleaseDueDate?: Date | null;
@@ -81,42 +81,48 @@ export interface UpdateSampleDTO {
 export interface SampleWithRelations {
   id: number;
   code: string;
-  orderId: number;
-  standartId: number | null;
+  order_id: number;
+  standart_id: number | null;
   name: string;
   description: string | null;
-  sampleType: string | null;
-  sampleCondition: string | null;
-  samplingDate: Date | null;
-  receivedDate: Date | null;
-  quantity: number;
-  unit: string | null;
-  status: string;
-  dueDate: Date | null;
-  coaReleaseDueDate: Date | null;
-  analysisFinishedDate: Date | null;
-  leadTime: string | null;
-  createdAt: Date;
-  updatedAt: Date | null;
+  volume: string | null;
+  sample_storage: string | null;
+  received_date: Date | null;
+  due_date: Date | null;
+  coa_release_due_date: Date | null;
+  priority: string;
+  sample_status: string;
+  lead_time: string | null;
+  analysis_finished_date: Date | null;
+  quantity: number | null;
+  result_summary: string | null;
+  coa_released_date: Date | null;
+  verification_status_micro: number | null;
+  verification_status_chem: number | null;
+  auto_publish: number | null;
+  auto_publish_date: Date | null;
+  created_at: Date;
+  updated_at: Date | null;
+  created_by: number;
+  updated_by: number | null;
+  trash: number | null;
   order: {
     id: number;
     code: string;
-    status: string;
-    priority: string;
-    customer: {
+    order_status: string;
+    priority: string | null;
+    customer?: {
       id: number;
       code: string;
       customer_name: string;
-    };
+      special_customer?: number | null;
+    } | null;
   };
   standart?: {
     id: number;
     code: string;
     name: string;
   } | null;
-  _count?: {
-    worksheets: number;
-  };
 }
 
 /**
@@ -131,7 +137,136 @@ export const STATUS_PRIORITY: Record<string, number> = {
   'To Be Verified': 5,
   'Verified by QC': 6,
   'Approved by TM': 7,
+  'ECOA Draft Sent': 8,
+  'COA Released': 9,
 };
+
+// ===== NEW INTERFACES FOR WORKFLOW OPERATIONS =====
+
+/**
+ * Sample Approval Options
+ */
+export interface ApproveSampleOptions {
+  publishCoa?: boolean;
+  sendEmail?: boolean;
+  resultSummary?: string | null;
+}
+
+/**
+ * Sample Approval Result
+ */
+export interface SampleApprovalResult {
+  sample: SampleWithRelations;
+  coaCreated: boolean;
+  coaCode?: string;
+  coaId?: number;
+  autoPublishDate?: Date;
+  orderStatusUpdated: boolean;
+}
+
+/**
+ * Sample Cancellation Result
+ */
+export interface SampleCancellationResult {
+  sample: SampleWithRelations;
+  worksheetsCancelled: number;
+  orderTrashed: boolean;
+}
+
+/**
+ * Receive Sample DTO
+ */
+export interface ReceiveSampleDTO {
+  receivedDate: Date;
+  dueDate: Date;
+  coaReleaseDueDate: Date;
+  name?: string;
+  description?: string | null;
+  quantity?: number;
+}
+
+/**
+ * Dashboard Filter for SampleTest endpoints
+ */
+export interface SampleDashboardFilter extends SampleFilter {
+  /** Filter by due date status */
+  dueDateStatus?: 'delayed' | 'today' | 'upcoming';
+  /** Filter by retest type */
+  retestStatus?: 'internal' | 'customer';
+  /** Filter for samples waiting payment */
+  waitingPayment?: boolean;
+  /** Filter by analyst type */
+  analystTypeId?: number;
+  /** Filter by booking status: null=unbooked, notnull=booked, number=specific user */
+  bookedBy?: number | 'null' | 'notnull';
+  /** Include COA information */
+  includeCoa?: boolean;
+  /** Include customer details */
+  includeCustomer?: boolean;
+  /** Sort field */
+  orderBy?: string;
+  /** Sort direction */
+  sortDir?: 'asc' | 'desc';
+}
+
+/**
+ * Report Filter
+ */
+export interface SampleReportFilter {
+  dateFrom: Date;
+  dateTo: Date;
+  customerId?: number;
+  status?: string[];
+  includeTrash?: boolean;
+}
+
+/**
+ * Sample Report Data
+ */
+export interface SampleReportData {
+  id: number;
+  code: string;
+  name: string;
+  status: string;
+  priority: string;
+  receivedDate: Date | null;
+  dueDate: Date | null;
+  coaReleaseDueDate: Date | null;
+  coaReleasedDate: Date | null;
+  analysisFinishedDate: Date | null;
+  leadTime: string | null;
+  orderCode: string;
+  orderStatus: string;
+  customerCode: string;
+  customerName: string;
+  worksheetCount: number;
+  worksheetApprovedCount: number;
+  createdAt: Date;
+}
+
+/**
+ * Sample with extended relations for dashboard
+ */
+export interface SampleDashboardItem extends SampleWithRelations {
+  /** COA information if included */
+  coa?: {
+    id: number;
+    code: string | null;
+    status: string;
+    publishedDate: Date | null;
+  } | null;
+  /** Remaining time until due */
+  remainingTime?: string;
+  /** Is sample overdue */
+  isOverdue?: boolean;
+  /** Analyst booking info */
+  analyst?: {
+    id: number;
+    displayName: string;
+  } | null;
+  /** Whether sample is available for booking (for Analyst role) */
+  available?: boolean;
+}
 
 /**
  * Sample Repository Interface
@@ -224,4 +359,100 @@ export interface ISampleRepository {
    * Get analyst types for sample
    */
   getAnalystTypes(sampleId: number): Promise<RepositoryResult<number[]>>;
+
+  // ===== Workflow Operations =====
+
+  /**
+   * Approve sample (TM approval)
+   * - Updates sample status to 'Approved by TM' or 'ECOA Draft Sent'
+   * - Updates worksheets to 'Approved by TM'
+   * - Creates/updates COA record if applicable
+   * - Sets auto_publish_date for COA
+   */
+  approveSample(
+    id: number,
+    userId: number,
+    options?: ApproveSampleOptions
+  ): Promise<RepositoryResult<SampleApprovalResult>>;
+
+  /**
+   * Verify sample (QC verification)
+   * - Verifies worksheets matching user's analyst type authorization
+   * - Updates verification_status_micro or verification_status_chem
+   * - Updates sample status to 'Verified by QC' if all worksheets verified
+   */
+  verifySample(
+    id: number,
+    userId: number,
+    analystTypeIds: number[]
+  ): Promise<RepositoryResult<SampleWithRelations>>;
+
+  /**
+   * Cancel sample with cascade
+   * - Updates sample status to 'Cancel'
+   * - Cancels all associated worksheets
+   * - Trashes order if all samples are cancelled
+   */
+  cancelSample(
+    id: number,
+    userId: number,
+    reason?: string
+  ): Promise<RepositoryResult<SampleCancellationResult>>;
+
+  /**
+   * Receive sample
+   * - Updates received_date, due_date, coa_release_due_date
+   * - Optionally updates name, description, quantity
+   */
+  receiveSample(
+    id: number,
+    data: ReceiveSampleDTO,
+    userId: number
+  ): Promise<RepositoryResult<SampleWithRelations>>;
+
+  // ===== Dashboard Queries =====
+
+  /**
+   * Find delayed samples (past COA release due date)
+   */
+  findDelayedSamples(
+    filter: SampleDashboardFilter
+  ): Promise<RepositoryResult<PaginatedData<SampleDashboardItem>>>;
+
+  /**
+   * Find samples due today
+   */
+  findSamplesDueToday(
+    filter: SampleDashboardFilter
+  ): Promise<RepositoryResult<PaginatedData<SampleDashboardItem>>>;
+
+  /**
+   * Find samples in retest status
+   */
+  findRetestSamples(
+    filter: SampleDashboardFilter
+  ): Promise<RepositoryResult<PaginatedData<SampleDashboardItem>>>;
+
+  /**
+   * Find samples needing revision
+   */
+  findRevisionSamples(
+    filter: SampleDashboardFilter
+  ): Promise<RepositoryResult<PaginatedData<SampleDashboardItem>>>;
+
+  /**
+   * Find samples waiting for payment
+   */
+  findWaitingPaymentSamples(
+    filter: SampleDashboardFilter
+  ): Promise<RepositoryResult<PaginatedData<SampleDashboardItem>>>;
+
+  // ===== Report Operations =====
+
+  /**
+   * Find samples for report export
+   */
+  findForReport(
+    filter: SampleReportFilter
+  ): Promise<RepositoryResult<SampleReportData[]>>;
 }

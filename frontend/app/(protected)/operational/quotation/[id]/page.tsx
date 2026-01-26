@@ -108,6 +108,8 @@ interface SampleGroup {
 const groupDetailsBySample = (details: QuotationDetail[]): SampleGroup[] => {
   const groups: Record<string, SampleGroup> = {};
 
+  if (!Array.isArray(details)) return [];
+
   details.forEach(detail => {
     const key = `${detail.sampleName}_${detail.indexSample || 0}`;
     if (!groups[key]) {
@@ -211,7 +213,7 @@ export default function QuotationDetailPage() {
   const sampleGroups = groupDetailsBySample(details).filter(
     group => group.items.some(item => item.product !== 1)
   );
-  const productDetails = details.filter(d => d.product === 1);
+  const productDetails = Array.isArray(details) ? details.filter(d => d.product === 1) : [];
 
   // Priority charge rates: normal = 0%, urgent = 50%, very urgent = 100%
   const getPriorityChargeRate = (priority: string | null): number => {
@@ -566,7 +568,7 @@ export default function QuotationDetailPage() {
                                 <div className="font-semibold">
                                   <RenderHTML html={item.package?.name || item.service?.name || '-'} />
                                 </div>
-                                {item.package?.services && item.package.services.length > 0 && (
+                                {Array.isArray(item.package?.services) && item.package.services.length > 0 && (
                                   <ul className="mt-1 text-xs text-muted-foreground list-disc list-inside">
                                     {item.package.services.map((svc, idx) => (
                                       <li key={`${item.id}-${svc.id}-${idx}`}>
@@ -703,7 +705,7 @@ export default function QuotationDetailPage() {
       </Card>
 
       {/* Linked Order (if any) */}
-      {quotation.orders && quotation.orders.length > 0 && (
+      {Array.isArray(quotation.orders) && quotation.orders.length > 0 && (
         <Card className="overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
             <CardTitle className="flex items-center gap-2">

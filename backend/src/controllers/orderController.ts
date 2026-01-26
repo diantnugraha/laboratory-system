@@ -2,8 +2,17 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../config/database.js';
 import { OrderRepository } from '../repositories/implementations/OrderRepository.js';
 import { parseId, parseQueryParam, ApiResponse } from '../types/index.js';
-import { exportService, OrderExportData } from '../services/exportService.js';
+import {
+  exportService,
+  OrderExportData,
+  CTSExportData,
+  NonCTSExportData,
+  CalibrationExportData,
+  ActiveCustomerExportData,
+  ReportExportData,
+} from '../services/exportService.js';
 import { pdfService } from '../services/pdfService.js';
+import { emailService } from '../services/emailService.js';
 import { safeParseDate, parseRequiredDate, parseOptionalDate } from '../utils/dateHelper.js';
 import { ORDER_CONFIG } from '../config/order.js';
 import {
@@ -44,6 +53,50 @@ const parsePaginationParams = (query: FastifyRequest['query']): { page: number; 
 };
 
 /**
+ * Build enhanced role-based filter parameters from user context
+ * Used for department-based and agency-based filtering
+ */
+const buildRoleBasedFilters = (user: FastifyRequest['user']) => {
+  if (!user) {
+    return {};
+  }
+
+  // Cast to extended user type that may have additional properties
+  const extendedUser = user as typeof user & {
+    departments?: string[];
+    list_customer?: number[];
+    list_contact?: number[];
+  };
+
+  // Parse user departments if available (from contact.department or user.departments)
+  let userDepartments: string[] | undefined;
+  if (extendedUser.departments && Array.isArray(extendedUser.departments)) {
+    userDepartments = extendedUser.departments;
+  } else if (user.department && typeof user.department === 'string') {
+    userDepartments = [user.department];
+  }
+
+  // Parse agency customer/contact lists if available
+  let agencyCustomerIds: number[] | undefined;
+  let agencyContactIds: number[] | undefined;
+  if (extendedUser.list_customer && Array.isArray(extendedUser.list_customer)) {
+    agencyCustomerIds = extendedUser.list_customer;
+  }
+  if (extendedUser.list_contact && Array.isArray(extendedUser.list_contact)) {
+    agencyContactIds = extendedUser.list_contact;
+  }
+
+  return {
+    userRole: user.role_id,
+    userCustomerId: user.customer_id ?? undefined,
+    userContactId: user.contact_id ?? undefined,
+    userDepartments,
+    agencyCustomerIds,
+    agencyContactIds,
+  };
+};
+
+/**
  * GET /api/orders/generate-code - Get next auto-generated code
  */
 export const getGeneratedCode = async (_request: FastifyRequest, reply: FastifyReply) => {
@@ -74,8 +127,7 @@ export const getAllOrders = async (request: FastifyRequest, reply: FastifyReply)
     priority,
     page,
     limit,
-    userRole: request.user?.role_id,
-    userCustomerId: request.user?.customer_id ?? undefined,
+    ...buildRoleBasedFilters(request.user),
   });
 
   if (result.isFailure()) {
@@ -127,6 +179,50 @@ export const getOrdersJson = async (request: FastifyRequest, reply: FastifyReply
   }
 
   return reply.send({ success: true, data: result.getValue() });
+};
+
+/**
+ * GET /api/orders/single-json/:id - Get lightweight single order for dropdown selection
+ */
+export const getSingleOrderJson = async (request: FastifyRequest, reply: FastifyReply) => {
+  const params = request.params as { id: string };
+  const id = parseId(params.id);
+
+  if (!id) {
+    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
+  }
+
+  // Use a lightweight query for dropdown selection
+  const order = await prisma.order.findFirst({
+    where: { id, trash: null },
+    select: {
+      id: true,
+      code: true,
+      order_status: true,
+      order_priority: true,
+      order_date: true,
+      total: true,
+      customer: {
+        select: {
+          id: true,
+          customer_name: true,
+        },
+      },
+      contact: {
+        select: {
+          id: true,
+          first_name: true,
+          surname: true,
+        },
+      },
+    },
+  });
+
+  if (!order) {
+    throw new NotFoundError(RESOURCE_ERRORS.ORDER_NOT_FOUND);
+  }
+
+  return reply.send({ success: true, data: order });
 };
 
 /**
@@ -328,7 +424,25 @@ export const reviewOrder = async (request: FastifyRequest, reply: FastifyReply) 
     throw new BusinessError(result.error || RESOURCE_ERRORS.UPDATE_FAILED('review order'));
   }
 
-  return reply.send({ success: true, data: result.getValue() });
+  const order = result.getValue();
+
+  // Send email notification to customer contact
+  if (order.contact?.email) {
+    const contactName = `${order.contact.first_name} ${order.contact.surname}`;
+    emailService.sendOrderReviewedNotification(
+      order.contact.email,
+      contactName,
+      order.code,
+      order.customer?.customer_name ?? '',
+      status as 'Reviewed' | 'To Be Verified' | 'Cancelled',
+      reason
+    ).catch(err => {
+      // Log but don't fail the request if email fails
+      console.error('Failed to send review notification email:', err);
+    });
+  }
+
+  return reply.send({ success: true, data: order });
 };
 
 /**
@@ -368,7 +482,38 @@ export const uploadPaymentDocument = async (request: FastifyRequest, reply: Fast
     throw new BusinessError(result.error || FILE_ERRORS.UPLOAD_FAILED);
   }
 
-  return reply.send({ success: true, data: result.getValue() });
+  const order = result.getValue();
+
+  // Send notification to admin users about payment upload
+  // Get admin emails (roles 1=SuperAdmin, 2=Admin)
+  const admins = await prisma.users.findMany({
+    where: {
+      role_id: { in: [1, 2] },
+      trash: null,
+      email: { not: null },
+    },
+    select: { email: true },
+  });
+
+  const adminEmails = admins.map(a => a.email).filter((e): e is string => !!e);
+
+  if (adminEmails.length > 0) {
+    const contactName = order.contact
+      ? `${order.contact.first_name} ${order.contact.surname}`
+      : '';
+
+    emailService.sendPaymentUploadNotification(
+      adminEmails,
+      order.code,
+      order.customer?.customer_name ?? '',
+      contactName,
+      paymentDateValue
+    ).catch(err => {
+      console.error('Failed to send payment upload notification email:', err);
+    });
+  }
+
+  return reply.send({ success: true, data: order });
 };
 
 /**
@@ -389,6 +534,100 @@ export const confirmPayment = async (request: FastifyRequest, reply: FastifyRepl
   }
 
   return reply.send({ success: true, data: result.getValue() });
+};
+
+/**
+ * POST /api/orders/:id/resend-email - Resend order notification email
+ */
+export const resendOrderEmail = async (request: FastifyRequest, reply: FastifyReply) => {
+  const params = request.params as { id: string };
+  const id = parseId(params.id);
+
+  if (!id) {
+    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
+  }
+
+  const { email_type } = request.body as { email_type?: 'review' | 'status' | 'payment' };
+
+  const result = await orderRepo.findById(id);
+
+  if (result.isFailure()) {
+    throw new NotFoundError(result.error || RESOURCE_ERRORS.ORDER_NOT_FOUND);
+  }
+
+  const order = result.getValue();
+  if (!order) {
+    throw new NotFoundError(RESOURCE_ERRORS.ORDER_NOT_FOUND);
+  }
+
+  // Check if contact has email
+  if (!order.contact?.email) {
+    throw new BusinessError('Contact does not have an email address');
+  }
+
+  const contactName = `${order.contact.first_name} ${order.contact.surname}`;
+  const customerName = order.customer?.customer_name ?? '';
+
+  try {
+    switch (email_type) {
+      case 'review':
+        // Resend review notification (status depends on current order status)
+        const reviewStatus = order.status === 'Reviewed' ? 'Reviewed' : 'To Be Verified';
+        await emailService.sendOrderReviewedNotification(
+          order.contact.email,
+          contactName,
+          order.code,
+          customerName,
+          reviewStatus as 'Reviewed' | 'To Be Verified' | 'Cancelled'
+        );
+        break;
+
+      case 'status':
+        // Resend current status notification
+        await emailService.sendStatusChangeNotification(
+          order.contact.email,
+          contactName,
+          order.code,
+          customerName,
+          order.status,
+          order.status
+        );
+        break;
+
+      case 'payment':
+        // Resend payment confirmation (requires payment to be confirmed)
+        if (!order.paymentConfirmationDate) {
+          throw new BusinessError('Payment has not been confirmed for this order');
+        }
+        await emailService.sendStatusChangeNotification(
+          order.contact.email,
+          contactName,
+          order.code,
+          customerName,
+          'Payment Confirmation',
+          'Under Process'
+        );
+        break;
+
+      default:
+        // Default: resend based on current status
+        await emailService.sendStatusChangeNotification(
+          order.contact.email,
+          contactName,
+          order.code,
+          customerName,
+          order.status,
+          order.status
+        );
+    }
+
+    return reply.send({
+      success: true,
+      message: `Email notification resent to ${order.contact.email}`,
+    });
+  } catch (error: any) {
+    throw new AppError(500, `Failed to resend email: ${error.message}`);
+  }
 };
 
 /**
@@ -464,6 +703,7 @@ export const getWaitingPaymentOrders = async (request: FastifyRequest, reply: Fa
     customerId: customerId || undefined,
     page,
     limit,
+    ...buildRoleBasedFilters(request.user),
   });
 
   if (result.isFailure()) {
@@ -494,6 +734,7 @@ export const getOutstandingWhitelistOrders = async (request: FastifyRequest, rep
     customerId: customerId || undefined,
     page,
     limit,
+    ...buildRoleBasedFilters(request.user),
   });
 
   if (result.isFailure()) {
@@ -766,11 +1007,236 @@ export const downloadOrderDocument = async (request: FastifyRequest, reply: Fast
       filename = `Quotation_${order.code}.pdf`;
       break;
 
+    case 'request_form':
+      pdfBuffer = await pdfService.generateRequestForm({
+        requestCode: `RF-${order.code}`,
+        requestDate: order.orderDate.toISOString(),
+        orderCode: order.code,
+        customerName: order.customer?.customer_name ?? '',
+        contactName,
+        address: order.address?.address ?? '',
+        phone: order.contact?.phone ?? '',
+        email: order.contact?.email ?? '',
+        samples: samples.map(sample => {
+          const sampleWorksheets = worksheetsBySample[sample.id] ?? [];
+          const firstMatrix = sampleWorksheets[0]?.service?.method?.matrix?.name ?? '';
+          return {
+            code: sample.code,
+            name: sample.name,
+            matrix: firstMatrix,
+            quantity: 1,
+            condition: 'Normal',
+            parameters: sampleWorksheets
+              .filter(ws => ws.service?.parameter && ws.service?.method)
+              .map(ws => ({
+                name: ws.service.parameter.name,
+                method: ws.service.method.name,
+              })),
+          };
+        }),
+        priority: order.priority ?? undefined,
+        remarks: order.remarks ?? undefined,
+      });
+      filename = `RequestForm_${order.code}.pdf`;
+      break;
+
+    case 'coa_request':
+      pdfBuffer = await pdfService.generateCOARequest({
+        requestCode: `COAR-${order.code}`,
+        requestDate: new Date().toISOString(),
+        orderCode: order.code,
+        customerName: order.customer?.customer_name ?? '',
+        contactName,
+        address: order.address?.address ?? '',
+        phone: order.contact?.phone ?? '',
+        email: order.contact?.email ?? '',
+        samples: samples.map(sample => {
+          const sampleWorksheets = worksheetsBySample[sample.id] ?? [];
+          const firstMatrix = sampleWorksheets[0]?.service?.method?.matrix?.name ?? '';
+          return {
+            code: sample.code,
+            name: sample.name,
+            matrix: firstMatrix,
+            status: sample.status ?? 'Pending',
+            completionDate: sample.complete_date?.toISOString(),
+          };
+        }),
+        requestedFormat: 'Original (Hard Copy)',
+        deliveryMethod: 'Pick Up',
+        remarks: order.remarks ?? undefined,
+      });
+      filename = `COARequest_${order.code}.pdf`;
+      break;
+
+    case 'coa_release':
+      pdfBuffer = await pdfService.generateCOARelease({
+        releaseCode: `COARL-${order.code}`,
+        releaseDate: new Date().toISOString(),
+        orderCode: order.code,
+        customerName: order.customer?.customer_name ?? '',
+        contactName,
+        address: order.address?.address ?? '',
+        samples: samples.map(sample => ({
+          code: sample.code,
+          name: sample.name,
+          coaCode: `COA-${sample.code}`,
+          status: 'Released',
+          releasedDate: new Date().toISOString(),
+        })),
+        deliveryMethod: 'Pick Up',
+        remarks: order.remarks ?? undefined,
+      });
+      filename = `COARelease_${order.code}.pdf`;
+      break;
+
     default:
-      throw new ValidationError('Invalid document type');
+      throw new ValidationError('Invalid document type. Valid types: sppc, quotation, request_form, coa_request, coa_release');
   }
 
   reply.header('Content-Type', 'application/pdf');
   reply.header('Content-Disposition', `attachment; filename="${filename}"`);
   return reply.send(pdfBuffer);
+};
+
+/**
+ * GET /api/orders/export/cts - Export CTS (Customer Testing Service) orders to CSV
+ */
+export const exportCTS = async (request: FastifyRequest, reply: FastifyReply) => {
+  const queryObj = request.query as Record<string, unknown>;
+  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
+  const status = typeof queryObj.status === 'string' ? queryObj.status : undefined;
+  const dateFrom = safeParseDate(queryObj.date_from as string) ?? undefined;
+  const dateTo = safeParseDate(queryObj.date_to as string) ?? undefined;
+
+  const result = await orderRepo.findForCTSExport({
+    customerId: customerId || undefined,
+    status,
+    dateFrom,
+    dateTo,
+    limit: ORDER_CONFIG.MAX_EXPORT_LIMIT,
+  });
+
+  if (result.isFailure()) {
+    throw new AppError(500, result.error || 'Failed to export CTS data');
+  }
+
+  const data = result.getValue() as CTSExportData[];
+  const csv = exportService.exportCTS(data);
+  const filename = exportService.generateFileName('cts_export');
+
+  reply.header('Content-Type', 'text/csv');
+  reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+  return reply.send(csv);
+};
+
+/**
+ * GET /api/orders/export/ncts - Export Non-CTS (subcontracted) orders to CSV
+ */
+export const exportNonCTS = async (request: FastifyRequest, reply: FastifyReply) => {
+  const queryObj = request.query as Record<string, unknown>;
+  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
+  const status = typeof queryObj.status === 'string' ? queryObj.status : undefined;
+  const dateFrom = safeParseDate(queryObj.date_from as string) ?? undefined;
+  const dateTo = safeParseDate(queryObj.date_to as string) ?? undefined;
+
+  const result = await orderRepo.findForNonCTSExport({
+    customerId: customerId || undefined,
+    status,
+    dateFrom,
+    dateTo,
+    limit: ORDER_CONFIG.MAX_EXPORT_LIMIT,
+  });
+
+  if (result.isFailure()) {
+    throw new AppError(500, result.error || 'Failed to export Non-CTS data');
+  }
+
+  const data = result.getValue() as NonCTSExportData[];
+  const csv = exportService.exportNonCTS(data);
+  const filename = exportService.generateFileName('ncts_export');
+
+  reply.header('Content-Type', 'text/csv');
+  reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+  return reply.send(csv);
+};
+
+/**
+ * GET /api/orders/export/calibration - Export calibration orders to CSV
+ */
+export const exportCalibration = async (request: FastifyRequest, reply: FastifyReply) => {
+  const queryObj = request.query as Record<string, unknown>;
+  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
+  const status = typeof queryObj.status === 'string' ? queryObj.status : undefined;
+  const dateFrom = safeParseDate(queryObj.date_from as string) ?? undefined;
+  const dateTo = safeParseDate(queryObj.date_to as string) ?? undefined;
+
+  const result = await orderRepo.findForCalibrationExport({
+    customerId: customerId || undefined,
+    status,
+    dateFrom,
+    dateTo,
+    limit: ORDER_CONFIG.MAX_EXPORT_LIMIT,
+  });
+
+  if (result.isFailure()) {
+    throw new AppError(500, result.error || 'Failed to export calibration data');
+  }
+
+  const data = result.getValue() as CalibrationExportData[];
+  const csv = exportService.exportCalibration(data);
+  const filename = exportService.generateFileName('calibration_export');
+
+  reply.header('Content-Type', 'text/csv');
+  reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+  return reply.send(csv);
+};
+
+/**
+ * GET /api/orders/export/active-customers - Export active customers report to CSV
+ */
+export const exportActiveCustomers = async (request: FastifyRequest, reply: FastifyReply) => {
+  const queryObj = request.query as Record<string, unknown>;
+  const dateFrom = safeParseDate(queryObj.date_from as string) ?? undefined;
+  const dateTo = safeParseDate(queryObj.date_to as string) ?? undefined;
+
+  const result = await orderRepo.findActiveCustomers(dateFrom, dateTo);
+
+  if (result.isFailure()) {
+    throw new AppError(500, result.error || 'Failed to export active customers');
+  }
+
+  const data = result.getValue() as ActiveCustomerExportData[];
+  const csv = exportService.exportActiveCustomers(data);
+  const filename = exportService.generateFileName('active_customers');
+
+  reply.header('Content-Type', 'text/csv');
+  reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+  return reply.send(csv);
+};
+
+/**
+ * GET /api/orders/export/report - Generate order report by date range
+ */
+export const exportOrderReport = async (request: FastifyRequest, reply: FastifyReply) => {
+  const queryObj = request.query as Record<string, unknown>;
+  const dateFrom = safeParseDate(queryObj.date_from as string);
+  const dateTo = safeParseDate(queryObj.date_to as string);
+
+  if (!dateFrom || !dateTo) {
+    throw new ValidationError('date_from and date_to are required');
+  }
+
+  const result = await orderRepo.generateOrderReport(dateFrom, dateTo);
+
+  if (result.isFailure()) {
+    throw new AppError(500, result.error || 'Failed to generate order report');
+  }
+
+  const data = result.getValue() as ReportExportData[];
+  const csv = exportService.exportReport(data);
+  const filename = exportService.generateFileName('order_report');
+
+  reply.header('Content-Type', 'text/csv');
+  reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+  return reply.send(csv);
 };

@@ -159,6 +159,83 @@ export interface COAData {
 }
 
 /**
+ * Request Form Data Interface
+ */
+export interface RequestFormData {
+  requestCode: string;
+  requestDate: string;
+  orderCode?: string;
+  customerName: string;
+  contactName: string;
+  address: string;
+  phone: string;
+  email: string;
+  samples: Array<{
+    code: string;
+    name: string;
+    matrix: string;
+    quantity: number;
+    condition?: string;
+    parameters: Array<{
+      name: string;
+      method: string;
+    }>;
+  }>;
+  priority?: string;
+  expectedDueDate?: string;
+  specialInstructions?: string;
+  remarks?: string;
+}
+
+/**
+ * COA Request Data Interface
+ */
+export interface COARequestData {
+  requestCode: string;
+  requestDate: string;
+  orderCode: string;
+  customerName: string;
+  contactName: string;
+  address: string;
+  phone: string;
+  email: string;
+  samples: Array<{
+    code: string;
+    name: string;
+    matrix: string;
+    status: string;
+    completionDate?: string;
+  }>;
+  requestedFormat?: string;
+  deliveryMethod?: string;
+  remarks?: string;
+}
+
+/**
+ * COA Release Data Interface
+ */
+export interface COAReleaseData {
+  releaseCode: string;
+  releaseDate: string;
+  orderCode: string;
+  customerName: string;
+  contactName: string;
+  address: string;
+  samples: Array<{
+    code: string;
+    name: string;
+    coaCode: string;
+    status: string;
+    releasedDate: string;
+  }>;
+  deliveryMethod: string;
+  receivedBy?: string;
+  receivedDate?: string;
+  remarks?: string;
+  releasedBy?: string;
+}
+
+/**
  * PDF Service Class
  * Handles PDF document generation using Puppeteer
  * Design based on TÜV NORD reference template
@@ -1129,6 +1206,400 @@ export class PDFService {
               <div style="border-bottom: 1px solid #000; height: 50px; margin: 5px 0;"></div>
               <p style="font-weight: bold;">${data.approvedBy || '_________________'}</p>
               ${data.approvedDate ? `<p style="font-size: 9px;">${this.formatDateEnglish(data.approvedDate)}</p>` : ''}
+            </div>
+          </div>
+
+          ${this.buildFooter(1, 1)}
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  /**
+   * Generate Request Form Document
+   */
+  async generateRequestForm(data: RequestFormData): Promise<Buffer> {
+    const html = this.buildRequestFormTemplate(data);
+    return this.generatePDF(html);
+  }
+
+  /**
+   * Build Request Form HTML Template - TÜV NORD style
+   */
+  private buildRequestFormTemplate(data: RequestFormData): string {
+    const samplesHtml = data.samples.map((sample, idx) => `
+      <tr style="background-color: #f5f5f5;">
+        <td colspan="4" style="font-weight: bold;">${idx + 1}. ${sample.code} - ${sample.name}</td>
+      </tr>
+      <tr>
+        <td class="text-center" style="width: 44px;">-</td>
+        <td>Matrix: ${sample.matrix}</td>
+        <td>Quantity: ${sample.quantity}</td>
+        <td>Condition: ${sample.condition || 'Normal'}</td>
+      </tr>
+      ${sample.parameters.map((param, pIdx) => `
+        <tr>
+          <td class="text-center">${idx + 1}.${pIdx + 1}</td>
+          <td>${param.name}</td>
+          <td colspan="2">${param.method}</td>
+        </tr>
+      `).join('')}
+    `).join('');
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          ${this.getSharedStyles()}
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          ${this.buildHeader('REQUEST FORM', data.requestCode, data.requestDate)}
+
+          <div class="customer-section">
+            <div class="customer-left">
+              <div class="customer-row">
+                <span class="customer-label">To</span>
+                <span>${data.contactName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Company</span>
+                <span>${data.customerName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Address</span>
+                <span>${data.address}</span>
+              </div>
+            </div>
+            <div class="customer-right">
+              <div class="customer-row">
+                <span class="customer-label-right">Phone</span>
+                <span>${data.phone || '-'}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Email Address</span>
+                <span>${data.email || ''}</span>
+              </div>
+              ${data.orderCode ? `
+              <div class="customer-row">
+                <span class="customer-label-right">Order No.</span>
+                <span>${data.orderCode}</span>
+              </div>
+              ` : ''}
+            </div>
+          </div>
+
+          ${data.priority || data.expectedDueDate ? `
+          <div style="margin-bottom: 4mm; padding: 8px; background-color: #f5f9fc; border-left: 4px solid #005b9a;">
+            ${data.priority ? `<div><strong>Priority:</strong> ${data.priority}</div>` : ''}
+            ${data.expectedDueDate ? `<div><strong>Expected Due Date:</strong> ${this.formatDateEnglish(data.expectedDueDate)}</div>` : ''}
+          </div>
+          ` : ''}
+
+          <table style="margin-bottom: 4mm; font-size: 11px;">
+            <thead>
+              <tr>
+                <th style="width: 44px;">No</th>
+                <th>Parameter / Detail</th>
+                <th style="width: 140px;">Method / Info</th>
+                <th style="width: 140px;">Additional</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${samplesHtml}
+            </tbody>
+          </table>
+
+          ${data.specialInstructions ? `
+          <div style="margin-top: 4mm; padding: 10px; border: 1px solid #000;">
+            <strong>Special Instructions:</strong>
+            <p style="margin-top: 2mm;">${data.specialInstructions}</p>
+          </div>
+          ` : ''}
+
+          <div class="summary-section">
+            <div class="remarks-box">
+              <strong>Remarks :</strong>
+              ${data.remarks ? `<div>${data.remarks}</div>` : ''}
+            </div>
+          </div>
+
+          <div class="signature-section">
+            <div class="signature-row">
+              <span class="signature-label">Customer Approval:</span>
+              <div class="signature-line"></div>
+            </div>
+            <div class="signature-row">
+              <span class="signature-label">Laboratory:</span>
+              <div class="signature-line"></div>
+            </div>
+          </div>
+
+          ${this.buildFooter(1, 1)}
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  /**
+   * Generate COA Request Document
+   */
+  async generateCOARequest(data: COARequestData): Promise<Buffer> {
+    const html = this.buildCOARequestTemplate(data);
+    return this.generatePDF(html);
+  }
+
+  /**
+   * Build COA Request HTML Template - TÜV NORD style
+   */
+  private buildCOARequestTemplate(data: COARequestData): string {
+    const samplesHtml = data.samples.map((sample, idx) => `
+      <tr>
+        <td class="text-center">${idx + 1}</td>
+        <td>${sample.code}</td>
+        <td>${sample.name}</td>
+        <td>${sample.matrix}</td>
+        <td class="text-center">${sample.status}</td>
+        <td class="text-center">${sample.completionDate ? this.formatDateEnglish(sample.completionDate) : '-'}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          ${this.getSharedStyles()}
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          ${this.buildHeader('COA REQUEST', data.requestCode, data.requestDate)}
+
+          <div class="customer-section">
+            <div class="customer-left">
+              <div class="customer-row">
+                <span class="customer-label">Order No.</span>
+                <span>${data.orderCode}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Request No.</span>
+                <span>${data.requestCode}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Date</span>
+                <span>${this.formatDateEnglish(data.requestDate)}</span>
+              </div>
+            </div>
+            <div class="customer-right">
+              <div class="customer-row">
+                <span class="customer-label-right">Customer</span>
+                <span>${data.customerName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Contact</span>
+                <span>${data.contactName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Address</span>
+                <span>${data.address}</span>
+              </div>
+            </div>
+          </div>
+
+          <p style="margin-bottom: 4mm; font-size: 11px;">
+            We hereby request the Certificate of Analysis (COA) for the following samples:
+          </p>
+
+          <table style="margin-bottom: 4mm; font-size: 10px;">
+            <thead>
+              <tr>
+                <th style="width: 30px;">No</th>
+                <th style="width: 100px;">Sample Code</th>
+                <th>Sample Name</th>
+                <th style="width: 80px;">Matrix</th>
+                <th style="width: 80px;">Status</th>
+                <th style="width: 100px;">Completion</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${samplesHtml}
+            </tbody>
+          </table>
+
+          <div style="margin-top: 5mm; padding: 10px; border: 1px solid #000;">
+            <div class="customer-row" style="margin-bottom: 3mm;">
+              <span style="font-weight: bold; width: 120px; display: inline-block;">Requested Format</span>
+              <span>: ${data.requestedFormat || 'Original (Hard Copy)'}</span>
+            </div>
+            <div class="customer-row">
+              <span style="font-weight: bold; width: 120px; display: inline-block;">Delivery Method</span>
+              <span>: ${data.deliveryMethod || 'Pick Up'}</span>
+            </div>
+          </div>
+
+          ${data.remarks ? `
+          <div class="remarks-box" style="margin-top: 4mm;">
+            <strong>Remarks :</strong>
+            <div>${data.remarks}</div>
+          </div>
+          ` : ''}
+
+          <div class="signature-section" style="display: flex; justify-content: space-between; margin-top: 10mm;">
+            <div style="text-align: center; width: 45%;">
+              <p>Requested by</p>
+              <div style="border-bottom: 1px solid #000; height: 50px; margin: 5px 0;"></div>
+              <p>${data.contactName}</p>
+              <p style="font-size: 9px;">${this.formatDateEnglish(data.requestDate)}</p>
+            </div>
+            <div style="text-align: center; width: 45%;">
+              <p>Approved by</p>
+              <div style="border-bottom: 1px solid #000; height: 50px; margin: 5px 0;"></div>
+              <p>_________________</p>
+              <p style="font-size: 9px;">Date: _________________</p>
+            </div>
+          </div>
+
+          ${this.buildFooter(1, 1)}
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  /**
+   * Generate COA Release Document
+   */
+  async generateCOARelease(data: COAReleaseData): Promise<Buffer> {
+    const html = this.buildCOAReleaseTemplate(data);
+    return this.generatePDF(html);
+  }
+
+  /**
+   * Build COA Release HTML Template - TÜV NORD style
+   */
+  private buildCOAReleaseTemplate(data: COAReleaseData): string {
+    const samplesHtml = data.samples.map((sample, idx) => `
+      <tr>
+        <td class="text-center">${idx + 1}</td>
+        <td>${sample.code}</td>
+        <td>${sample.name}</td>
+        <td>${sample.coaCode}</td>
+        <td class="text-center" style="color: ${sample.status === 'Released' ? '#006600' : '#cc0000'}; font-weight: bold;">
+          ${sample.status}
+        </td>
+        <td class="text-center">${this.formatDateEnglish(sample.releasedDate)}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          ${this.getSharedStyles()}
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          ${this.buildHeader('COA RELEASE', data.releaseCode, data.releaseDate)}
+
+          <div class="customer-section">
+            <div class="customer-left">
+              <div class="customer-row">
+                <span class="customer-label">Order No.</span>
+                <span>${data.orderCode}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Release No.</span>
+                <span>${data.releaseCode}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label">Date</span>
+                <span>${this.formatDateEnglish(data.releaseDate)}</span>
+              </div>
+            </div>
+            <div class="customer-right">
+              <div class="customer-row">
+                <span class="customer-label-right">Customer</span>
+                <span>${data.customerName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Contact</span>
+                <span>${data.contactName}</span>
+              </div>
+              <div class="customer-row">
+                <span class="customer-label-right">Address</span>
+                <span>${data.address}</span>
+              </div>
+            </div>
+          </div>
+
+          <p style="margin-bottom: 4mm; font-size: 11px;">
+            The following Certificates of Analysis (COA) have been released:
+          </p>
+
+          <table style="margin-bottom: 4mm; font-size: 10px;">
+            <thead>
+              <tr>
+                <th style="width: 30px;">No</th>
+                <th style="width: 100px;">Sample Code</th>
+                <th>Sample Name</th>
+                <th style="width: 100px;">COA Code</th>
+                <th style="width: 80px;">Status</th>
+                <th style="width: 100px;">Released Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${samplesHtml}
+            </tbody>
+          </table>
+
+          <div style="margin-top: 5mm; padding: 10px; border: 1px solid #000;">
+            <div class="customer-row" style="margin-bottom: 3mm;">
+              <span style="font-weight: bold; width: 120px; display: inline-block;">Delivery Method</span>
+              <span>: ${data.deliveryMethod}</span>
+            </div>
+            ${data.receivedBy ? `
+            <div class="customer-row" style="margin-bottom: 3mm;">
+              <span style="font-weight: bold; width: 120px; display: inline-block;">Received By</span>
+              <span>: ${data.receivedBy}</span>
+            </div>
+            ` : ''}
+            ${data.receivedDate ? `
+            <div class="customer-row">
+              <span style="font-weight: bold; width: 120px; display: inline-block;">Received Date</span>
+              <span>: ${this.formatDateEnglish(data.receivedDate)}</span>
+            </div>
+            ` : ''}
+          </div>
+
+          ${data.remarks ? `
+          <div class="remarks-box" style="margin-top: 4mm;">
+            <strong>Remarks :</strong>
+            <div>${data.remarks}</div>
+          </div>
+          ` : ''}
+
+          <div class="signature-section" style="display: flex; justify-content: space-between; margin-top: 10mm;">
+            <div style="text-align: center; width: 45%;">
+              <p>Released by</p>
+              <div style="border-bottom: 1px solid #000; height: 50px; margin: 5px 0;"></div>
+              <p style="font-weight: bold;">${data.releasedBy || '_________________'}</p>
+              <p style="font-size: 9px;">${this.formatDateEnglish(data.releaseDate)}</p>
+            </div>
+            <div style="text-align: center; width: 45%;">
+              <p>Received by</p>
+              <div style="border-bottom: 1px solid #000; height: 50px; margin: 5px 0;"></div>
+              <p>${data.receivedBy || '_________________'}</p>
+              <p style="font-size: 9px;">Date: ${data.receivedDate ? this.formatDateEnglish(data.receivedDate) : '_________________'}</p>
             </div>
           </div>
 

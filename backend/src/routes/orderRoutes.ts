@@ -3,6 +3,7 @@ import {
   getAllOrders,
   getOrderById,
   getOrdersJson,
+  getSingleOrderJson,
   createOrder,
   updateOrder,
   updateOrderStatus,
@@ -11,6 +12,7 @@ import {
   reviewOrder,
   uploadPaymentDocument,
   confirmPayment,
+  resendOrderEmail,
   createRevision,
   unlockOrder,
   getOrderStats,
@@ -19,6 +21,11 @@ import {
   getOrderInvoiceStatusBatch,
   exportOrders,
   downloadOrderDocument,
+  exportCTS,
+  exportNonCTS,
+  exportCalibration,
+  exportActiveCustomers,
+  exportOrderReport,
 } from '../controllers/orderController.js';
 import { authenticate, authorize } from '../plugins/auth.js';
 import { validate, validateRequest } from '../plugins/zodValidator.js';
@@ -51,6 +58,17 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
     },
     preHandler: [validate(orderJsonQuerySchema, 'query')]
   }, getOrdersJson);
+
+  // Single order JSON endpoint - for dropdown selection
+  fastify.get('/single-json/:id', {
+    schema: {
+      description: `Get a single order in lightweight JSON format for dropdown selection. ${roleDescription([1, 2, 3, 8])}`,
+      tags: ['Orders'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [authorize(1, 2, 3, 8), validate(idParamSchema, 'params')]
+  }, getSingleOrderJson);
 
   // Generate code endpoint - for creating new orders
   fastify.get('/generate-code', {
@@ -115,6 +133,98 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
     },
     preHandler: [authorize(1, 2, 3), validate(orderQuerySchema, 'query')]
   }, exportOrders);
+
+  // Export CTS (Customer Testing Service) orders to CSV
+  fastify.get('/export/cts', {
+    schema: {
+      description: `Export CTS (Customer Testing Service) orders to CSV. ${roleDescription([1, 2, 3])}`,
+      tags: ['Orders'],
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          customer_id: { type: 'integer', description: 'Filter by customer ID' },
+          status: { type: 'string', description: 'Filter by order status' },
+          date_from: { type: 'string', format: 'date', description: 'Start date (YYYY-MM-DD)' },
+          date_to: { type: 'string', format: 'date', description: 'End date (YYYY-MM-DD)' }
+        }
+      }
+    },
+    preHandler: [authorize(1, 2, 3)]
+  }, exportCTS);
+
+  // Export Non-CTS (subcontracted) orders to CSV
+  fastify.get('/export/ncts', {
+    schema: {
+      description: `Export Non-CTS (subcontracted) orders to CSV. ${roleDescription([1, 2, 3])}`,
+      tags: ['Orders'],
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          customer_id: { type: 'integer', description: 'Filter by customer ID' },
+          status: { type: 'string', description: 'Filter by order status' },
+          date_from: { type: 'string', format: 'date', description: 'Start date (YYYY-MM-DD)' },
+          date_to: { type: 'string', format: 'date', description: 'End date (YYYY-MM-DD)' }
+        }
+      }
+    },
+    preHandler: [authorize(1, 2, 3)]
+  }, exportNonCTS);
+
+  // Export calibration orders to CSV
+  fastify.get('/export/calibration', {
+    schema: {
+      description: `Export calibration orders to CSV. ${roleDescription([1, 2, 3])}`,
+      tags: ['Orders'],
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          customer_id: { type: 'integer', description: 'Filter by customer ID' },
+          status: { type: 'string', description: 'Filter by order status' },
+          date_from: { type: 'string', format: 'date', description: 'Start date (YYYY-MM-DD)' },
+          date_to: { type: 'string', format: 'date', description: 'End date (YYYY-MM-DD)' }
+        }
+      }
+    },
+    preHandler: [authorize(1, 2, 3)]
+  }, exportCalibration);
+
+  // Export active customers report to CSV
+  fastify.get('/export/active-customers', {
+    schema: {
+      description: `Export active customers report to CSV. ${roleDescription([1, 2, 3])}`,
+      tags: ['Orders'],
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          date_from: { type: 'string', format: 'date', description: 'Start date for order filter (YYYY-MM-DD)' },
+          date_to: { type: 'string', format: 'date', description: 'End date for order filter (YYYY-MM-DD)' }
+        }
+      }
+    },
+    preHandler: [authorize(1, 2, 3)]
+  }, exportActiveCustomers);
+
+  // Generate order report by date range
+  fastify.get('/export/report', {
+    schema: {
+      description: `Generate order report by date range. ${roleDescription([1, 2, 3])}`,
+      tags: ['Orders'],
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        required: ['date_from', 'date_to'],
+        properties: {
+          date_from: { type: 'string', format: 'date', description: 'Start date (YYYY-MM-DD)' },
+          date_to: { type: 'string', format: 'date', description: 'End date (YYYY-MM-DD)' }
+        }
+      }
+    },
+    preHandler: [authorize(1, 2, 3)]
+  }, exportOrderReport);
 
   // ===== CRUD operations =====
 
@@ -271,6 +381,27 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
     preHandler: [authorize(1, 2), validate(idParamSchema, 'params')]
   }, confirmPayment);
 
+  // POST /api/orders/:id/resend-email - Resend order notification email
+  fastify.post('/:id/resend-email', {
+    schema: {
+      description: `Resend order notification email. ${roleDescription([1, 2, 3])}`,
+      tags: ['Orders'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema),
+      body: {
+        type: 'object',
+        properties: {
+          email_type: {
+            type: 'string',
+            enum: ['review', 'status', 'payment'],
+            description: 'Type of email to resend: review (order reviewed), status (status change), payment (payment confirmation)'
+          }
+        }
+      }
+    },
+    preHandler: [authorize(1, 2, 3), validate(idParamSchema, 'params')]
+  }, resendOrderEmail);
+
   // POST /api/orders/:id/revise - Create order revision
   fastify.post('/:id/revise', {
     schema: {
@@ -303,14 +434,18 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/orders/:id/download - Download order document (SPPC, Quotation, etc.)
   fastify.get('/:id/download', {
     schema: {
-      description: `Download order document (SPPC, Quotation, etc.). ${roleDescription([1, 2, 3, 8])}`,
+      description: `Download order document (SPPC, Quotation, Request Form, COA Request, COA Release). ${roleDescription([1, 2, 3, 8])}`,
       tags: ['Orders'],
       security: [{ bearerAuth: [] }],
       params: zodToSwagger(idParamSchema),
       querystring: {
         type: 'object',
         properties: {
-          type: { type: 'string', enum: ['sppc', 'quotation', 'invoice'], description: 'Document type to download' }
+          type: {
+            type: 'string',
+            enum: ['sppc', 'quotation', 'request_form', 'coa_request', 'coa_release'],
+            description: 'Document type to download: sppc (Sample Processing Payment Confirmation), quotation, request_form (Sample Request Form), coa_request (COA Request), coa_release (COA Release)'
+          }
         }
       }
     },

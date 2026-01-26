@@ -47,6 +47,11 @@ export interface OrderFilter {
   offset?: number;
   userRole?: number;
   userCustomerId?: number;
+  // Enhanced role-based filtering
+  userContactId?: number;           // For contact-specific filtering
+  userDepartments?: string[];       // For department-based filtering (Customer role)
+  agencyCustomerIds?: number[];     // For agency role filtering (list_customer)
+  agencyContactIds?: number[];      // For agency role filtering (list_contact)
 }
 
 /**
@@ -350,4 +355,33 @@ export interface IOrderRepository {
    * Get outstanding whitelist orders (overdue invoices)
    */
   findOutstandingWhitelist(filter: OrderFilter): Promise<RepositoryResult<PaginatedData<OrderWithRelations>>>;
+
+  // ===== Export Operations =====
+
+  /**
+   * Find orders for CTS (Customer Testing Service) export
+   * CTS orders are standard lab testing orders
+   */
+  findForCTSExport(filter: OrderFilter): Promise<RepositoryResult<any[]>>;
+
+  /**
+   * Find orders for Non-CTS export
+   * Non-CTS includes subcontracted testing services
+   */
+  findForNonCTSExport(filter: OrderFilter): Promise<RepositoryResult<any[]>>;
+
+  /**
+   * Find orders for Calibration export
+   */
+  findForCalibrationExport(filter: OrderFilter): Promise<RepositoryResult<any[]>>;
+
+  /**
+   * Find active customers with order summary
+   */
+  findActiveCustomers(dateFrom?: Date, dateTo?: Date): Promise<RepositoryResult<any[]>>;
+
+  /**
+   * Generate order report by date range
+   */
+  generateOrderReport(dateFrom: Date, dateTo: Date): Promise<RepositoryResult<any[]>>;
 }

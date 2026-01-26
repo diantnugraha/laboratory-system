@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuthStore } from '@/store/authStore';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,7 +18,7 @@ import {
 import { LogOut } from 'lucide-react';
 
 export function UserProfileDropdown() {
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuthStore();
   const router = useRouter();
 
   const handleLogout = () => {
@@ -28,7 +28,10 @@ export function UserProfileDropdown() {
 
   if (!user) return null;
 
-  const initials = user.name
+  const displayName = user.display_name || user.username;
+  const roleName = user.role_name || '';
+
+  const initials = displayName
     .split(' ')
     .map((n) => n[0])
     .join('')
@@ -38,8 +41,8 @@ export function UserProfileDropdown() {
   return (
     <div className="flex items-center gap-3">
       <div className="text-right">
-        <p className="text-sm font-medium leading-none">{user.name}</p>
-        <p className="text-xs text-primary font-medium mt-0.5 uppercase tracking-wide">{user.role}</p>
+        <p className="text-sm font-medium leading-none">{displayName}</p>
+        <p className="text-xs text-primary font-medium mt-0.5 uppercase tracking-wide">{roleName}</p>
       </div>
       <Avatar className="h-9 w-9 bg-primary text-primary-foreground">
         <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">

@@ -34,6 +34,8 @@ import sampleRoutes from './routes/sampleRoutes.js';
 import worksheetRoutes from './routes/worksheetRoutes.js';
 import invoiceRoutes from './routes/invoiceRoutes.js';
 import quotationRoutes from './routes/quotationRoutes.js';
+import preOrderRoutes from './routes/preOrderRoutes.js';
+import sampleTestRoutes from './routes/sampleTestRoutes.js';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -98,6 +100,8 @@ await app.register(sampleRoutes, { prefix: '/api/samples' });
 await app.register(worksheetRoutes, { prefix: '/api/worksheets' });
 await app.register(invoiceRoutes, { prefix: '/api/invoices' });
 await app.register(quotationRoutes, { prefix: '/api/quotations' });
+await app.register(preOrderRoutes, { prefix: '/api/pre-orders' });
+await app.register(sampleTestRoutes, { prefix: '/api/sample-tests' });
 
 // Start server
 const start = async () => {

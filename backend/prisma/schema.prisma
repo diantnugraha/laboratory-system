@@ -651,6 +651,7 @@ model Order {
   invoice                   Invoice?           @relation(fields: [invoice_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "order_ibfk_6")
   customer_relation         customer_relation? @relation(fields: [supplier_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "order_ibfk_8")
   preOrder                  PreOrder?          @relation(fields: [pre_order_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "order_ibfk_9")
+  samples                   Sample[]
 
   @@index([address_id], map: "address_id")
   @@index([contact_id], map: "contact_id")
@@ -720,6 +721,7 @@ model Sample {
   packaging_type            String?   @db.VarChar(255)
   distribute                Int?
   standart                  Standart? @relation(fields: [standart_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "sample_ibfk_2")
+  order                     Order     @relation(fields: [order_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "sample_ibfk_1")
 
   @@index([code], map: "idx_sample_code")
   @@index([id, order_id, due_date], map: "idx_sample_order_due")

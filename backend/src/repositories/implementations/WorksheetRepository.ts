@@ -25,7 +25,7 @@ import {
 } from '../../config/worksheet';
 import { RepositoryResult, PaginatedData } from '../results/RepositoryResult';
 // Removed unused import: buildMultiFieldSearchCondition
-import { SampleStatus } from '../contracts/ISampleRepository';
+import { SampleStatus } from '../contracts/ISampleRepository.js';
 import { OrderStatus } from '../contracts/IOrderRepository';
 
 /**

@@ -9,6 +9,12 @@ import {
   updateSampleStatus,
   deleteSample,
   getGeneratedCode,
+  approveSample,
+  verifySample,
+  cancelSample,
+  receiveSample,
+  exportSampleReport,
+  exportSampleReportCsv,
 } from '../controllers/sampleController.js';
 import { authenticate, authorize } from '../plugins/auth.js';
 import { validate, validateRequest } from '../plugins/zodValidator.js';
@@ -19,6 +25,11 @@ import {
   createSampleSchema,
   updateSampleSchema,
   updateSampleStatusSchema,
+  approveSampleSchema,
+  verifySampleSchema,
+  receiveSampleSchema,
+  cancelSampleSchema,
+  sampleReportQuerySchema,
 } from '../validators/sample.js';
 import { zodToSwagger, roleDescription } from '../schemas/swagger/index.js';
 
@@ -135,6 +146,80 @@ const sampleRoutes: FastifyPluginAsync = async (fastify) => {
     },
     preHandler: [authorize(1, 2), validate(idParamSchema, 'params')]
   }, deleteSample);
+
+  // ===== Workflow endpoints =====
+
+  // POST /api/samples/:id/approve - Approve sample (TM only)
+  fastify.post('/:id/approve', {
+    schema: {
+      description: `Approve a sample. ${roleDescription([7])}`,
+      tags: ['Samples'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema),
+      body: zodToSwagger(approveSampleSchema)
+    },
+    preHandler: [authorize(7), validateRequest({ params: idParamSchema, body: approveSampleSchema })]
+  }, approveSample);
+
+  // POST /api/samples/:id/verify - Verify sample (QC only)
+  fastify.post('/:id/verify', {
+    schema: {
+      description: `Verify a sample. ${roleDescription([6])}`,
+      tags: ['Samples'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema),
+      body: zodToSwagger(verifySampleSchema)
+    },
+    preHandler: [authorize(6), validateRequest({ params: idParamSchema, body: verifySampleSchema })]
+  }, verifySample);
+
+  // POST /api/samples/:id/cancel - Cancel sample
+  fastify.post('/:id/cancel', {
+    schema: {
+      description: `Cancel a sample. ${roleDescription([1, 2, 3])}`,
+      tags: ['Samples'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema),
+      body: zodToSwagger(cancelSampleSchema)
+    },
+    preHandler: [authorize(1, 2, 3), validateRequest({ params: idParamSchema, body: cancelSampleSchema })]
+  }, cancelSample);
+
+  // POST /api/samples/:id/receive - Receive sample
+  fastify.post('/:id/receive', {
+    schema: {
+      description: `Receive a sample. ${roleDescription([1, 2, 3, 8])}`,
+      tags: ['Samples'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema),
+      body: zodToSwagger(receiveSampleSchema)
+    },
+    preHandler: [authorize(1, 2, 3, 8), validateRequest({ params: idParamSchema, body: receiveSampleSchema })]
+  }, receiveSample);
+
+  // ===== Report endpoints =====
+
+  // GET /api/samples/report - Export sample report
+  fastify.get('/report', {
+    schema: {
+      description: `Export sample report. ${roleDescription([1, 2, 3])}`,
+      tags: ['Samples'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(sampleReportQuerySchema)
+    },
+    preHandler: [authorize(1, 2, 3), validate(sampleReportQuerySchema, 'query')]
+  }, exportSampleReport);
+
+  // GET /api/samples/report-csv - Export sample report as CSV
+  fastify.get('/report-csv', {
+    schema: {
+      description: `Export sample report as CSV. ${roleDescription([1, 2, 3])}`,
+      tags: ['Samples'],
+      security: [{ bearerAuth: [] }],
+      querystring: zodToSwagger(sampleReportQuerySchema)
+    },
+    preHandler: [authorize(1, 2, 3), validate(sampleReportQuerySchema, 'query')]
+  }, exportSampleReportCsv);
 };
 
 export default sampleRoutes;

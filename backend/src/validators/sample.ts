@@ -11,7 +11,18 @@ export const sampleStatusEnum = z.enum([
   'Customer Retest',
   'Verified by QC',
   'Approved by TM',
+  'ECOA Draft Sent',
+  'COA Released',
   'Cancel',
+]);
+
+/**
+ * Sample priority enum values
+ */
+export const samplePriorityEnum = z.enum([
+  'Normal',
+  'Urgent',
+  'Very Urgent',
 ]);
 
 /**
@@ -83,8 +94,58 @@ export const updateSampleStatusSchema = z.object({
   status: sampleStatusEnum,
 });
 
+/**
+ * Approve sample schema (TM approval)
+ */
+export const approveSampleSchema = z.object({
+  publish_coa: z.boolean().optional().default(false),
+  send_email: z.boolean().optional().default(true),
+  result_summary: z.string().nullable().optional(),
+});
+
+/**
+ * Verify sample schema (QC verification)
+ */
+export const verifySampleSchema = z.object({
+  analyst_type_id: z.number().int().positive('Analyst type ID is required').optional(),
+});
+
+/**
+ * Receive sample schema
+ */
+export const receiveSampleSchema = z.object({
+  received_date: z.string().min(1, 'Received date is required'),
+  priority: samplePriorityEnum.optional().default('Normal'),
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  quantity: z.number().int().min(1).optional(),
+});
+
+/**
+ * Cancel sample schema
+ */
+export const cancelSampleSchema = z.object({
+  reason: z.string().max(500).nullable().optional(),
+});
+
+/**
+ * Sample report query schema
+ */
+export const sampleReportQuerySchema = z.object({
+  start: z.string().min(1, 'Start date is required'),
+  end: z.string().min(1, 'End date is required'),
+  customer_id: z.string().regex(/^\d+$/).transform(Number).optional(),
+  status: z.string().optional(),
+  include_trash: z.string().transform((v) => v === 'true' || v === '1').optional(),
+});
+
 // Type exports
 export type SampleQuery = z.infer<typeof sampleQuerySchema>;
 export type CreateSampleBody = z.infer<typeof createSampleSchema>;
 export type UpdateSampleBody = z.infer<typeof updateSampleSchema>;
 export type UpdateSampleStatusBody = z.infer<typeof updateSampleStatusSchema>;
+export type ApproveSampleBody = z.infer<typeof approveSampleSchema>;
+export type VerifySampleBody = z.infer<typeof verifySampleSchema>;
+export type ReceiveSampleBody = z.infer<typeof receiveSampleSchema>;
+export type CancelSampleBody = z.infer<typeof cancelSampleSchema>;
+export type SampleReportQuery = z.infer<typeof sampleReportQuerySchema>;

@@ -21,9 +21,12 @@ interface AuthState {
   user: User | null
   token: string | null
   isAuthenticated: boolean
+  isLoading: boolean
+  _hasHydrated: boolean
   login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>
   logout: () => Promise<void>
   setAuth: (user: User | null, token: string | null) => void
+  setHasHydrated: (state: boolean) => void
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -32,6 +35,8 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       token: null,
       isAuthenticated: false,
+      isLoading: true,
+      _hasHydrated: false,
 
       login: async (username: string, password: string) => {
         try {
@@ -81,10 +86,25 @@ export const useAuthStore = create<AuthState>()(
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`
         }
       },
+
+      setHasHydrated: (hydrated: boolean) => {
+        set({ _hasHydrated: hydrated, isLoading: !hydrated })
+      },
     }),
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => cookieStorage),
+      partialize: (state) => ({
+        user: state.user,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.token) {
+          api.defaults.headers.common['Authorization'] = `Bearer ${state.token}`
+        }
+        state?.setHasHydrated(true)
+      },
     }
   )
 )

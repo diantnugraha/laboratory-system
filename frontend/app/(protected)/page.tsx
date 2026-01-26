@@ -15,7 +15,7 @@ import { ThroughputChart } from '@/components/dashboard/ThroughputChart';
 import { RevenueChart } from '@/components/dashboard/RevenueChart';
 import { ActivityLog } from '@/components/dashboard/ActivityLog';
 import { operationalStats, financialStats } from '@/data/dashboardData';
-import { useBreadcrumb } from '@/contexts/BreadcrumbContext';
+import { useBreadcrumbStore } from '@/store/breadcrumbStore';
 import { 
   FlaskConical, 
   Clock, 
@@ -33,7 +33,7 @@ import { useToast } from '@/hooks/use-toast';
 export default function Dashboard() {
   const [period, setPeriod] = useState('week');
   const [activeTab, setActiveTab] = useState('operational');
-  const { setSubPage } = useBreadcrumb();
+  const setSubPage = useBreadcrumbStore((state) => state.setSubPage);
   const { toast } = useToast();
 
   useEffect(() => {
