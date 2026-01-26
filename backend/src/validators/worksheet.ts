@@ -35,11 +35,14 @@ export const worksheetQuerySchema = z.object({
 });
 
 /**
- * Query schema for autocomplete
+ * Query schema for autocomplete/JSON endpoint
+ * Supports no_count parameter for optimized queries without COUNT
  */
 export const worksheetJsonQuerySchema = z.object({
   q: z.string().optional(),
   sample_id: z.string().regex(/^\d+$/).transform(Number).optional(),
+  limit: z.string().regex(/^\d+$/).transform(Number).optional(),
+  no_count: z.string().transform(val => val === 'true' || val === '1').optional(),
 });
 
 /**

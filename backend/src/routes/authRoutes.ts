@@ -125,13 +125,11 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
                     username: { type: 'string' },
                     display_name: { type: 'string' },
                     role_id: { type: 'number' },
-                    role: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'number' },
-                        name: { type: 'string' }
-                      }
-                    }
+                    role_name: { type: 'string', nullable: true },
+                    customer_id: { type: 'number', nullable: true },
+                    contact_id: { type: 'number', nullable: true },
+                    profile_picture: { type: 'string', nullable: true },
+                    department: { type: 'string', nullable: true }
                   }
                 }
               }
@@ -263,20 +261,19 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
             data: {
               type: 'object',
               properties: {
-                id: { type: 'number' },
-                email: { type: 'string' },
-                username: { type: 'string' },
-                display_name: { type: 'string' },
-                role_id: { type: 'number' },
-                customer_id: { type: 'number', nullable: true },
-                contact_id: { type: 'number', nullable: true },
-                profile_picture: { type: 'string', nullable: true },
-                department: { type: 'string', nullable: true },
-                role: {
+                user: {
                   type: 'object',
                   properties: {
                     id: { type: 'number' },
-                    name: { type: 'string' }
+                    email: { type: 'string' },
+                    username: { type: 'string' },
+                    display_name: { type: 'string' },
+                    role_id: { type: 'number' },
+                    role_name: { type: 'string', nullable: true },
+                    customer_id: { type: 'number', nullable: true },
+                    contact_id: { type: 'number', nullable: true },
+                    profile_picture: { type: 'string', nullable: true },
+                    department: { type: 'string', nullable: true }
                   }
                 }
               }

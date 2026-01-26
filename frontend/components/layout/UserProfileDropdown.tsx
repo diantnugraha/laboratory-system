@@ -31,13 +31,6 @@ export function UserProfileDropdown() {
   const displayName = user.display_name || user.username;
   const roleName = user.role_name || '';
 
-  // Debug logging
-  console.log('=== USER PROFILE DROPDOWN DEBUG ===');
-  console.log('User object:', user);
-  console.log('Display name:', displayName);
-  console.log('Role name:', roleName);
-  console.log('==================================');
-
   const initials = displayName
     .split(' ')
     .map((n) => n[0])

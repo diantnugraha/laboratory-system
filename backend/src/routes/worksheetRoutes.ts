@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import {
   getAllWorksheets,
   getWorksheetById,
+  getWorksheetDetail,
   getWorksheetsJson,
   getWorksheetsDataTables,
   getWorksheetsBySample,
@@ -239,6 +240,17 @@ const worksheetRoutes: FastifyPluginAsync = async (fastify) => {
     },
     preHandler: [authorize(1, 2, 3, 5, 6, 7, 9, 8), validate(idParamSchema, 'params')]
   }, getWorksheetById);
+
+  // GET /api/worksheets/:id/detail - Get worksheet with detailed information
+  fastify.get('/:id/detail', {
+    schema: {
+      description: `Get worksheet detail with user names and history. ${roleDescription([1, 2, 3, 5, 6, 7, 9, 8])}`,
+      tags: ['Worksheets'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [authorize(1, 2, 3, 5, 6, 7, 9, 8), validate(idParamSchema, 'params')]
+  }, getWorksheetDetail);
 
   // POST /api/worksheets - Create
   fastify.post('/', {

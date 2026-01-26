@@ -165,6 +165,177 @@ export class SampleRepository implements ISampleRepository {
     }
   }
 
+  /**
+   * Find sample by ID with detailed information including worksheets
+   * Used for Sample Detail page
+   */
+  async findByIdWithDetails(id: number): Promise<RepositoryResult<any>> {
+    try {
+      const sample = await this.prisma.sample.findFirst({
+        where: { id, trash: null },
+        include: {
+          order: {
+            select: {
+              id: true,
+              code: true,
+              order_status: true,
+              order_priority: true,
+              customer: {
+                select: {
+                  id: true,
+                  code: true,
+                  customer_name: true,
+                },
+              },
+            },
+          },
+          standart: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+          worksheet: {
+            where: { trash: null },
+            include: {
+              service: {
+                select: {
+                  id: true,
+                  code: true,
+                  unit: true,
+                  parameter: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                  method: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+              package: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+            orderBy: { id: 'asc' },
+          },
+        },
+      });
+
+      if (!sample) {
+        return RepositoryResult.fail('Sample not found');
+      }
+
+      // Calculate worksheet progress
+      const worksheets = sample.worksheet || [];
+      const completedStatuses = ['Verified by QC', 'Approved by TM'];
+      const completedCount = worksheets.filter((ws: any) =>
+        completedStatuses.includes(ws.status)
+      ).length;
+
+      // Get analyst names for worksheets
+      const analystIds = [...new Set(worksheets.filter((ws: any) => ws.analyst_id).map((ws: any) => ws.analyst_id))];
+      const analysts = analystIds.length > 0
+        ? await this.prisma.users.findMany({
+            where: { id: { in: analystIds } },
+            select: { id: true, display_name: true },
+          })
+        : [];
+      const analystMap = new Map(analysts.map(a => [a.id, a.display_name]));
+
+      // Get min/max values from standart_detail if sample has a standard
+      let standartDetailMap = new Map<number, { min: string; max: string }>();
+      if (sample.standart_id) {
+        const serviceIds = worksheets.map((ws: any) => ws.service_id);
+        const standartDetails = await this.prisma.standartDetail.findMany({
+          where: {
+            standart_id: sample.standart_id,
+            service_id: { in: serviceIds },
+          },
+          select: {
+            service_id: true,
+            min: true,
+            max: true,
+          },
+        });
+        standartDetailMap = new Map(standartDetails.map(sd => [sd.service_id, { min: sd.min, max: sd.max }]));
+      }
+
+      // Transform to detail response
+      const result = {
+        id: sample.id,
+        code: sample.code,
+        name: sample.name,
+        description: sample.description,
+        volume: sample.volume,
+        sampleStorage: sample.sample_storage,
+        quantity: sample.quantity,
+        priority: sample.priority,
+        sampleStatus: sample.sample_status,
+        leadTime: sample.lead_time,
+        verificationStatusMicro: sample.verification_status_micro,
+        verificationStatusChem: sample.verification_status_chem,
+        receivedDate: sample.received_date,
+        dueDate: sample.due_date,
+        coaReleaseDueDate: sample.coa_release_due_date,
+        analysisFinishedDate: sample.analysis_finished_date,
+        coaReleasedDate: sample.coa_released_date,
+        retainDate: sample.retain_date,
+        resultSummary: sample.result_summary,
+        price: sample.price,
+        discount: sample.discount,
+        standardId: sample.standart_id,
+        standardName: sample.standart?.name || null,
+        standardCode: sample.standart?.code || null,
+        order: {
+          id: sample.order.id,
+          code: sample.order.code,
+          status: sample.order.order_status,
+          priority: sample.order.order_priority,
+          customerName: sample.order.customer?.customer_name || null,
+        },
+        worksheets: worksheets.map((ws: any) => {
+          const standartDetail = standartDetailMap.get(ws.service_id);
+          return {
+            id: ws.id,
+            code: ws.code,
+            status: ws.status,
+            result: ws.result,
+            unit: ws.unit || ws.service?.unit || null,
+            parameter: ws.service?.parameter?.name || '',
+            method: ws.service?.method?.name || '',
+            packageId: ws.package_id,
+            packageName: ws.package?.name || null,
+            finishDate: ws.finish_date,
+            min: standartDetail?.min || null,
+            max: standartDetail?.max || null,
+            analystId: ws.analyst_id,
+            analystName: ws.analyst_id ? analystMap.get(ws.analyst_id) || null : null,
+            dueDate: sample.due_date,
+          };
+        }),
+        worksheetProgress: {
+          completed: completedCount,
+          total: worksheets.length,
+        },
+        createdAt: sample.created_at,
+        updatedAt: sample.updated_at,
+      };
+
+      return RepositoryResult.ok(result);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch sample details: ${error.message}`);
+    }
+  }
+
   async findByCode(code: string, excludeId?: number): Promise<RepositoryResult<SampleWithRelations | null>> {
     try {
       const where: any = {

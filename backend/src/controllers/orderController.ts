@@ -161,7 +161,79 @@ export const getOrderById = async (request: FastifyRequest, reply: FastifyReply)
     throw new NotFoundError(result.error || RESOURCE_ERRORS.ORDER_NOT_FOUND);
   }
 
-  return reply.send({ success: true, data: result.getValue() });
+  const order = result.getValue() as any;
+
+  // Transform samples and worksheets to match frontend expected format
+  const transformedData = {
+    ...order,
+    orderStatus: order.order_status,
+    orderPriority: order.order_priority,
+    orderDate: order.order_date,
+    receivedDate: order.received_date,
+    reviewedAt: order.reviewed_at,
+    submitedBy: order.submited_by,
+    customerId: order.customer_id,
+    contactId: order.contact_id,
+    addressId: order.address_id,
+    quotationId: order.quotation_id,
+    preOrderId: order.pre_order_id,
+    invoiceId: order.invoice_id,
+    priceGroup: order.price_group,
+    subTotal: order.sub_total,
+    percentDiscount: order.percent_discount,
+    percentVat: order.percent_vat,
+    paymentDocument: order.payment_document,
+    paymentDate: order.payment_date,
+    paymentConfirmationDate: order.payment_confirmation_date,
+    createdAt: order.created_at,
+    updatedAt: order.updated_at,
+    createdBy: order.created_by,
+    updatedBy: order.updated_by,
+    coveringLetter: order.covering_letter,
+    testingParameters: order.testing_parameters,
+    address: order.address ? {
+      id: order.address.id,
+      address: order.address.address,
+      city: order.address.city,
+      province: order.address.state,
+      postal_code: null,
+    } : null,
+    samples: order.samples?.map((sample: any) => ({
+      id: sample.id,
+      code: sample.code,
+      name: sample.name,
+      description: sample.description,
+      volume: sample.volume,
+      sampleStorage: sample.sample_storage,
+      quantity: sample.quantity,
+      priority: sample.priority,
+      standardId: sample.standart_id,
+      standardName: sample.standart?.name || null,
+      receivedDate: sample.received_date,
+      dueDate: sample.due_date,
+      price: sample.price,
+      discount: sample.discount,
+      sampleStatus: sample.sample_status || 'Process',
+      coaReleasedDate: sample.coa_released_date,
+      worksheets: sample.worksheet?.map((ws: any) => ({
+        id: ws.id,
+        code: ws.code || null,
+        status: ws.status || null,
+        serviceId: ws.service_id,
+        serviceName: ws.service?.parameter?.name || '',
+        serviceCode: ws.code,
+        parameter: ws.service?.parameter?.name || '',
+        method: ws.service?.method?.name || '',
+        price: ws.price ? Number(ws.price) : (sample.price || 0),
+        discount: ws.discount || 0,
+        total: ws.price ? Number(ws.price) * (1 - (ws.discount || 0) / 100) : (sample.price || 0) * (1 - (ws.discount || 0) / 100),
+        packageId: ws.package_id,
+        packageName: ws.package?.name || null,
+      })) || [],
+    })) || [],
+  };
+
+  return reply.send({ success: true, data: transformedData });
 };
 
 /**

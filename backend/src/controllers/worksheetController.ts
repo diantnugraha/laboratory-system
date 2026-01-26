@@ -138,14 +138,88 @@ export const getWorksheetById = async (request: FastifyRequest, reply: FastifyRe
 };
 
 /**
+ * GET /api/worksheets/:id/detail - Get worksheet with detailed information
+ */
+export const getWorksheetDetail = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+  const params = request.params as { id: string };
+  const id = parseId(params.id);
+
+  if (!id) {
+    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
+  }
+
+  // Check analyst authorization
+  if (request.user?.role_id === ROLE_IDS.ANALYST) {
+    const authResult = await worksheetRepo.checkAnalystAuthorization(id, request.user.id);
+    if (authResult.isSuccess() && !authResult.getValue().isAuthorized) {
+      throw new AuthorizationError(authResult.getValue().reason || AUTHORIZATION_ERRORS.FORBIDDEN);
+    }
+  }
+
+  const result = await worksheetRepo.findByIdWithDetails(id);
+
+  if (result.isFailure()) {
+    throw new NotFoundError(result.error || RESOURCE_ERRORS.WORKSHEET_NOT_FOUND);
+  }
+
+  const worksheet = result.getValue();
+
+  // Check customer authorization - customers can only view their own worksheets
+  if (isCustomer(request.user?.role_id)) {
+    if (worksheet && worksheet.order.customerName && request.user?.customer_id) {
+      // Additional check if needed
+    }
+  }
+
+  return reply.send({ success: true, data: worksheet });
+};
+
+/**
  * GET /api/worksheets/json - For autocomplete/dropdown
+ * Supports no_count parameter for optimized queries
  */
 export const getWorksheetsJson = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   const query = request.query as Record<string, unknown>;
   const search = typeof query.q === 'string' ? query.q : undefined;
   const sampleId = query.sample_id ? parseId(query.sample_id as string) : undefined;
+  const noCount = query.no_count === 'true' || query.no_count === '1';
+  const limit = parseQueryParam(query.limit, 20);
 
-  const result = await worksheetRepo.findForAutocomplete(search, sampleId || undefined);
+  // If no_count is true, use optimized query without COUNT
+  if (noCount) {
+    // Get analyst type IDs for analyst role
+    let userAnalystTypeIds: number[] | undefined;
+    if (request.user?.role_id === ROLE_IDS.ANALYST) {
+      const analystTypesResult = await worksheetRepo.getUserAnalystTypeIds(request.user.id);
+      if (analystTypesResult.isSuccess()) {
+        userAnalystTypeIds = analystTypesResult.getValue();
+      }
+    }
+
+    const result = await worksheetRepo.findAllWithNoCount({
+      search,
+      sampleId: sampleId || undefined,
+      limit,
+      userRole: request.user?.role_id,
+      userCustomerId: request.user?.customer_id ?? undefined,
+      userAnalystTypeIds,
+      analystId: request.user?.role_id === ROLE_IDS.ANALYST ? request.user.id : undefined,
+    });
+
+    if (result.isFailure()) {
+      throw new AppError(500, result.error || RESOURCE_ERRORS.FETCH_FAILED('worksheet'));
+    }
+
+    const { data, hasMore } = result.getValue();
+    return reply.send({
+      success: true,
+      data,
+      has_more: hasMore,
+    });
+  }
+
+  // Default: use autocomplete query
+  const result = await worksheetRepo.findForAutocomplete(search, sampleId || undefined, limit);
 
   if (result.isFailure()) {
     throw new AppError(500, result.error || RESOURCE_ERRORS.FETCH_FAILED('worksheet'));
@@ -270,11 +344,17 @@ export const updateWorksheetResult = async (request: FastifyRequest, reply: Fast
     throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
   }
 
-  // Check analyst authorization
+  // Check analyst authorization (type-based)
   if (request.user.role_id === ROLE_IDS.ANALYST) {
     const authResult = await worksheetRepo.checkAnalystAuthorization(id, request.user.id);
     if (authResult.isSuccess() && !authResult.getValue().isAuthorized) {
       throw new AuthorizationError(authResult.getValue().reason || AUTHORIZATION_ERRORS.FORBIDDEN);
+    }
+
+    // Check worksheet assignment (analyst can only update unassigned or own worksheets)
+    const assignmentCheck = await worksheetRepo.checkWorksheetAssignment(id, request.user.id);
+    if (assignmentCheck.isSuccess() && !assignmentCheck.getValue().canUpdate) {
+      throw new AuthorizationError(assignmentCheck.getValue().reason || AUTHORIZATION_ERRORS.WORKSHEET_ASSIGNED_TO_OTHER);
     }
   }
 
@@ -338,6 +418,14 @@ export const verifyWorksheet = async (request: FastifyRequest, reply: FastifyRep
     throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
   }
 
+  // QC Type Authorization Check - Microbiology QC vs Chemistry QC
+  if (request.user.role_id === ROLE_IDS.QC) {
+    const qcTypeCheck = await worksheetRepo.checkQCTypeAuthorization(id, request.user.id);
+    if (qcTypeCheck.isSuccess() && !qcTypeCheck.getValue().canVerify) {
+      throw new AuthorizationError(qcTypeCheck.getValue().reason || AUTHORIZATION_ERRORS.QC_TYPE_MISMATCH);
+    }
+  }
+
   const body = request.body as { message?: string };
   const { message } = body;
 
@@ -393,6 +481,7 @@ export const approveWorksheet = async (request: FastifyRequest, reply: FastifyRe
 
 /**
  * POST /api/worksheets/:id/revision - QC request revision
+ * Uses cascade method to update COA and related entities
  */
 export const requestRevision = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   if (!request.user?.id) {
@@ -406,6 +495,14 @@ export const requestRevision = async (request: FastifyRequest, reply: FastifyRep
     throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
   }
 
+  // QC Type Authorization Check - Microbiology QC vs Chemistry QC
+  if (request.user.role_id === ROLE_IDS.QC) {
+    const qcTypeCheck = await worksheetRepo.checkQCTypeAuthorization(id, request.user.id);
+    if (qcTypeCheck.isSuccess() && !qcTypeCheck.getValue().canVerify) {
+      throw new AuthorizationError(qcTypeCheck.getValue().reason || AUTHORIZATION_ERRORS.QC_TYPE_MISMATCH);
+    }
+  }
+
   const body = request.body as { message?: string };
   const { message } = body;
 
@@ -413,7 +510,8 @@ export const requestRevision = async (request: FastifyRequest, reply: FastifyRep
     throw new ValidationError(VALIDATION_ERRORS.REQUIRED('Revision message'));
   }
 
-  const result = await worksheetRepo.requestRevision(id, {
+  // Use cascade method for full revision workflow (including COA update)
+  const result = await worksheetRepo.requestRevisionWithCascade(id, {
     requestedBy: request.user.id,
     message,
   });
@@ -422,9 +520,16 @@ export const requestRevision = async (request: FastifyRequest, reply: FastifyRep
     throw new AppError(400, result.error || RESOURCE_ERRORS.UPDATE_FAILED('revision request'));
   }
 
+  const cascadeResult = result.getValue();
   return reply.send({
     success: true,
-    data: result.getValue(),
+    data: {
+      worksheet: cascadeResult.worksheet,
+      revertedWorksheetCount: cascadeResult.revertedWorksheetCount,
+      coaUpdated: cascadeResult.coaUpdated,
+      sampleStatus: cascadeResult.newSampleStatus,
+      orderStatus: cascadeResult.newOrderStatus,
+    },
     message: 'Revision request submitted successfully',
   });
 };
@@ -470,6 +575,7 @@ export const requestInternalRetest = async (request: FastifyRequest, reply: Fast
 
 /**
  * POST /api/worksheets/:id/customer-retest - Request customer retest
+ * Uses cascade method to update related entities and create notifications
  */
 export const requestCustomerRetest = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
   if (!request.user?.id) {
@@ -483,6 +589,14 @@ export const requestCustomerRetest = async (request: FastifyRequest, reply: Fast
     throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
   }
 
+  // QC Type Authorization Check - Microbiology QC vs Chemistry QC
+  if (request.user.role_id === ROLE_IDS.QC) {
+    const qcTypeCheck = await worksheetRepo.checkQCTypeAuthorization(id, request.user.id);
+    if (qcTypeCheck.isSuccess() && !qcTypeCheck.getValue().canVerify) {
+      throw new AuthorizationError(qcTypeCheck.getValue().reason || AUTHORIZATION_ERRORS.QC_TYPE_MISMATCH);
+    }
+  }
+
   const body = request.body as { message?: string };
   const { message } = body;
 
@@ -490,7 +604,8 @@ export const requestCustomerRetest = async (request: FastifyRequest, reply: Fast
     throw new ValidationError(VALIDATION_ERRORS.REQUIRED('Retest message'));
   }
 
-  const result = await worksheetRepo.requestCustomerRetest(id, {
+  // Use cascade method for full customer retest workflow (including notifications)
+  const result = await worksheetRepo.requestCustomerRetestWithCascade(id, {
     requestedBy: request.user.id,
     message,
     isCustomerRetest: true,
@@ -500,9 +615,15 @@ export const requestCustomerRetest = async (request: FastifyRequest, reply: Fast
     throw new AppError(400, result.error || RESOURCE_ERRORS.UPDATE_FAILED('customer retest request'));
   }
 
+  const cascadeResult = result.getValue();
   return reply.send({
     success: true,
-    data: result.getValue(),
+    data: {
+      worksheet: cascadeResult.worksheet,
+      sampleStatus: cascadeResult.newSampleStatus,
+      orderStatus: cascadeResult.newOrderStatus,
+      notificationCreated: cascadeResult.notificationId !== null,
+    },
     message: 'Customer retest request submitted successfully',
   });
 };

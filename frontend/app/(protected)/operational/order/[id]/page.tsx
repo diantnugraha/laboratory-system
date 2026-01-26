@@ -10,11 +10,9 @@ import {
   FileText,
   User,
   Loader2,
-  ChevronDown,
-  ChevronRight,
   FileCheck,
   Download,
-  DollarSign,
+  ChevronDown,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,16 +35,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { orderService, Order, OrderSample } from "@/services/orderService";
+import { orderService, Order } from "@/services/orderService";
+import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
-import { cn } from "@/lib/utils";
 
 const formatDate = (dateString: string | null | undefined) => {
   if (!dateString) return '-';
@@ -60,14 +53,6 @@ const formatDate = (dateString: string | null | undefined) => {
   } catch {
     return dateString;
   }
-};
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-  }).format(value);
 };
 
 const getStatusBadge = (status: string | null) => {
@@ -93,6 +78,27 @@ const getStatusBadge = (status: string | null) => {
   }
 };
 
+// Sample status badge helper
+const getSampleStatusBadge = (status: string | null) => {
+  switch (status?.toLowerCase()) {
+    case "complete":
+    case "approved":
+    case "verified":
+      return <Badge variant="default" className="text-xs">{status}</Badge>;
+    case "process":
+    case "under process":
+      return <Badge variant="secondary" className="text-xs">{status}</Badge>;
+    case "pending":
+    case "waiting":
+      return <Badge variant="outline" className="text-xs">{status}</Badge>;
+    case "cancel":
+    case "cancelled":
+      return <Badge variant="destructive" className="text-xs">{status}</Badge>;
+    default:
+      return <Badge variant="secondary" className="text-xs">{status || '-'}</Badge>;
+  }
+};
+
 const getPriorityBadge = (priority: string | null) => {
   switch (priority?.toLowerCase()) {
     case "urgent":
@@ -112,18 +118,6 @@ const getContactFullName = (contact: Order['contact']) => {
   return parts.join(' ') || '-';
 };
 
-const getStorageLabel = (storage: string | null) => {
-  switch (storage?.toLowerCase()) {
-    case "chill":
-      return "Chill";
-    case "frozen":
-      return "Frozen";
-    case "dry":
-    default:
-      return "Dry";
-  }
-};
-
 export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -132,17 +126,12 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
-  const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set());
 
   const fetchOrder = useCallback(async () => {
     try {
       setLoading(true);
       const response = await orderService.getById(id);
       setOrder(response.data);
-      // Expand all samples by default
-      if (response.data.samples) {
-        setExpandedSamples(new Set(response.data.samples.map(s => String(s.id))));
-      }
     } catch (error) {
       toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('order')));
       router.push('/operational/order');
@@ -168,18 +157,6 @@ export default function OrderDetailPage() {
     }
   };
 
-  const toggleSampleExpanded = (sampleId: string) => {
-    setExpandedSamples((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(sampleId)) {
-        newSet.delete(sampleId);
-      } else {
-        newSet.add(sampleId);
-      }
-      return newSet;
-    });
-  };
-
   const handleDownload = async (type: 'sppc' | 'quotation' | 'request_form' | 'coa_request' | 'coa_release') => {
     try {
       const blob = await orderService.downloadDocument(id, type);
@@ -197,19 +174,7 @@ export default function OrderDetailPage() {
     }
   };
 
-  // Calculate totals
   const samples = order?.samples || [];
-  const subtotal = samples.reduce((sum, sample) => {
-    const sampleTotal = sample.worksheets?.reduce((svcSum, ws) => svcSum + (ws.total || 0), 0) || 0;
-    return sum + (sampleTotal * (sample.quantity || 1));
-  }, 0);
-
-  const percentDiscount = order?.percentDiscount || 0;
-  const discountAmount = Math.round(subtotal * (percentDiscount / 100));
-  const subtotalAfterDiscount = subtotal - discountAmount;
-  const percentVat = order?.percentVat || 11;
-  const vatAmount = Math.round(subtotalAfterDiscount * (percentVat / 100));
-  const grandTotal = subtotalAfterDiscount + vatAmount;
 
   if (loading) {
     return (
@@ -358,7 +323,58 @@ export default function OrderDetailPage() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Document
               </p>
-              <p className="text-sm font-medium">{order.document || '-'}</p>
+              <div className="text-sm font-medium">
+                {order.document ? (
+                  <div className="flex flex-col gap-1">
+                    {order.document.split(';;').filter(Boolean).map((doc, index) => (
+                      <a
+                        key={index}
+                        href={`${process.env.NEXT_PUBLIC_API_URL}/uploads/orders/${doc.trim()}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline flex items-center gap-1"
+                      >
+                        <FileText className="h-3 w-3" />
+                        {doc.trim()}
+                      </a>
+                    ))}
+                  </div>
+                ) : '-'}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Quotation
+              </p>
+              <p className="text-sm font-medium">
+                {order.quotation ? (
+                  <Link href={`/operational/quotation/${order.quotation.id}`} className="text-primary hover:underline">
+                    {order.quotation.code}
+                  </Link>
+                ) : '-'}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Pre Order
+              </p>
+              <p className="text-sm font-medium">
+                {order.preOrder ? (
+                  <Link href={`/operational/preorder/${order.preOrder.id}`} className="text-primary hover:underline">
+                    {order.preOrder.code}
+                  </Link>
+                ) : '-'}
+              </p>
+            </div>
+          </div>
+
+          {/* Remarks */}
+          <div className="border-t pt-6">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Remarks
+            </p>
+            <div className="p-4 rounded-lg border bg-muted/30 min-h-[80px]">
+              <RenderHTML html={order.remarks} className="text-sm leading-relaxed" />
             </div>
           </div>
         </CardContent>
@@ -444,151 +460,51 @@ export default function OrderDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y">
-              {samples.map((sample) => (
-                <Collapsible
-                  key={sample.id}
-                  open={expandedSamples.has(String(sample.id))}
-                  onOpenChange={() => toggleSampleExpanded(String(sample.id))}
-                >
-                  <div className="flex items-center justify-between p-4 bg-muted/20 hover:bg-muted/30 transition-colors">
-                    <CollapsibleTrigger asChild>
-                      <button type="button" className="flex items-center gap-3 flex-1 text-left">
-                        {expandedSamples.has(String(sample.id)) ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
-                        )}
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{sample.name}</span>
-                            <span className="text-muted-foreground text-sm">
-                              (Qty: {sample.quantity || 1}, {sample.worksheets?.length || 0} service{(sample.worksheets?.length || 0) !== 1 ? 's' : ''})
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                            {sample.description && <span>{sample.description}</span>}
-                            {sample.standardName && <span>• {sample.standardName}</span>}
-                            {sample.volume && <span>• Vol: {sample.volume}</span>}
-                            <span>• {getStorageLabel(sample.sampleStorage)}</span>
-                          </div>
-                        </div>
-                      </button>
-                    </CollapsibleTrigger>
-                  </div>
-                  <CollapsibleContent>
-                    {sample.worksheets && sample.worksheets.length > 0 ? (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b bg-muted/30">
-                              <th className="text-left px-4 py-3 font-medium">Type</th>
-                              <th className="text-left px-4 py-3 font-medium">Parameter</th>
-                              <th className="text-left px-4 py-3 font-medium">Method</th>
-                              <th className="text-right px-4 py-3 font-medium">Price (IDR)</th>
-                              <th className="text-center px-4 py-3 font-medium">Discount (%)</th>
-                              <th className="text-right px-4 py-3 font-medium">Total (IDR)</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sample.worksheets.map((ws) => (
-                              <tr key={ws.id} className="border-b hover:bg-muted/20">
-                                <td className="px-4 py-3">
-                                  <span className={cn(
-                                    "text-xs px-2 py-1 rounded-full",
-                                    ws.packageId ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-                                  )}>
-                                    {ws.packageId ? "Pkg" : "Svc"}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3">
-                                  {ws.packageId && ws.packageName ? (
-                                    <div>
-                                      <div className="font-medium text-primary">{ws.packageName}</div>
-                                      <div className="text-xs text-muted-foreground mt-1">
-                                        {ws.serviceName}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <span className="font-medium">{ws.parameter}</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3 text-muted-foreground">{ws.method}</td>
-                                <td className="text-right px-4 py-3">{formatCurrency(ws.price)}</td>
-                                <td className="text-center px-4 py-3">{ws.discount}%</td>
-                                <td className="text-right px-4 py-3 font-medium">{formatCurrency(ws.total)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div className="text-center py-6 text-muted-foreground">
-                        No services assigned to this sample
-                      </div>
-                    )}
-                  </CollapsibleContent>
-                </Collapsible>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left px-4 py-3 font-medium w-40">Sample Code</th>
+                    <th className="text-left px-4 py-3 font-medium w-96">Sample Name</th>
+                    <th className="text-left px-4 py-3 font-medium">Received Date</th>
+                    <th className="text-left px-4 py-3 font-medium">Priority</th>
+                    <th className="text-left px-4 py-3 font-medium">Due Date</th>
+                    <th className="text-left px-4 py-3 font-medium">Status</th>
+                    <th className="text-left px-4 py-3 font-medium">COA Published</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {samples.map((sample) => (
+                    <tr key={sample.id} className="border-b hover:bg-muted/20">
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/operational/order/${id}/sample/${sample.id}`}
+                          className="text-primary hover:underline font-medium"
+                        >
+                          {sample.code}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 max-w-96">
+                        <RenderHTML html={sample.name} className="break-words" />
+                      </td>
+                      <td className="px-4 py-3">{formatDate(sample.receivedDate)}</td>
+                      <td className="px-4 py-3">{sample.priority}</td>
+                      <td className="px-4 py-3">{formatDate(sample.dueDate)}</td>
+                      <td className="px-4 py-3">
+                        {getSampleStatusBadge(sample.sampleStatus)}
+                      </td>
+                      <td className="px-4 py-3">{formatDate(sample.coaReleasedDate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Summary & Remarks Section */}
-      <Card className="overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
-          <CardTitle className="flex items-center gap-2">
-            <div className="p-1.5 rounded-md bg-primary/10">
-              <DollarSign className="h-4 w-4 text-primary" />
-            </div>
-            Summary & Remarks
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Remarks */}
-            <div className="space-y-3">
-              <h4 className="text-sm font-medium uppercase tracking-wide text-muted-foreground mb-3">Remarks</h4>
-              <div className="p-4 rounded-lg border bg-muted/30 min-h-[120px]">
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                  {order.remarks || "-"}
-                </p>
-              </div>
-            </div>
-
-            {/* Summary */}
-            <div className="space-y-3">
-              <h4 className="text-sm font-medium uppercase tracking-wide text-muted-foreground mb-3">Financial Summary</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal Services</span>
-                  <span className="font-medium">{formatCurrency(order.subTotal || subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Global Discount ({percentDiscount}%)</span>
-                  <span className="font-medium text-destructive">-{formatCurrency(discountAmount)}</span>
-                </div>
-                <div className="flex justify-between text-sm border-t pt-2">
-                  <span className="text-muted-foreground">Subtotal After Discount</span>
-                  <span className="font-medium">{formatCurrency(subtotalAfterDiscount)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">VAT ({percentVat}%)</span>
-                  <span className="font-medium">{formatCurrency(vatAmount)}</span>
-                </div>
-                <div className="flex justify-between text-lg font-semibold border-t pt-2">
-                  <span>Grand Total</span>
-                  <span className="text-primary">{formatCurrency(order.total || grandTotal)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Related Documents */}
-      {(order.quotation || order.preOrder || order.invoice) && (
+      {/* Related Documents - Invoice Only */}
+      {order.invoice && (
         <Card className="overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
             <CardTitle className="flex items-center gap-2">
@@ -599,43 +515,15 @@ export default function OrderDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              {order.quotation && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    Quotation
-                  </p>
-                  <p className="text-sm font-medium">
-                    <Link href={`/operational/quotation/${order.quotation.id}`} className="text-primary hover:underline">
-                      {order.quotation.code}
-                    </Link>
-                  </p>
-                </div>
-              )}
-              {order.preOrder && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    Pre Order
-                  </p>
-                  <p className="text-sm font-medium">
-                    <Link href={`/operational/preorder/${order.preOrder.id}`} className="text-primary hover:underline">
-                      {order.preOrder.code}
-                    </Link>
-                  </p>
-                </div>
-              )}
-              {order.invoice && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    Invoice
-                  </p>
-                  <p className="text-sm font-medium">
-                    <Link href={`/operational/invoice/${order.invoice.id}`} className="text-primary hover:underline">
-                      {order.invoice.code}
-                    </Link>
-                  </p>
-                </div>
-              )}
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Invoice
+              </p>
+              <p className="text-sm font-medium">
+                <Link href={`/operational/invoice/${order.invoice.id}`} className="text-primary hover:underline">
+                  {order.invoice.code}
+                </Link>
+              </p>
             </div>
           </CardContent>
         </Card>

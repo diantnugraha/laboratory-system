@@ -111,6 +111,12 @@ export const AUTHORIZATION_ERRORS = {
   ANALYST_ACCESS_DENIED: 'You do not have access to this worksheet',
   SUBCONTRACT_ONLY: 'This worksheet is not subcontracted',
   ROLE_REQUIRED: 'Invalid role for this operation',
+  // QC Type segregation errors
+  QC_TYPE_MISMATCH: 'QC type does not match worksheet type',
+  QC_TYPE_MISMATCH_MICRO: 'Microbiology QC cannot verify chemistry worksheets',
+  QC_TYPE_MISMATCH_CHEM: 'Chemistry QC cannot verify microbiology worksheets',
+  // Worksheet assignment errors
+  WORKSHEET_ASSIGNED_TO_OTHER: 'This worksheet is assigned to another analyst',
 } as const;
 
 // ============================================

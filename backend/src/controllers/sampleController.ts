@@ -101,6 +101,26 @@ export const getSampleById = async (request: FastifyRequest, reply: FastifyReply
 };
 
 /**
+ * GET /api/samples/:id/detail - Get sample with detailed information including worksheets
+ */
+export const getSampleDetail = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+  const params = request.params as { id: string };
+  const id = parseId(params.id);
+
+  if (!id) {
+    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
+  }
+
+  const result = await sampleRepo.findByIdWithDetails(id);
+
+  if (result.isFailure()) {
+    throw new NotFoundError(result.error || RESOURCE_ERRORS.SAMPLE_NOT_FOUND);
+  }
+
+  return reply.send({ success: true, data: result.getValue() });
+};
+
+/**
  * GET /api/samples/json - For autocomplete/dropdown
  */
 export const getSamplesJson = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {

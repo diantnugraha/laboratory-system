@@ -268,9 +268,11 @@ export class OrderRepository implements IOrderRepository {
             select: {
               id: true,
               first_name: true,
+              middle_name: true,
               surname: true,
               email: true,
               phone: true,
+              department: true,
             },
           },
           address: {
@@ -278,6 +280,7 @@ export class OrderRepository implements IOrderRepository {
               id: true,
               address: true,
               city: true,
+              state: true,
             },
           },
           quotation: {
@@ -297,6 +300,45 @@ export class OrderRepository implements IOrderRepository {
               id: true,
               code: true,
             },
+          },
+          samples: {
+            where: { trash: null },
+            include: {
+              standart: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              worksheet: {
+                where: { trash: null },
+                include: {
+                  service: {
+                    include: {
+                      parameter: {
+                        select: {
+                          id: true,
+                          name: true,
+                        },
+                      },
+                      method: {
+                        select: {
+                          id: true,
+                          name: true,
+                        },
+                      },
+                    },
+                  },
+                  package: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: { id: 'asc' },
           },
         },
       });

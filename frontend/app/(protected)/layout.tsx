@@ -3,7 +3,7 @@
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
 
 export default function ProtectedLayout({
@@ -11,15 +11,22 @@ export default function ProtectedLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading, refreshUserProfile } = useAuthStore();
   const router = useRouter();
+  const hasRefreshed = useRef(false);
 
   useEffect(() => {
     // Only redirect after loading is complete and user is not authenticated
     if (!isLoading && !isAuthenticated) {
       router.push('/login');
     }
-  }, [isAuthenticated, isLoading, router]);
+
+    // Refresh user profile after hydration to get fresh data including role_name
+    if (!isLoading && isAuthenticated && !hasRefreshed.current) {
+      hasRefreshed.current = true;
+      refreshUserProfile();
+    }
+  }, [isAuthenticated, isLoading, router, refreshUserProfile]);
 
   // Show loading while checking auth
   if (isLoading) {

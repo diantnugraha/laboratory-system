@@ -153,6 +153,7 @@ model AnalystType {
   updated_by   Int?           @map("updated_by")
   trash        Int?
   analystRules AnalystRules[]
+  services     Service[]
 
   @@map("analyst_type")
 }
@@ -360,6 +361,7 @@ model Service {
   parameter                Parameter         @relation(fields: [parameter_id], references: [id], onUpdate: Restrict, map: "service_ibfk_2")
   method                   Method            @relation(fields: [method_id], references: [id], onUpdate: Restrict, map: "service_ibfk_3")
   subcontractor            Subcontractor?    @relation(fields: [subcontractor_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "service_ibfk_4")
+  analystType              AnalystType?      @relation(fields: [analyst_type_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
   contractDetails          ContractDetail[]
   service_history          service_history[]
   worksheets               Worksheet[]
@@ -722,6 +724,7 @@ model Sample {
   distribute                Int?
   standart                  Standart? @relation(fields: [standart_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "sample_ibfk_2")
   order                     Order     @relation(fields: [order_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "sample_ibfk_1")
+  worksheet                 Worksheet[]
 
   @@index([code], map: "idx_sample_code")
   @@index([id, order_id, due_date], map: "idx_sample_order_due")
@@ -772,6 +775,7 @@ model Worksheet {
   retest_reason         String?   @db.VarChar(255)
   revise_reason         String?   @db.VarChar(255)
   price                 BigInt?
+  sample                Sample    @relation(fields: [sample_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "worksheet_ibfk_1")
   service               Service   @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "worksheet_ibfk_2")
   standart              Standart? @relation(fields: [standart_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "worksheet_ibfk_3")
   package               Package?  @relation(fields: [package_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "worksheet_ibfk_4")

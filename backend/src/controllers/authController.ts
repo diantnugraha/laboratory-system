@@ -145,20 +145,11 @@ export const login = async (request: FastifyRequest, reply: FastifyReply) => {
   // Prepare user data (exclude password and flatten role)
   const { password: _, role, ...userData } = user;
 
-  // Debug logging
-  console.log('=== LOGIN DEBUG ===');
-  console.log('User from DB:', JSON.stringify(user, null, 2));
-  console.log('Role object:', role);
-  console.log('Role name:', role?.name);
-
   // Flatten role data for frontend
   const userResponse = {
     ...userData,
     role_name: role?.name || null
   };
-
-  console.log('User response:', JSON.stringify(userResponse, null, 2));
-  console.log('==================');
 
   return reply.send({
     success: true,

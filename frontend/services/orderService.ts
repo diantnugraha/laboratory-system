@@ -43,6 +43,8 @@ export interface OrderInvoice {
 
 export interface OrderWorksheet {
   id: number;
+  code: string | null;
+  status: string | null;
   serviceId: number;
   serviceName: string;
   serviceCode: string;
@@ -70,6 +72,8 @@ export interface OrderSample {
   dueDate: string | null;
   price: number | null;
   discount: number | null;
+  sampleStatus: string;
+  coaReleasedDate: string | null;
   worksheets: OrderWorksheet[];
 }
 

@@ -15,8 +15,6 @@ export class AuthRepository implements IAuthRepository {
 
   async findByEmail(email: string): Promise<RepositoryResult<any | null>> {
     try {
-      console.log('[AuthRepository] Finding user by email:', email);
-
       const user = await this.prisma.users.findFirst({
         where: {
           email,
@@ -45,16 +43,8 @@ export class AuthRepository implements IAuthRepository {
         },
       });
 
-      console.log('[AuthRepository] User found:', user ? 'YES' : 'NO');
-      console.log('[AuthRepository] User data:', JSON.stringify(user, null, 2));
-      console.log('[AuthRepository] Role included:', user?.role ? 'YES' : 'NO');
-      if (user?.role) {
-        console.log('[AuthRepository] Role data:', JSON.stringify(user.role, null, 2));
-      }
-
       return RepositoryResult.ok(user);
     } catch (error: any) {
-      console.error('[AuthRepository] Error finding user:', error);
       return RepositoryResult.fail(`Failed to find user by email: ${error.message}`);
     }
   }

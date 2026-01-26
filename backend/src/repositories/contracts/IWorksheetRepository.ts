@@ -310,6 +310,71 @@ export interface TodoAnalystSummary {
 }
 
 /**
+ * QC Type Authorization Result
+ * Used to check if QC user can verify worksheet based on type (Microbiology vs Chemistry)
+ */
+export interface QCTypeAuthorizationResult {
+  canVerify: boolean;
+  isMicrobiologyQC: boolean;
+  isMicrobiologyWorksheet: boolean;
+  reason?: string;
+}
+
+/**
+ * Worksheet Assignment Check Result
+ * Used to check if analyst can update a worksheet based on assignment
+ */
+export interface WorksheetAssignmentCheck {
+  canUpdate: boolean;
+  isAssigned: boolean;
+  assignedToUserId: number | null;
+  reason?: string;
+}
+
+/**
+ * Revision Cascade Result
+ * Extended result from revision request including all cascaded updates
+ */
+export interface RevisionCascadeResult extends StatusUpdateResult {
+  revertedWorksheetCount: number;
+  revertedWorksheetIds: number[];
+  coaUpdated: boolean;
+  coaId: number | null;
+  notificationId: number | null;
+}
+
+/**
+ * Customer Retest Cascade Result
+ * Extended result from customer retest including all cascaded updates
+ */
+export interface CustomerRetestCascadeResult extends StatusUpdateResult {
+  notificationId: number | null;
+}
+
+/**
+ * Worksheet Notification DTO
+ * Data required to create a worksheet notification
+ */
+export interface WorksheetNotificationDTO {
+  worksheetId: number;
+  worksheetCode: string;
+  type: 'retest' | 'revision' | 'customer_retest' | 'internal_retest';
+  message: string;
+  fromUserId: number;
+  toUserIds: number[];
+  linkUrl?: string;
+}
+
+/**
+ * No-Count Query Result
+ * Result for optimized queries that skip COUNT
+ */
+export interface NoCountQueryResult<T> {
+  data: T[];
+  hasMore: boolean;
+}
+
+/**
  * Worksheet Repository Interface
  * Defines all data access operations for Worksheet entity
  */
@@ -370,6 +435,18 @@ export interface IWorksheetRepository {
    * Get user's authorized analyst type IDs
    */
   getUserAnalystTypeIds(userId: number): Promise<RepositoryResult<number[]>>;
+
+  /**
+   * Check if QC user can verify worksheet based on type (Microbiology vs Chemistry)
+   * Microbiology QC can only verify microbiology worksheets and vice versa
+   */
+  checkQCTypeAuthorization(worksheetId: number, userId: number): Promise<RepositoryResult<QCTypeAuthorizationResult>>;
+
+  /**
+   * Check if analyst can update worksheet based on assignment
+   * Analyst can only update unassigned worksheets or worksheets assigned to them
+   */
+  checkWorksheetAssignment(worksheetId: number, userId: number): Promise<RepositoryResult<WorksheetAssignmentCheck>>;
 
   // ===== Validation Operations =====
 
@@ -472,6 +549,39 @@ export interface IWorksheetRepository {
    * Update order to Under Process if needed
    */
   updateOrderToUnderProcess(sampleId: number): Promise<RepositoryResult<boolean>>;
+
+  /**
+   * Request revision with full cascade (Transaction)
+   * - Updates worksheet to "Need to Revised"
+   * - Reverts other approved worksheets to "Verified by QC"
+   * - Updates sample status to "Need to Revised"
+   * - Updates order status to "Waiting Revision"
+   * - Updates COA status to "Waiting Revision" if in "Draft Sent"
+   * - Creates notification
+   */
+  requestRevisionWithCascade(id: number, data: RevisionRequestDTO): Promise<RepositoryResult<RevisionCascadeResult>>;
+
+  /**
+   * Request customer retest with cascade
+   * - Updates worksheet to "Customer Retest"
+   * - Updates sample status to "Customer Retest"
+   * - Updates order status to "Customer Retest"
+   * - Creates notification
+   */
+  requestCustomerRetestWithCascade(id: number, data: RetestRequestDTO): Promise<RepositoryResult<CustomerRetestCascadeResult>>;
+
+  /**
+   * Create notification for worksheet action
+   */
+  createWorksheetNotification(data: WorksheetNotificationDTO): Promise<RepositoryResult<number>>;
+
+  // ===== Optimized Query Operations =====
+
+  /**
+   * Get worksheets without count for better performance
+   * Uses limit + 1 pattern to determine hasMore
+   */
+  findAllWithNoCount(filter: WorksheetFilter): Promise<RepositoryResult<NoCountQueryResult<WorksheetWithRelations>>>;
 
   // ===== Code Generation =====
 

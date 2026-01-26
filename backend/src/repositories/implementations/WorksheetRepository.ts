@@ -18,10 +18,17 @@ import {
   WorksheetReportFilter,
   WorksheetReportData,
   TodoAnalystSummary,
+  QCTypeAuthorizationResult,
+  WorksheetAssignmentCheck,
+  RevisionCascadeResult,
+  CustomerRetestCascadeResult,
+  WorksheetNotificationDTO,
+  NoCountQueryResult,
 } from '../contracts/IWorksheetRepository';
 import {
   CALCULATION_SERVICE_IDS,
   MICROBIOLOGY_ANALYST_TYPE_ID,
+  MICROBIOLOGY_QC_USER_IDS,
 } from '../../config/worksheet';
 import { RepositoryResult, PaginatedData } from '../results/RepositoryResult';
 // Removed unused import: buildMultiFieldSearchCondition
@@ -211,6 +218,190 @@ export class WorksheetRepository implements IWorksheetRepository {
       return RepositoryResult.ok(this.transformWorksheet(worksheet));
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to fetch worksheet: ${error.message}`);
+    }
+  }
+
+  /**
+   * Find worksheet by ID with detailed information including user names
+   * Used for Worksheet Detail page
+   */
+  async findByIdWithDetails(id: number): Promise<RepositoryResult<any>> {
+    try {
+      const worksheet = await this.prisma.worksheet.findFirst({
+        where: { id, trash: null },
+        include: {
+          sample: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              sample_status: true,
+              due_date: true,
+              received_date: true,
+              order: {
+                select: {
+                  id: true,
+                  code: true,
+                  order_status: true,
+                  order_priority: true,
+                  customer: {
+                    select: {
+                      id: true,
+                      code: true,
+                      customer_name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          service: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              unit: true,
+              status: true,
+              price: true,
+              analystType: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              subcontractor: {
+                select: {
+                  id: true,
+                  lab_name: true,
+                },
+              },
+              parameter: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              method: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+          package: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          standart: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      if (!worksheet) {
+        return RepositoryResult.fail('Worksheet not found');
+      }
+
+      // Fetch user names for analyst, supervisor, QC, and manager
+      const userIds = [
+        worksheet.analyst_id,
+        worksheet.supervisor_id,
+        worksheet.qc_id,
+        worksheet.manager_id,
+      ].filter((id): id is number => id !== null);
+
+      const users = userIds.length > 0
+        ? await this.prisma.users.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, display_name: true, username: true },
+          })
+        : [];
+
+      const userMap = new Map(users.map(u => [u.id, u.display_name || u.username]));
+
+      // Transform to detail response
+      const result = {
+        id: worksheet.id,
+        code: worksheet.code,
+        status: worksheet.status,
+        result: worksheet.result,
+        nResult: worksheet.n_result,
+        unit: worksheet.unit,
+        percentPc: worksheet.percent_pc,
+        price: worksheet.price ? Number(worksheet.price) : null,
+        discount: worksheet.discount,
+        remarks: worksheet.remarks,
+        document: worksheet.document,
+        worksheetDate: worksheet.worksheet_date,
+        finishDate: worksheet.finish_date,
+        verifyQcDate: worksheet.verify_qc_date,
+        // User assignments
+        analystId: worksheet.analyst_id,
+        analystName: worksheet.analyst_id ? userMap.get(worksheet.analyst_id) || null : null,
+        supervisorId: worksheet.supervisor_id,
+        supervisorName: worksheet.supervisor_id ? userMap.get(worksheet.supervisor_id) || null : null,
+        qcId: worksheet.qc_id,
+        qcName: worksheet.qc_id ? userMap.get(worksheet.qc_id) || null : null,
+        managerId: worksheet.manager_id,
+        managerName: worksheet.manager_id ? userMap.get(worksheet.manager_id) || null : null,
+        // Retest/Revision tracking
+        totalRetest: worksheet.total_retest,
+        totalRevision: worksheet.total_revision,
+        totalCustomerRetest: worksheet.total_customer_retest,
+        retestReason: worksheet.retest_reason,
+        reviseReason: worksheet.revise_reason,
+        resultHistory: worksheet.result_history,
+        // Subcontract info
+        airWayBill: worksheet.air_way_bill,
+        subconSendDate: worksheet.subcon_send_date,
+        subconReceivedDate: worksheet.subcon_received_date,
+        subconEndDate: worksheet.subcon_end_date,
+        // Related entities
+        parameter: worksheet.service?.parameter?.name || null,
+        parameterId: worksheet.service?.parameter?.id || null,
+        method: worksheet.service?.method?.name || null,
+        methodId: worksheet.service?.method?.id || null,
+        packageId: worksheet.package_id,
+        packageName: worksheet.package?.name || null,
+        standardId: worksheet.standart_id,
+        standardName: worksheet.standart?.name || null,
+        serviceCode: worksheet.service?.code || null,
+        serviceName: worksheet.service?.name || null,
+        serviceUnit: worksheet.service?.unit || null,
+        servicePrice: worksheet.service?.price || null,
+        isSubcontracted: worksheet.service?.status === 'Subcontracted',
+        subcontractorName: worksheet.service?.subcontractor?.lab_name || null,
+        analystType: worksheet.service?.analystType?.name || null,
+        // Sample info
+        sample: {
+          id: worksheet.sample.id,
+          code: worksheet.sample.code,
+          name: worksheet.sample.name,
+          status: worksheet.sample.sample_status,
+          dueDate: worksheet.sample.due_date,
+          receivedDate: worksheet.sample.received_date,
+        },
+        // Order info
+        order: {
+          id: worksheet.sample.order.id,
+          code: worksheet.sample.order.code,
+          status: worksheet.sample.order.order_status,
+          priority: worksheet.sample.order.order_priority,
+          customerName: worksheet.sample.order.customer?.customer_name || null,
+        },
+        createdAt: worksheet.created_at,
+        updatedAt: worksheet.updated_at,
+      };
+
+      return RepositoryResult.ok(result);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch worksheet details: ${error.message}`);
     }
   }
 
@@ -450,6 +641,98 @@ export class WorksheetRepository implements IWorksheetRepository {
       return RepositoryResult.ok(analystRules.map(ar => ar.analyst_type_id));
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to get user analyst types: ${error.message}`);
+    }
+  }
+
+  async checkQCTypeAuthorization(worksheetId: number, userId: number): Promise<RepositoryResult<QCTypeAuthorizationResult>> {
+    try {
+      const worksheet = await this.prisma.worksheet.findFirst({
+        where: { id: worksheetId, trash: null },
+        select: {
+          service: {
+            select: { analyst_type_id: true },
+          },
+        },
+      });
+
+      if (!worksheet) {
+        return RepositoryResult.ok({
+          canVerify: false,
+          isMicrobiologyQC: false,
+          isMicrobiologyWorksheet: false,
+          reason: 'Worksheet not found',
+        });
+      }
+
+      const isMicrobiologyQC = MICROBIOLOGY_QC_USER_IDS.includes(userId);
+      const isMicrobiologyWorksheet = worksheet.service.analyst_type_id === MICROBIOLOGY_ANALYST_TYPE_ID;
+
+      // Microbiology QC can only verify microbiology worksheets
+      if (isMicrobiologyQC && !isMicrobiologyWorksheet) {
+        return RepositoryResult.ok({
+          canVerify: false,
+          isMicrobiologyQC,
+          isMicrobiologyWorksheet,
+          reason: 'Microbiology QC cannot verify chemistry worksheets',
+        });
+      }
+
+      // Chemistry QC can only verify chemistry worksheets
+      if (!isMicrobiologyQC && isMicrobiologyWorksheet) {
+        return RepositoryResult.ok({
+          canVerify: false,
+          isMicrobiologyQC,
+          isMicrobiologyWorksheet,
+          reason: 'Chemistry QC cannot verify microbiology worksheets',
+        });
+      }
+
+      return RepositoryResult.ok({
+        canVerify: true,
+        isMicrobiologyQC,
+        isMicrobiologyWorksheet,
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to check QC type authorization: ${error.message}`);
+    }
+  }
+
+  async checkWorksheetAssignment(worksheetId: number, userId: number): Promise<RepositoryResult<WorksheetAssignmentCheck>> {
+    try {
+      const worksheet = await this.prisma.worksheet.findFirst({
+        where: { id: worksheetId, trash: null },
+        select: { analyst_id: true },
+      });
+
+      if (!worksheet) {
+        return RepositoryResult.ok({
+          canUpdate: false,
+          isAssigned: false,
+          assignedToUserId: null,
+          reason: 'Worksheet not found',
+        });
+      }
+
+      const isAssigned = worksheet.analyst_id !== null;
+      const assignedToUserId = worksheet.analyst_id;
+
+      // Can update if unassigned or assigned to current user
+      if (!isAssigned || assignedToUserId === userId) {
+        return RepositoryResult.ok({
+          canUpdate: true,
+          isAssigned,
+          assignedToUserId,
+        });
+      }
+
+      return RepositoryResult.ok({
+        canUpdate: false,
+        isAssigned,
+        assignedToUserId,
+        reason: 'Worksheet is assigned to another analyst',
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to check worksheet assignment: ${error.message}`);
     }
   }
 
@@ -938,6 +1221,330 @@ export class WorksheetRepository implements IWorksheetRepository {
       });
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to request customer retest: ${error.message}`);
+    }
+  }
+
+  async requestRevisionWithCascade(id: number, data: RevisionRequestDTO): Promise<RepositoryResult<RevisionCascadeResult>> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const worksheet = await tx.worksheet.findFirst({
+          where: { id, trash: null },
+          include: {
+            sample: { select: { id: true, order_id: true } },
+            service: { select: { id: true, name: true } },
+          },
+        });
+
+        if (!worksheet) {
+          throw new Error('Worksheet not found');
+        }
+
+        // 1. Update target worksheet
+        const updated = await tx.worksheet.update({
+          where: { id },
+          data: {
+            status: WorksheetStatus.NEED_TO_REVISED,
+            qc_id: data.requestedBy,
+            total_revision: { increment: 1 },
+            revise_reason: data.message,
+          },
+          include: this.worksheetInclude,
+        });
+
+        // 2. Get and revert other approved worksheets in same sample
+        const approvedWorksheets = await tx.worksheet.findMany({
+          where: {
+            sample_id: worksheet.sample.id,
+            id: { not: id },
+            trash: null,
+            status: WorksheetStatus.APPROVED_BY_TM,
+          },
+          select: { id: true },
+        });
+
+        const revertedWorksheetIds = approvedWorksheets.map(ws => ws.id);
+
+        if (revertedWorksheetIds.length > 0) {
+          await tx.worksheet.updateMany({
+            where: { id: { in: revertedWorksheetIds } },
+            data: { status: WorksheetStatus.VERIFIED_BY_QC },
+          });
+        }
+
+        // 3. Update sample status
+        await tx.sample.update({
+          where: { id: worksheet.sample.id },
+          data: {
+            status: SampleStatus.NEED_TO_REVISED,
+            auto_publish_date: null,
+          },
+        });
+
+        // 4. Update order status
+        await tx.order.update({
+          where: { id: worksheet.sample.order_id },
+          data: {
+            status: OrderStatus.WAITING_REVISION,
+            auto_publish_date: null,
+          },
+        });
+
+        // 5. Find and update COA with status 'Draft Sent'
+        let coaUpdated = false;
+        let coaId: number | null = null;
+
+        const coa = await tx.coa.findFirst({
+          where: {
+            sample_id: worksheet.sample.id,
+            trash: null,
+            status: 'Draft Sent',
+          },
+          select: { id: true },
+        });
+
+        if (coa) {
+          await tx.coa.update({
+            where: { id: coa.id },
+            data: { status: 'Waiting Revision' },
+          });
+          coaUpdated = true;
+          coaId = coa.id;
+        }
+
+        // 6. Create notification
+        let notificationId: number | null = null;
+        const toUserIds: number[] = [];
+        if (worksheet.analyst_id) toUserIds.push(worksheet.analyst_id);
+        if (worksheet.supervisor_id) toUserIds.push(worksheet.supervisor_id);
+
+        if (toUserIds.length > 0) {
+          const notification = await tx.notification.create({
+            data: {
+              from: data.requestedBy,
+              to: `,${toUserIds.join(',')},`,
+              message: data.message,
+              type: 'worksheet',
+              type_id: id,
+              link_url: `/worksheet/update/${id}`,
+              subject: `Revision Request: ${worksheet.code}`,
+              created_at: new Date(),
+              created_by: data.requestedBy,
+            },
+          });
+          notificationId = notification.id;
+        }
+
+        return RepositoryResult.ok({
+          worksheet: this.transformWorksheet(updated),
+          sampleStatusChanged: true,
+          orderStatusChanged: true,
+          newSampleStatus: SampleStatus.NEED_TO_REVISED,
+          newOrderStatus: OrderStatus.WAITING_REVISION,
+          revertedWorksheetCount: revertedWorksheetIds.length,
+          revertedWorksheetIds,
+          coaUpdated,
+          coaId,
+          notificationId,
+        });
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to request revision with cascade: ${error.message}`);
+    }
+  }
+
+  async requestCustomerRetestWithCascade(id: number, data: RetestRequestDTO): Promise<RepositoryResult<CustomerRetestCascadeResult>> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const worksheet = await tx.worksheet.findFirst({
+          where: { id, trash: null },
+          include: {
+            sample: { select: { id: true, order_id: true } },
+          },
+        });
+
+        if (!worksheet) {
+          throw new Error('Worksheet not found');
+        }
+
+        const updated = await tx.worksheet.update({
+          where: { id },
+          data: {
+            status: WorksheetStatus.CUSTOMER_RETEST,
+            total_customer_retest: { increment: 1 },
+            qc_id: data.requestedBy,
+            finish_date: null,
+            retest_reason: data.message,
+          },
+          include: this.worksheetInclude,
+        });
+
+        // Downgrade other approved worksheets
+        await tx.worksheet.updateMany({
+          where: {
+            sample_id: worksheet.sample.id,
+            id: { not: id },
+            trash: null,
+            status: WorksheetStatus.APPROVED_BY_TM,
+          },
+          data: { status: WorksheetStatus.VERIFIED_BY_QC },
+        });
+
+        // Update order status
+        await tx.order.update({
+          where: { id: worksheet.sample.order_id },
+          data: {
+            status: OrderStatus.CUSTOMER_RETEST,
+            auto_publish_date: null,
+          },
+        });
+
+        // Update sample status with extended due date
+        const newDueDate = new Date();
+        newDueDate.setDate(newDueDate.getDate() + 5);
+
+        await tx.sample.update({
+          where: { id: worksheet.sample.id },
+          data: {
+            status: SampleStatus.CUSTOMER_RETEST,
+            coa_release_due_date: newDueDate,
+            auto_publish_date: null,
+          },
+        });
+
+        // Create notification
+        let notificationId: number | null = null;
+        const toUserIds: number[] = [];
+        if (worksheet.analyst_id) toUserIds.push(worksheet.analyst_id);
+        if (worksheet.supervisor_id) toUserIds.push(worksheet.supervisor_id);
+
+        if (toUserIds.length > 0) {
+          const notification = await tx.notification.create({
+            data: {
+              from: data.requestedBy,
+              to: `,${toUserIds.join(',')},`,
+              message: data.message,
+              type: 'worksheet',
+              type_id: id,
+              link_url: `/worksheet/update/${id}`,
+              subject: `Customer Retest Request: ${worksheet.code}`,
+              created_at: new Date(),
+              created_by: data.requestedBy,
+            },
+          });
+          notificationId = notification.id;
+        }
+
+        return RepositoryResult.ok({
+          worksheet: this.transformWorksheet(updated),
+          sampleStatusChanged: true,
+          orderStatusChanged: true,
+          newSampleStatus: SampleStatus.CUSTOMER_RETEST,
+          newOrderStatus: OrderStatus.CUSTOMER_RETEST,
+          notificationId,
+        });
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to request customer retest with cascade: ${error.message}`);
+    }
+  }
+
+  async createWorksheetNotification(data: WorksheetNotificationDTO): Promise<RepositoryResult<number>> {
+    try {
+      if (data.toUserIds.length === 0) {
+        return RepositoryResult.ok(0);
+      }
+
+      const subjectMap: Record<string, string> = {
+        'retest': `Internal Retest Request: ${data.worksheetCode}`,
+        'revision': `Revision Request: ${data.worksheetCode}`,
+        'customer_retest': `Customer Retest Request: ${data.worksheetCode}`,
+        'internal_retest': `Internal Retest Request: ${data.worksheetCode}`,
+      };
+
+      const notification = await this.prisma.notification.create({
+        data: {
+          from: data.fromUserId,
+          to: `,${data.toUserIds.join(',')},`,
+          message: data.message,
+          type: 'worksheet',
+          type_id: data.worksheetId,
+          link_url: data.linkUrl || `/worksheet/update/${data.worksheetId}`,
+          subject: subjectMap[data.type] || `Worksheet Notification: ${data.worksheetCode}`,
+          created_at: new Date(),
+          created_by: data.fromUserId,
+        },
+      });
+
+      return RepositoryResult.ok(notification.id);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to create worksheet notification: ${error.message}`);
+    }
+  }
+
+  async findAllWithNoCount(filter: WorksheetFilter): Promise<RepositoryResult<NoCountQueryResult<WorksheetWithRelations>>> {
+    try {
+      const { search, sampleId, orderId, serviceId, analystId, status, isSubcontract, limit = 20 } = filter;
+
+      const where: any = {
+        trash: null,
+        non_parameter: null,
+      };
+
+      if (search) {
+        where.code = { contains: search, mode: 'insensitive' };
+      }
+
+      if (sampleId) {
+        where.sample_id = sampleId;
+      }
+
+      if (orderId) {
+        where.sample = { order_id: orderId };
+      }
+
+      if (serviceId) {
+        where.service_id = serviceId;
+      }
+
+      if (analystId) {
+        where.analyst_id = analystId;
+      }
+
+      if (status) {
+        if (Array.isArray(status)) {
+          where.status = { in: status };
+        } else {
+          where.status = status;
+        }
+      }
+
+      if (isSubcontract !== undefined) {
+        where.service = {
+          ...where.service,
+          status: isSubcontract ? 'Subcontracted' : { not: 'Subcontracted' },
+        };
+      }
+
+      // Apply role-based filters
+      this.applyRoleFilters(where, filter);
+
+      // Fetch limit + 1 to determine hasMore
+      const data = await this.prisma.worksheet.findMany({
+        where,
+        take: limit + 1,
+        orderBy: { id: 'desc' },
+        include: this.worksheetInclude,
+      });
+
+      const hasMore = data.length > limit;
+      const worksheets = hasMore ? data.slice(0, limit) : data;
+
+      return RepositoryResult.ok({
+        data: this.transformWorksheets(worksheets),
+        hasMore,
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch worksheets without count: ${error.message}`);
     }
   }
 

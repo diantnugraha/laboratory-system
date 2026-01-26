@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import {
   getAllSamples,
   getSampleById,
+  getSampleDetail,
   getSamplesJson,
   getSamplesByOrder,
   createSample,
@@ -100,6 +101,17 @@ const sampleRoutes: FastifyPluginAsync = async (fastify) => {
     },
     preHandler: [authorize(1, 2, 3, 8), validate(idParamSchema, 'params')]
   }, getSampleById);
+
+  // GET /api/samples/:id/detail - Get sample with detailed information including worksheets
+  fastify.get('/:id/detail', {
+    schema: {
+      description: `Get sample detail with worksheets and progress. ${roleDescription([1, 2, 3, 5, 6, 7, 8])}`,
+      tags: ['Samples'],
+      security: [{ bearerAuth: [] }],
+      params: zodToSwagger(idParamSchema)
+    },
+    preHandler: [authorize(1, 2, 3, 5, 6, 7, 8), validate(idParamSchema, 'params')]
+  }, getSampleDetail);
 
   // POST /api/samples - Create (role-based: SuperAdmin, Admin, Sales)
   fastify.post('/', {

@@ -44,13 +44,6 @@ export const useAuthStore = create<AuthState>()(
           const response = await api.post('/auth/login', { email, password })
           const { user, token } = response.data.data
 
-          // Debug logging
-          console.log('=== FRONTEND LOGIN DEBUG ===')
-          console.log('Response data:', response.data)
-          console.log('User received:', user)
-          console.log('User role_name:', user.role_name)
-          console.log('===========================')
-
           set({
             user,
             token,
@@ -114,7 +107,6 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
           })
 
-          console.log('User profile refreshed:', userData)
           return true
         } catch (error) {
           console.error('Failed to refresh user profile:', error)
