@@ -32,6 +32,7 @@ import { packageService, Package as PackageType } from "@/services/packageServic
 import { Service } from "@/services/serviceService";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
+import { RenderHTML } from "@/components/shared/RenderHTML";
 
 const formatCurrency = (value: number | null | undefined) => {
   return new Intl.NumberFormat("id-ID", {
@@ -267,8 +268,8 @@ export default function PackageDetailPage() {
                     <TableRow key={`${service.id}-${index}`} className="border-b hover:bg-muted/50 transition-colors">
                       <TableCell className="text-center px-2 py-3 font-medium text-muted-foreground">{index + 1}</TableCell>
                       <TableCell className="font-semibold px-2 py-3 text-primary">{service.code}</TableCell>
-                      <TableCell className="px-2 py-3" dangerouslySetInnerHTML={{ __html: service.name }} />
-                      <TableCell className="px-2 py-3 text-muted-foreground" dangerouslySetInnerHTML={{ __html: service.parameter?.name || '-' }} />
+                      <TableCell className="px-2 py-3"><RenderHTML html={service.name} /></TableCell>
+                      <TableCell className="px-2 py-3 text-muted-foreground"><RenderHTML html={service.parameter?.name || '-'} /></TableCell>
                       <TableCell className="text-right px-2 py-3 font-medium">{formatCurrency(service.price || 0)}</TableCell>
                     </TableRow>
                   ))

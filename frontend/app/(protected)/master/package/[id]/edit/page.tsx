@@ -52,6 +52,7 @@ import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
+import { RenderHTML } from "@/components/shared/RenderHTML";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import {
   DndContext,
@@ -160,8 +161,8 @@ const SortableRow = React.forwardRef<HTMLTableRowElement, SortableRowProps>(
         </td>
         <td className="text-center px-2 py-3 font-medium text-muted-foreground">{index + 1}</td>
         <td className="font-semibold px-2 py-3 text-primary">{service.code}</td>
-        <td className="px-2 py-3" dangerouslySetInnerHTML={{ __html: service.name }} />
-        <td className="px-2 py-3 text-muted-foreground" dangerouslySetInnerHTML={{ __html: service.parameter }} />
+        <td className="px-2 py-3"><RenderHTML html={service.name} /></td>
+        <td className="px-2 py-3 text-muted-foreground"><RenderHTML html={service.parameter} /></td>
         <td className="text-right px-2 py-3 font-medium">{formatCurrency(service.price || 0)}</td>
         <td className="w-10 px-2 py-3">
           <Button
@@ -738,7 +739,7 @@ export default function PackageEditPage() {
                                 <div className="min-w-0 flex-1">
                                   <span className="font-medium text-primary">{service.code}</span>
                                   <span className="mx-2">-</span>
-                                  <span className="truncate" dangerouslySetInnerHTML={{ __html: service.name }} />
+                                  <RenderHTML html={service.name} className="truncate" />
                                 </div>
                                 <span className="text-muted-foreground text-sm whitespace-nowrap">
                                   {formatCurrency(getServicePrice(service.price))}

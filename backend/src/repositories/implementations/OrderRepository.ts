@@ -546,6 +546,7 @@ export class OrderRepository implements IOrderRepository {
           total: data.total ?? 0,
           remarks: data.remarks,
           created_by: data.createdBy,
+          created_at: new Date(),
         },
         include: {
           customer: {

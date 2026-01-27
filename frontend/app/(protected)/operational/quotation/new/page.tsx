@@ -90,6 +90,7 @@ import { useCustomerStore } from "@/store/customerStore";
 import { useServiceStore, ServiceOption, PackageOption } from "@/store/serviceStore";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
+import { RenderHTML } from "@/components/shared/RenderHTML";
 
 // Form Schema
 const quotationFormSchema = z.object({
@@ -272,11 +273,11 @@ function SortableServiceRow({
       {/* Name with Package Services */}
       <TableCell className="font-medium align-top">
         <div>
-          <div className="font-semibold" dangerouslySetInnerHTML={{ __html: svc.name }} />
+          <RenderHTML as="div" html={svc.name} className="font-semibold" />
           {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0 && (
             <ul className="mt-1 text-xs text-muted-foreground list-disc list-inside">
               {svc.packageServices.map((pkgSvc, idx) => (
-                <li key={`${svc.id}-${pkgSvc.id}-${idx}`} dangerouslySetInnerHTML={{ __html: pkgSvc.name }} />
+                <li key={`${svc.id}-${pkgSvc.id}-${idx}`}><RenderHTML html={pkgSvc.name} /></li>
               ))}
             </ul>
           )}

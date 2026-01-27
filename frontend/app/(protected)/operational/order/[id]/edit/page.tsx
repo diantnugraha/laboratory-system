@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { RenderHTML } from "@/components/shared/RenderHTML";
 import { useRouter, useParams } from 'next/navigation';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -38,6 +39,8 @@ import {
   Copy,
   FileCheck,
   X,
+  Pencil,
+  MoreVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,9 +76,26 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { orderService, Order, OrderFormData } from "@/services/orderService";
+import { standardService, StandardSelectItem } from "@/services/standardService";
 import { useCustomerStore } from "@/store/customerStore";
 import { useServiceStore, ServiceOption, PackageOption } from "@/store/serviceStore";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
@@ -83,7 +103,21 @@ import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 
 // Format currency
 const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
+  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(isNaN(value) ? 0 : value);
+
+// Parse price safely (handles null, undefined, string, NaN)
+const parsePrice = (price: unknown): number => {
+  if (price === null || price === undefined) return 0;
+  if (typeof price === 'number') return isNaN(price) ? 0 : price;
+  if (typeof price === 'object' && price !== null && 'value' in price) {
+    return parsePrice((price as { value: unknown }).value);
+  }
+  if (typeof price === 'string') {
+    const parsed = parseFloat(price);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+};
 
 // Form Schema
 const orderFormSchema = z.object({
@@ -130,6 +164,7 @@ interface SampleItem {
   storage: "dry" | "chill" | "frozen";
   retain: "return" | "destroy";
   services: SampleServiceItem[];
+  isDetailsExpanded: boolean;
 }
 
 // Priority options with PC (Priority Charge)
@@ -190,52 +225,59 @@ function SortableServiceRow({ svc, sampleId, onUpdateDiscount, onRemove }: Sorta
   };
 
   return (
-    <tr
+    <TableRow
       ref={setNodeRef}
       style={style}
-      className={cn(
-        "group transition-colors hover:bg-muted/50 border-b",
-        isDragging && "opacity-50 bg-muted"
-      )}
+      className={cn(isDragging && "opacity-50")}
     >
-      <td className="w-10 px-2 py-3">
+      <TableCell className="w-[40px] align-top">
         <button
           type="button"
-          className="cursor-grab active:cursor-grabbing p-1.5 hover:bg-muted rounded-md transition-colors"
+          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
           {...attributes}
           {...listeners}
         >
-          <GripVertical className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+          <GripVertical className="h-4 w-4" />
         </button>
-      </td>
-      <td className="px-2 py-3">
-        <span className={cn(
-          "text-xs px-2 py-1 rounded-full",
-          svc.type === "package" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-        )}>
-          {svc.type === "package" ? "Pkg" : "Svc"}
-        </span>
-      </td>
-      <td className="px-2 py-3">
-        {svc.type === "package" ? (
-          <div>
-            <div className="font-medium text-primary">{svc.name}</div>
-            <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-              {svc.packageServices?.map((ps) => (
-                <div key={ps.serviceId} className="flex items-center gap-1">
-                  <span className="text-muted-foreground/60">•</span>
-                  <span>{ps.serviceName}</span>
-                </div>
+      </TableCell>
+      <TableCell className="w-[100px] align-top">
+        <Badge variant={svc.type === "package" ? "default" : "secondary"}>
+          {svc.type === "package" ? "Package" : "Service"}
+        </Badge>
+      </TableCell>
+      <TableCell className="font-medium align-top">
+        <div>
+          <RenderHTML as="div" html={svc.type === "package" ? svc.name : (svc.parameter || svc.name)} className="font-semibold" />
+          {svc.type === "package" && svc.packageServices && svc.packageServices.length > 0 && (
+            <ul className="mt-1 text-xs text-muted-foreground list-disc list-inside">
+              {svc.packageServices.map((ps, idx) => (
+                <li key={`${svc.id}-${ps.serviceId}-${idx}`}><RenderHTML html={ps.serviceName} /></li>
               ))}
-            </div>
+            </ul>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="text-muted-foreground align-top">
+        {svc.type === "package" && svc.packageServices && svc.packageServices.length > 0
+          ? "Various Methods"
+          : svc.method || "-"}
+      </TableCell>
+      <TableCell className="text-right align-top w-[120px]">
+        {svc.discount > 0 ? (
+          <div>
+            <span className="line-through text-muted-foreground text-xs">
+              {formatCurrency(svc.price)}
+            </span>
+            <br />
+            <span className="text-green-600 font-medium">
+              {formatCurrency(parsePrice(svc.price) * (1 - (svc.discount || 0) / 100))}
+            </span>
           </div>
         ) : (
-          <span className="font-medium">{svc.parameter || svc.name}</span>
+          formatCurrency(svc.price)
         )}
-      </td>
-      <td className="px-2 py-3 text-muted-foreground">{svc.method || '-'}</td>
-      <td className="text-right px-2 py-3">{formatCurrency(svc.price)}</td>
-      <td className="text-center px-2 py-3">
+      </TableCell>
+      <TableCell className="text-center w-[100px] align-top">
         <Input
           type="number"
           min={0}
@@ -244,10 +286,14 @@ function SortableServiceRow({ svc, sampleId, onUpdateDiscount, onRemove }: Sorta
           onChange={(e) => onUpdateDiscount(sampleId, svc.id, parseFloat(e.target.value) || 0)}
           className="h-8 w-16 text-center mx-auto"
         />
-      </td>
-      <td className="text-center px-2 py-3 text-muted-foreground">{svc.pc}%</td>
-      <td className="text-right px-2 py-3 font-medium">{formatCurrency(svc.total)}</td>
-      <td className="px-2 py-3">
+      </TableCell>
+      <TableCell className="text-center w-[80px] align-top text-muted-foreground">
+        {svc.pc}%
+      </TableCell>
+      <TableCell className="text-right w-[120px] align-top font-medium">
+        {formatCurrency(svc.total)}
+      </TableCell>
+      <TableCell className="w-[50px] align-top">
         <Button
           type="button"
           variant="ghost"
@@ -257,8 +303,8 @@ function SortableServiceRow({ svc, sampleId, onUpdateDiscount, onRemove }: Sorta
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -284,6 +330,30 @@ export default function OrderEditPage() {
   const [newSampleVolume, setNewSampleVolume] = useState("");
   const [newSampleStorage, setNewSampleStorage] = useState<"dry" | "chill" | "frozen">("dry");
   const [newSampleRetain, setNewSampleRetain] = useState<"return" | "destroy">("return");
+  const [newSampleStandardId, setNewSampleStandardId] = useState("");
+  const [newSampleStandardName, setNewSampleStandardName] = useState("");
+
+  // Standard search state
+  const [standardQuery, setStandardQuery] = useState("");
+  const [standardResults, setStandardResults] = useState<StandardSelectItem[]>([]);
+  const [loadingStandards, setLoadingStandards] = useState(false);
+  const [openStandardPopover, setOpenStandardPopover] = useState<string | null>(null);
+
+  const searchStandards = async (query: string) => {
+    if (query.length < 2) {
+      setStandardResults([]);
+      return;
+    }
+    setLoadingStandards(true);
+    try {
+      const res = await standardService.getJson({ q: query });
+      setStandardResults(res.items || res.data || []);
+    } catch {
+      setStandardResults([]);
+    } finally {
+      setLoadingStandards(false);
+    }
+  };
 
   // Customer/Contact state from Zustand store
   const {
@@ -427,6 +497,7 @@ export default function OrderEditPage() {
             total: ws.total,
             packageServices: ws.packageId ? [{ serviceId: ws.serviceId, serviceName: ws.serviceName, parameter: ws.parameter }] : undefined,
           })),
+          isDetailsExpanded: false,
         }));
         setSamples(mappedSamples);
         setExpandedSamples(new Set(mappedSamples.map(s => s.id)));
@@ -470,7 +541,8 @@ export default function OrderEditPage() {
   // Add service to sample
   const handleAddServiceToSample = (sampleId: string, service: ServiceOption) => {
     const pc = getPriorityCharge();
-    const discountedPrice = service.price * (1 - percentDiscount / 100);
+    const price = parsePrice(service.price);
+    const discountedPrice = price * (1 - percentDiscount / 100);
     const total = discountedPrice * (1 + pc / 100);
 
     setSamples((prev) => prev.map(sample => {
@@ -492,7 +564,7 @@ export default function OrderEditPage() {
             code: service.code,
             parameter: service.parameter?.name || service.name,
             method: service.method?.name || '-',
-            price: service.price,
+            price: price,
             discount: percentDiscount,
             pc: pc,
             total: Math.round(total),
@@ -507,7 +579,8 @@ export default function OrderEditPage() {
   // Add package to sample
   const handleAddPackageToSample = (sampleId: string, pkg: PackageOption) => {
     const pc = getPriorityCharge();
-    const discountedPrice = pkg.price * (1 - percentDiscount / 100);
+    const price = parsePrice(pkg.price);
+    const discountedPrice = price * (1 - percentDiscount / 100);
     const total = discountedPrice * (1 + pc / 100);
 
     setSamples((prev) => prev.map(sample => {
@@ -529,7 +602,7 @@ export default function OrderEditPage() {
             code: pkg.code,
             parameter: pkg.services?.map(s => s.name).join(", ") || "-",
             method: "-",
-            price: pkg.price,
+            price: price,
             discount: percentDiscount,
             pc: pc,
             total: Math.round(total),
@@ -565,7 +638,7 @@ export default function OrderEditPage() {
         ...sample,
         services: sample.services.map(svc => {
           if (svc.id !== serviceItemId) return svc;
-          const discountedPrice = svc.price * (1 - newDiscount / 100);
+          const discountedPrice = parsePrice(svc.price) * (1 - newDiscount / 100);
           const total = discountedPrice * (1 + svc.pc / 100);
           return {
             ...svc,
@@ -593,12 +666,13 @@ export default function OrderEditPage() {
       sampleName: newSampleName,
       quantity: newSampleQuantity,
       description: newSampleDescription,
-      standardId: "",
-      standardName: "",
+      standardId: newSampleStandardId,
+      standardName: newSampleStandardName,
       volume: newSampleVolume,
       storage: newSampleStorage,
       retain: newSampleRetain,
       services: [],
+      isDetailsExpanded: false,
     };
 
     setSamples((prev) => [...prev, newSample]);
@@ -611,6 +685,8 @@ export default function OrderEditPage() {
     setNewSampleVolume("");
     setNewSampleStorage("dry");
     setNewSampleRetain("return");
+    setNewSampleStandardId("");
+    setNewSampleStandardName("");
     setIsAddingSample(false);
     toast.success("Sample added - now add services/packages");
   };
@@ -655,6 +731,7 @@ export default function OrderEditPage() {
         ...svc,
         id: `${svc.type === "package" ? "pkg" : "svc"}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       })),
+      isDetailsExpanded: false,
     };
 
     setSamples((prev) => [...prev, newSample]);
@@ -675,10 +752,24 @@ export default function OrderEditPage() {
     });
   };
 
+  // Toggle sample details (pencil edit)
+  const toggleSampleDetails = (sampleId: string) => {
+    setSamples(prev => prev.map(s =>
+      s.id === sampleId ? { ...s, isDetailsExpanded: !s.isDetailsExpanded } : s
+    ));
+  };
+
+  // Update a sample field inline
+  const updateSampleField = (sampleId: string, field: keyof SampleItem, value: string | number) => {
+    setSamples(prev => prev.map(s =>
+      s.id === sampleId ? { ...s, [field]: value } : s
+    ));
+  };
+
   // Calculate totals
   const subtotal = useMemo(() => {
     return samples.reduce((sum, sample) => {
-      const sampleTotal = sample.services.reduce((svcSum, svc) => svcSum + svc.total, 0);
+      const sampleTotal = sample.services.reduce((svcSum, svc) => svcSum + (svc.total || 0), 0);
       return sum + (sampleTotal * sample.quantity);
     }, 0);
   }, [samples]);
@@ -1214,6 +1305,96 @@ export default function OrderEditPage() {
                   </div>
                 </div>
 
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Standard
+                  </Label>
+                  <Popover
+                    open={openStandardPopover === "new-sample"}
+                    onOpenChange={(open) => {
+                      setOpenStandardPopover(open ? "new-sample" : null);
+                      if (!open) {
+                        setStandardQuery("");
+                        setStandardResults([]);
+                      }
+                    }}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        className="h-10 w-full justify-between font-normal bg-background"
+                      >
+                        <span className={cn(!newSampleStandardName && "text-muted-foreground")}>
+                          {newSampleStandardName || "Select standard..."}
+                        </span>
+                        {newSampleStandardId ? (
+                          <X
+                            className="h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setNewSampleStandardId("");
+                              setNewSampleStandardName("");
+                            }}
+                          />
+                        ) : (
+                          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0" align="start" style={{ width: "var(--radix-popover-trigger-width)" }}>
+                      <Command shouldFilter={false}>
+                        <div className="flex items-center px-3 py-2 border-b">
+                          <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
+                          <input
+                            type="text"
+                            placeholder="Search standard..."
+                            value={standardQuery}
+                            onChange={(e) => {
+                              setStandardQuery(e.target.value);
+                              searchStandards(e.target.value);
+                            }}
+                            className="flex h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                          />
+                        </div>
+                        <CommandList className="max-h-48">
+                          {loadingStandards ? (
+                            <div className="py-6 text-center text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                            </div>
+                          ) : standardQuery.length < 2 ? (
+                            <div className="py-6 text-center text-sm text-muted-foreground">
+                              Type at least 2 characters to search
+                            </div>
+                          ) : standardResults.length === 0 ? (
+                            <CommandEmpty>No standard found</CommandEmpty>
+                          ) : (
+                            <CommandGroup>
+                              {standardResults.map((std) => (
+                                <CommandItem
+                                  key={std.id}
+                                  value={String(std.id)}
+                                  onSelect={() => {
+                                    setNewSampleStandardId(String(std.id));
+                                    setNewSampleStandardName(`${std.code} - ${std.name}`);
+                                    setOpenStandardPopover(null);
+                                    setStandardQuery("");
+                                    setStandardResults([]);
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  <span className="font-medium">{std.code} - {std.name}</span>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          )}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
                 <div className="flex justify-end gap-2">
                   <Button
                     type="button"
@@ -1226,6 +1407,8 @@ export default function OrderEditPage() {
                       setNewSampleVolume("");
                       setNewSampleStorage("dry");
                       setNewSampleRetain("return");
+                      setNewSampleStandardId("");
+                      setNewSampleStandardName("");
                     }}
                     className="h-10"
                   >
@@ -1256,54 +1439,277 @@ export default function OrderEditPage() {
                     >
                       <div className="flex items-center justify-between p-4 bg-muted/20 hover:bg-muted/30 transition-colors">
                         <CollapsibleTrigger asChild>
-                          <button type="button" className="flex items-center gap-3 flex-1 text-left">
+                          <button type="button" className="flex items-start gap-3 flex-1 text-left min-w-0">
                             {expandedSamples.has(sample.id) ? (
-                              <ChevronDown className="h-4 w-4" />
+                              <ChevronDown className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
                             ) : (
-                              <ChevronRight className="h-4 w-4" />
+                              <ChevronRight className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
                             )}
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{sample.sampleName}</span>
-                                <span className="text-muted-foreground text-sm">
-                                  (Qty: {sample.quantity}, {sample.services.length} service{sample.services.length !== 1 ? "s" : ""})
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <span className="font-semibold text-base">
+                                {sample.sampleName}
+                              </span>
+
+                              <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm">
+                                <span>
+                                  <span className="text-muted-foreground">Qty:</span>{" "}
+                                  <span className="font-medium">{sample.quantity}</span>
+                                </span>
+                                <span>
+                                  <span className="text-muted-foreground">Services:</span>{" "}
+                                  <span className="font-medium">
+                                    {sample.services.length}
+                                  </span>
+                                </span>
+                                <span>
+                                  <span className="text-muted-foreground">Storage:</span>{" "}
+                                  <span className="font-medium">
+                                    {sample.storage === "dry" ? "Dry" : sample.storage === "chill" ? "Chill" : "Frozen"}
+                                  </span>
+                                </span>
+                                <span>
+                                  <span className="text-muted-foreground">Retain:</span>{" "}
+                                  <span className="font-medium">
+                                    {sample.retain === "return" ? "Return" : "Destroy"}
+                                  </span>
                                 </span>
                               </div>
-                              {(sample.description || sample.volume) && (
-                                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                                  {sample.description && <span>{sample.description}</span>}
-                                  {sample.volume && <span>• Vol: {sample.volume}</span>}
-                                  <span>• {sample.storage === "dry" ? "Dry" : sample.storage === "chill" ? "Chill" : "Frozen"}</span>
-                                  <span>• {sample.retain === "return" ? "Return" : "Destroy"}</span>
+
+                              {(sample.description || sample.volume || sample.standardName) && (
+                                <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm">
+                                  {sample.description && (
+                                    <span>
+                                      <span className="text-muted-foreground">Description:</span>{" "}
+                                      <span>{sample.description}</span>
+                                    </span>
+                                  )}
+                                  {sample.volume && (
+                                    <span>
+                                      <span className="text-muted-foreground">Volume:</span>{" "}
+                                      <span>{sample.volume}</span>
+                                    </span>
+                                  )}
+                                  {sample.standardName && (
+                                    <span>
+                                      <span className="text-muted-foreground">Standard:</span>{" "}
+                                      <span>{sample.standardName}</span>
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </div>
                           </button>
                         </CollapsibleTrigger>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-primary"
-                            onClick={() => handleCopySample(sample.id)}
-                            title="Copy sample"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => handleRemoveSample(sample.id)}
-                            title="Delete sample"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => toggleSampleDetails(sample.id)}>
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit Sample
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleCopySample(sample.id)}>
+                              <Copy className="h-4 w-4 mr-2" />
+                              Copy Sample
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => handleRemoveSample(sample.id)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete Sample
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                       <CollapsibleContent>
+                        {/* Sample Details Section - Collapsible */}
+                        <Collapsible open={sample.isDetailsExpanded}>
+                          <CollapsibleContent>
+                            <div className="p-4 bg-muted/5 border-b">
+                              <p className="text-sm font-semibold text-foreground uppercase tracking-wide mb-3">
+                                Sample Details
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div className="space-y-1.5">
+                                  <label className="text-xs text-muted-foreground">Sample Name</label>
+                                  <Input
+                                    value={sample.sampleName}
+                                    onChange={(e) => updateSampleField(sample.id, "sampleName", e.target.value)}
+                                    className="h-9"
+                                    placeholder="Enter sample name"
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-xs text-muted-foreground">Quantity</label>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    value={sample.quantity}
+                                    onChange={(e) => updateSampleField(sample.id, "quantity", parseInt(e.target.value) || 1)}
+                                    className="h-9"
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-xs text-muted-foreground">Description</label>
+                                  <Input
+                                    value={sample.description}
+                                    onChange={(e) => updateSampleField(sample.id, "description", e.target.value)}
+                                    className="h-9"
+                                    placeholder="Enter description"
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-xs text-muted-foreground">Volume</label>
+                                  <Input
+                                    value={sample.volume}
+                                    onChange={(e) => updateSampleField(sample.id, "volume", e.target.value)}
+                                    className="h-9"
+                                    placeholder="e.g., 500ml, 1L"
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-xs text-muted-foreground">Storage</label>
+                                  <Select
+                                    value={sample.storage}
+                                    onValueChange={(val: "dry" | "chill" | "frozen") => updateSampleField(sample.id, "storage", val)}
+                                  >
+                                    <SelectTrigger className="h-9">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="dry">Dry</SelectItem>
+                                      <SelectItem value="chill">Chill</SelectItem>
+                                      <SelectItem value="frozen">Frozen</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-xs text-muted-foreground">Retain</label>
+                                  <Select
+                                    value={sample.retain}
+                                    onValueChange={(val: "return" | "destroy") => updateSampleField(sample.id, "retain", val)}
+                                  >
+                                    <SelectTrigger className="h-9">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="return">Return Sample to Customer</SelectItem>
+                                      <SelectItem value="destroy">Destroy Sample After 2 Month</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-xs text-muted-foreground">Standard</label>
+                                  <Popover
+                                    open={openStandardPopover === sample.id}
+                                    onOpenChange={(open) => {
+                                      setOpenStandardPopover(open ? sample.id : null);
+                                      if (!open) {
+                                        setStandardQuery("");
+                                        setStandardResults([]);
+                                      }
+                                    }}
+                                  >
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        role="combobox"
+                                        className="h-9 w-full justify-between font-normal"
+                                      >
+                                        <span className={cn(!sample.standardName && "text-muted-foreground")}>
+                                          {sample.standardName || "Select standard..."}
+                                        </span>
+                                        {sample.standardId ? (
+                                          <X
+                                            className="h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              updateSampleField(sample.id, "standardId", "");
+                                              updateSampleField(sample.id, "standardName", "");
+                                            }}
+                                          />
+                                        ) : (
+                                          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                        )}
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="p-0" align="start" style={{ width: "var(--radix-popover-trigger-width)" }}>
+                                      <Command shouldFilter={false}>
+                                        <div className="flex items-center px-3 py-2 border-b">
+                                          <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
+                                          <input
+                                            type="text"
+                                            placeholder="Search standard..."
+                                            value={standardQuery}
+                                            onChange={(e) => {
+                                              setStandardQuery(e.target.value);
+                                              searchStandards(e.target.value);
+                                            }}
+                                            className="flex h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                                          />
+                                        </div>
+                                        <CommandList className="max-h-48">
+                                          {loadingStandards ? (
+                                            <div className="py-6 text-center text-sm text-muted-foreground">
+                                              <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                                            </div>
+                                          ) : standardQuery.length < 2 ? (
+                                            <div className="py-6 text-center text-sm text-muted-foreground">
+                                              Type at least 2 characters to search
+                                            </div>
+                                          ) : standardResults.length === 0 ? (
+                                            <CommandEmpty>No standard found</CommandEmpty>
+                                          ) : (
+                                            <CommandGroup>
+                                              {standardResults.map((std) => (
+                                                <CommandItem
+                                                  key={std.id}
+                                                  value={String(std.id)}
+                                                  onSelect={() => {
+                                                    updateSampleField(sample.id, "standardId", String(std.id));
+                                                    updateSampleField(sample.id, "standardName", `${std.code} - ${std.name}`);
+                                                    setOpenStandardPopover(null);
+                                                    setStandardQuery("");
+                                                    setStandardResults([]);
+                                                  }}
+                                                  className="cursor-pointer"
+                                                >
+                                                  <span className="font-medium">{std.code} - {std.name}</span>
+                                                </CommandItem>
+                                              ))}
+                                            </CommandGroup>
+                                          )}
+                                        </CommandList>
+                                      </Command>
+                                    </PopoverContent>
+                                  </Popover>
+                                </div>
+                              </div>
+                              <div className="flex justify-end mt-4">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => toggleSampleDetails(sample.id)}
+                                >
+                                  <Save className="h-4 w-4 mr-1.5" />
+                                  Save
+                                </Button>
+                              </div>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+
                         {/* Service/Package Search */}
                         <div className="p-4 bg-muted/10 border-b">
                           <div className="grid grid-cols-2 gap-4">
@@ -1362,10 +1768,8 @@ export default function OrderEditPage() {
                                               className="cursor-pointer"
                                             >
                                               <div className="flex flex-col">
-                                                <span className="font-medium">{service.code} - {service.name}</span>
-                                                <span className="text-xs text-muted-foreground">
-                                                  {service.parameter?.name || service.name} | {formatCurrency(service.price)}
-                                                </span>
+                                                <RenderHTML html={`${service.code} - ${service.name}`} className="font-medium" />
+                                                <RenderHTML html={`${service.parameter?.name || service.name} | ${formatCurrency(service.price)}`} className="text-xs text-muted-foreground" />
                                               </div>
                                             </CommandItem>
                                           ))}
@@ -1432,7 +1836,7 @@ export default function OrderEditPage() {
                                               className="cursor-pointer"
                                             >
                                               <div className="flex flex-col">
-                                                <span className="font-medium">{pkg.code} - {pkg.name}</span>
+                                                <RenderHTML html={`${pkg.code} - ${pkg.name}`} className="font-medium" />
                                                 <span className="text-xs text-muted-foreground">
                                                   {pkg.services?.length || 0} services | {formatCurrency(pkg.price)}
                                                 </span>
@@ -1456,21 +1860,21 @@ export default function OrderEditPage() {
                             collisionDetection={closestCenter}
                             onDragEnd={handleDragEnd(sample.id)}
                           >
-                            <table className="w-full">
-                              <thead>
-                                <tr className="bg-muted/10 border-b">
-                                  <th className="w-10 px-2 py-3"></th>
-                                  <th className="w-[80px] px-2 py-3 text-left text-xs font-medium text-muted-foreground">Type</th>
-                                  <th className="px-2 py-3 text-left text-xs font-medium text-muted-foreground">Parameter</th>
-                                  <th className="px-2 py-3 text-left text-xs font-medium text-muted-foreground">Method</th>
-                                  <th className="w-[120px] px-2 py-3 text-right text-xs font-medium text-muted-foreground">Price (IDR)</th>
-                                  <th className="w-[100px] px-2 py-3 text-center text-xs font-medium text-muted-foreground">Disc (%)</th>
-                                  <th className="w-[80px] px-2 py-3 text-center text-xs font-medium text-muted-foreground">PC (%)</th>
-                                  <th className="w-[120px] px-2 py-3 text-right text-xs font-medium text-muted-foreground">Total (IDR)</th>
-                                  <th className="w-[50px] px-2 py-3"></th>
-                                </tr>
-                              </thead>
-                              <tbody>
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-muted/10">
+                                  <TableHead className="w-[40px]"></TableHead>
+                                  <TableHead className="w-[100px]">Type</TableHead>
+                                  <TableHead>Service/Package</TableHead>
+                                  <TableHead>Method</TableHead>
+                                  <TableHead className="text-right w-[120px]">Price</TableHead>
+                                  <TableHead className="text-center w-[100px]">Disc (%)</TableHead>
+                                  <TableHead className="text-center w-[80px]">PC (%)</TableHead>
+                                  <TableHead className="text-right w-[120px]">Total</TableHead>
+                                  <TableHead className="w-[50px]"></TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
                                 <SortableContext
                                   items={sample.services.map(s => s.id)}
                                   strategy={verticalListSortingStrategy}
@@ -1485,8 +1889,8 @@ export default function OrderEditPage() {
                                     />
                                   ))}
                                 </SortableContext>
-                              </tbody>
-                            </table>
+                              </TableBody>
+                            </Table>
                           </DndContext>
                         ) : (
                           <div className="text-center py-6 text-muted-foreground text-sm">

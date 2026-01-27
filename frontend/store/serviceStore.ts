@@ -114,7 +114,7 @@ export const useServiceStore = create<ServiceStoreState>((set) => ({
           id: s.id,
           code: s.code || '',
           name: s.name,
-          price: s.price || 0,
+          price: typeof s.price === 'object' && s.price !== null ? (s.price as any).value || 0 : s.price || 0,
           parameter: s.parameter,
           method: s.method,
         })),

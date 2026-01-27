@@ -63,6 +63,7 @@ import { customerService } from "@/services/customerService";
 import { serviceService } from "@/services/serviceService";
 import { packageService } from "@/services/packageService";
 import { FileUpload } from "@/components/ui/file-upload";
+import { RenderHTML } from "@/components/shared/RenderHTML";
 
 // Contract Detail Schema
 const contractDetailSchema = z.object({
@@ -1070,7 +1071,7 @@ export default function ContractEditPage() {
                                             )}
                                           >
                                             {itemField.value
-                                              ? <span dangerouslySetInnerHTML={{ __html: form.watch(`details.${index}.itemName`) || services.find(s => s.id === itemField.value)?.name || serviceSearchResults.find(s => s.id === itemField.value)?.name || "Select service..." }} />
+                                              ? <RenderHTML html={form.watch(`details.${index}.itemName`) || services.find(s => s.id === itemField.value)?.name || serviceSearchResults.find(s => s.id === itemField.value)?.name || "Select service..."} />
                                               : "Search service..."}
                                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                           </Button>
@@ -1117,7 +1118,7 @@ export default function ContractEditPage() {
                                                     }}
                                                     className="cursor-pointer"
                                                   >
-                                                    <span dangerouslySetInnerHTML={{ __html: (service.code ? `${service.code} - ` : '') + service.name }} />
+                                                    <RenderHTML html={(service.code ? `${service.code} - ` : '') + service.name} />
                                                   </CommandItem>
                                                 ))}
                                               </CommandGroup>
@@ -1145,7 +1146,7 @@ export default function ContractEditPage() {
                                             )}
                                           >
                                             {itemField.value
-                                              ? <span dangerouslySetInnerHTML={{ __html: form.watch(`details.${index}.itemName`) || packages.find(p => p.id === itemField.value)?.name || packageSearchResults.find(p => p.id === itemField.value)?.name || "Select package..." }} />
+                                              ? <RenderHTML html={form.watch(`details.${index}.itemName`) || packages.find(p => p.id === itemField.value)?.name || packageSearchResults.find(p => p.id === itemField.value)?.name || "Select package..."} />
                                               : "Search package..."}
                                             <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                           </Button>
@@ -1192,7 +1193,7 @@ export default function ContractEditPage() {
                                                     }}
                                                     className="cursor-pointer"
                                                   >
-                                                    <span dangerouslySetInnerHTML={{ __html: pkg.name }} />
+                                                    <RenderHTML html={pkg.name} />
                                                   </CommandItem>
                                                 ))}
                                               </CommandGroup>

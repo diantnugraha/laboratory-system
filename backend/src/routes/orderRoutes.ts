@@ -258,13 +258,13 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
       security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
-        required: ['customer_id', 'contract_id'],
+        required: ['customer_id'],
         properties: {
           customer_id: { type: 'integer' },
-          contract_id: { type: 'integer' },
+          contract_id: { type: 'integer', nullable: true },
           order_date: { type: 'string', format: 'date' },
           due_date: { type: 'string', format: 'date' },
-          priority: { type: 'string', enum: ['normal', 'urgent', 'very_urgent'] },
+          priority: { type: 'string', enum: ['Normal', 'Urgent', 'Very Urgent'] },
           notes: { type: 'string' },
           samples: {
             type: 'array',

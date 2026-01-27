@@ -73,6 +73,7 @@ import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { customerService } from "@/services/customerService";
 import { serviceService } from "@/services/serviceService";
+import { RenderHTML } from "@/components/shared/RenderHTML";
 
 // Simplified service type for search results from getJson
 interface ServiceSearchItem {
@@ -160,8 +161,8 @@ const SortableRow = React.forwardRef<HTMLTableRowElement, SortableRowProps>(
         </td>
         <td className="text-center px-2 py-3 font-medium text-muted-foreground">{index + 1}</td>
         <td className="font-semibold px-2 py-3 text-primary">{service.code}</td>
-        <td className="px-2 py-3" dangerouslySetInnerHTML={{ __html: service.name }} />
-        <td className="px-2 py-3 text-muted-foreground" dangerouslySetInnerHTML={{ __html: service.parameter }} />
+        <td className="px-2 py-3"><RenderHTML html={service.name} /></td>
+        <td className="px-2 py-3 text-muted-foreground"><RenderHTML html={service.parameter} /></td>
         <td className="text-right px-2 py-3 font-medium">{formatCurrency(service.price || 0)}</td>
         <td className="w-10 px-2 py-3">
           <Button
@@ -235,9 +236,9 @@ function SortableCard({ service, index, onRemove }: SortableCardProps) {
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <p className="text-sm text-foreground truncate mt-1" dangerouslySetInnerHTML={{ __html: service.name }} />
+          <RenderHTML as="p" html={service.name} className="text-sm text-foreground truncate mt-1" />
           <div className="flex items-center justify-between mt-2 pt-2 border-t border-dashed">
-            <span className="text-xs text-muted-foreground" dangerouslySetInnerHTML={{ __html: service.parameter }} />
+            <RenderHTML html={service.parameter} className="text-xs text-muted-foreground" />
             <span className="text-sm font-semibold text-foreground">{formatCurrency(service.price || 0)}</span>
           </div>
         </div>
@@ -708,7 +709,7 @@ export default function PackageNewPage() {
                                   <div className="min-w-0 flex-1">
                                     <span className="font-medium text-xs">{service.code}</span>
                                     <span className="mx-1">-</span>
-                                    <span className="truncate text-xs" dangerouslySetInnerHTML={{ __html: service.name }} />
+                                    <RenderHTML html={service.name} className="truncate text-xs" />
                                   </div>
                                   <span className="text-muted-foreground text-xs whitespace-nowrap">
                                     {formatCurrency(getServicePrice(service.price))}
@@ -814,7 +815,7 @@ export default function PackageNewPage() {
                                   <div className="min-w-0 flex-1">
                                     <span className="font-medium text-primary">{service.code}</span>
                                     <span className="mx-2">-</span>
-                                    <span className="truncate" dangerouslySetInnerHTML={{ __html: service.name }} />
+                                    <RenderHTML html={service.name} className="truncate" />
                                   </div>
                                   <span className="text-muted-foreground text-sm whitespace-nowrap">
                                     {formatCurrency(getServicePrice(service.price))}

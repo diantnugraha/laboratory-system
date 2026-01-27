@@ -29,6 +29,7 @@ import { contractService, Contract } from "@/services/contractService";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
+import { RenderHTML } from "@/components/shared/RenderHTML";
 
 const formatDate = (dateString: string) => {
   if (!dateString) return '-';
@@ -357,7 +358,7 @@ export default function ContractDetailPage() {
                 {serviceDetails.map((detail) => (
                   <TableRow key={detail.id}>
                     <TableCell className="font-medium">{detail.service?.code || '-'}</TableCell>
-                    <TableCell><span dangerouslySetInnerHTML={{ __html: detail.service?.name || '-' }} /></TableCell>
+                    <TableCell><RenderHTML html={detail.service?.name || '-'} /></TableCell>
                     <TableCell className="text-right">{formatCurrency(detail.service?.price || 0)}</TableCell>
                     <TableCell className="text-right">{detail.discountNormal}%</TableCell>
                     <TableCell className="text-right">{detail.discountUrgent}%</TableCell>
@@ -395,7 +396,7 @@ export default function ContractDetailPage() {
               <TableBody>
                 {packageDetails.map((detail) => (
                   <TableRow key={detail.id}>
-                    <TableCell className="font-medium"><span dangerouslySetInnerHTML={{ __html: detail.package?.name || '-' }} /></TableCell>
+                    <TableCell className="font-medium"><RenderHTML html={detail.package?.name || '-'} /></TableCell>
                     <TableCell className="text-right">{formatCurrency(detail.package?.totalPrice || 0)}</TableCell>
                     <TableCell className="text-right">{detail.discountNormal}%</TableCell>
                     <TableCell className="text-right">{detail.discountUrgent}%</TableCell>
