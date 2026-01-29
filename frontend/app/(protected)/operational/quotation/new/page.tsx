@@ -91,6 +91,12 @@ import { useServiceStore, ServiceOption, PackageOption } from "@/store/serviceSt
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { RenderHTML } from "@/components/shared/RenderHTML";
+import {
+  calculateQuotationTotals,
+  getPriorityRate,
+  formatCurrency,
+  QuotationLineItem,
+} from "@/lib/quotationCalculation";
 
 // Form Schema
 const quotationFormSchema = z.object({
@@ -138,27 +144,6 @@ interface SampleItem {
   isExpanded: boolean;
   isDetailsExpanded: boolean;
 }
-
-// Minimum quotation values (same as backend)
-const MIN_TOTAL = 200000;
-const MIN_VAT = 22000;
-const MIN_GRAND_TOTAL = 222000;
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-  }).format(value);
-};
-
-const getPriorityCharge = (priority: string) => {
-  switch (priority) {
-    case 'urgent': return 50;
-    case 'very urgent': return 100;
-    default: return 0;
-  }
-};
 
 const parsePrice = (price: unknown): number => {
   if (price === null || price === undefined) return 0;
@@ -749,41 +734,42 @@ export default function QuotationNewPage() {
     }
   };
 
-  // Calculate totals
-  const { subTotal, discountAmount, afterDiscount, pcAmount, afterPc, vatAmount, total, isMinimumApplied } = useMemo(() => {
-    const pc = getPriorityCharge(priority);
+  // Calculate totals using shared calculation utility
+  const calculatedTotals = useMemo(() => {
+    // Convert samples to QuotationLineItem format
+    const items: QuotationLineItem[] = [];
 
-    let subTotal = 0;
     samples.forEach(sample => {
       sample.services.forEach(svc => {
-        const itemPrice = svc.price * svc.quantity;
-        const itemDiscount = itemPrice * (svc.discount / 100);
-        subTotal += (itemPrice - itemDiscount) * sample.quantity;
+        items.push({
+          unitPrice: svc.price,
+          serviceQuantity: svc.quantity,
+          sampleQuantity: sample.quantity,
+          discountPercent: svc.discount,
+          applyPriorityCharge: true, // Services and packages apply PC
+        });
       });
     });
 
-    const discountAmount = subTotal * (percentDiscount / 100);
-    const afterDiscount = subTotal - discountAmount;
-    const pcAmount = afterDiscount * (pc / 100);
-    const afterPc = afterDiscount + pcAmount;
-
-    // Apply minimum total rule (same as backend)
-    // Only affects VAT and Grand Total, not the subtotal display
-    let isMinimumApplied = false;
-    let finalVatAmount: number;
-    let finalTotal: number;
-
-    if (afterPc < MIN_TOTAL) {
-      isMinimumApplied = true;
-      finalVatAmount = MIN_VAT;
-      finalTotal = MIN_GRAND_TOTAL;
-    } else {
-      finalVatAmount = afterPc * (percentVat / 100);
-      finalTotal = afterPc + finalVatAmount;
-    }
-
-    return { subTotal, discountAmount, afterDiscount, pcAmount, afterPc, vatAmount: finalVatAmount, total: finalTotal, isMinimumApplied };
+    return calculateQuotationTotals({
+      items,
+      quotationDiscountPercent: percentDiscount,
+      priority,
+      vatPercent: percentVat,
+    });
   }, [samples, priority, percentDiscount, percentVat]);
+
+  // Destructure for easier access in the template
+  const {
+    afterItemDiscount: subTotal,
+    quotationDiscountTotal: discountAmount,
+    afterQuotationDiscount: afterDiscount,
+    priorityChargeTotal: pcAmount,
+    subTotal: afterPc,
+    vatTotal: vatAmount,
+    grandTotal: total,
+    isMinimumApplied,
+  } = calculatedTotals;
 
   const onSubmit = async (data: FormData) => {
     if (samples.length === 0) {
@@ -812,7 +798,7 @@ export default function QuotationNewPage() {
         remarks: data.remarks || null,
         percent_discount: data.percentDiscount,
         percent_vat: data.percentVat,
-        percent_pc: getPriorityCharge(data.priority),
+        percent_pc: getPriorityRate(data.priority),
         sub_total: subTotal,
         samples: samples.map(sample => ({
           name: sample.name,
@@ -1643,9 +1629,9 @@ export default function QuotationNewPage() {
                   <span className="font-medium">{formatCurrency(afterDiscount)}</span>
                 </div>
               )}
-              {getPriorityCharge(priority) > 0 && (
+              {getPriorityRate(priority) > 0 && (
                 <div className="flex justify-between items-center text-sm text-orange-600">
-                  <span>Priority Charge ({getPriorityCharge(priority)}%)</span>
+                  <span>Priority Charge ({getPriorityRate(priority)}%)</span>
                   <span>+ {formatCurrency(pcAmount)}</span>
                 </div>
               )}

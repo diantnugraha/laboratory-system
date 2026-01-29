@@ -18,17 +18,19 @@ import {
   previewQuotationPdf,
 } from '../controllers/quotationController.js';
 import { authenticate, authorize } from '../plugins/auth.js';
-import { validate } from '../plugins/zodValidator.js';
-import { idParamSchema } from '../validators/index.js';
 import {
-  quotationQuerySchema,
-  quotationJsonQuerySchema,
-  createQuotationSchema,
-  quotationReportQuerySchema,
-  fetchJsonQuerySchema,
-  fetchJsonEnvQuerySchema,
-} from '../validators/quotation.js';
-import { zodToSwagger, roleDescription } from '../schemas/swagger/index.js';
+  IdParamSchema,
+  GenerateCodeQuerySchema,
+  QuotationQuerySchema,
+  QuotationJsonQuerySchema,
+  FetchJsonQuerySchema,
+  FetchJsonEnvQuerySchema,
+  ReportQuerySchema,
+  PdfPreviewQuerySchema,
+  CreateQuotationBodySchema,
+  UpdateQuotationBodySchema,
+} from '../schemas/quotation.js';
+import { roleDescription } from '../schemas/swagger/index.js';
 
 const quotationRoutes: FastifyPluginAsync = async fastify => {
   // Apply authentication to all routes
@@ -44,9 +46,8 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: 'Get quotations in JSON format for autocomplete/select components',
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        querystring: zodToSwagger(quotationJsonQuerySchema),
+        querystring: QuotationJsonQuerySchema,
       },
-      preHandler: [validate(quotationJsonQuerySchema, 'query')],
     },
     getQuotationsJson
   );
@@ -59,6 +60,7 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Generate a new quotation code. ${roleDescription([1, 2, 3])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
+        querystring: GenerateCodeQuerySchema,
       },
       preHandler: [authorize(1, 2, 3)],
     },
@@ -73,9 +75,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Get standard lab quotations with filtering. ${roleDescription([1, 2, 3, 4, 7])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        querystring: zodToSwagger(fetchJsonQuerySchema),
+        querystring: FetchJsonQuerySchema,
       },
-      preHandler: [authorize(1, 2, 3, 4, 7), validate(fetchJsonQuerySchema, 'query')],
+      preHandler: [authorize(1, 2, 3, 4, 7)],
     },
     getFetchJson
   );
@@ -88,9 +90,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Get environmental lab quotations with filtering. ${roleDescription([1, 2, 3, 4, 7])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        querystring: zodToSwagger(fetchJsonEnvQuerySchema),
+        querystring: FetchJsonEnvQuerySchema,
       },
-      preHandler: [authorize(1, 2, 3, 4, 7), validate(fetchJsonEnvQuerySchema, 'query')],
+      preHandler: [authorize(1, 2, 3, 4, 7)],
     },
     getFetchJsonEnv
   );
@@ -103,9 +105,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Export quotations to CSV report. ${roleDescription([1, 3])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        querystring: zodToSwagger(quotationReportQuerySchema),
+        querystring: ReportQuerySchema,
       },
-      preHandler: [authorize(1, 3), validate(quotationReportQuerySchema, 'query')],
+      preHandler: [authorize(1, 3)],
     },
     getReport
   );
@@ -118,9 +120,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Get quotations for customer portal with department filtering. ${roleDescription([8])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        querystring: zodToSwagger(quotationQuerySchema),
+        querystring: QuotationQuerySchema,
       },
-      preHandler: [authorize(8), validate(quotationQuerySchema, 'query')],
+      preHandler: [authorize(8)],
     },
     getCustomerPortalQuotations
   );
@@ -133,9 +135,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Get quotation data for duplication. ${roleDescription([1, 2, 3])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        params: zodToSwagger(idParamSchema),
+        params: IdParamSchema,
       },
-      preHandler: [authorize(1, 2, 3), validate(idParamSchema, 'params')],
+      preHandler: [authorize(1, 2, 3)],
     },
     getDuplicateData
   );
@@ -150,9 +152,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Get all quotations with search, pagination, and filters. ${roleDescription([1, 2, 3, 4, 7, 10])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        querystring: zodToSwagger(quotationQuerySchema),
+        querystring: QuotationQuerySchema,
       },
-      preHandler: [authorize(1, 2, 3, 4, 7, 10), validate(quotationQuerySchema, 'query')],
+      preHandler: [authorize(1, 2, 3, 4, 7, 10)],
     },
     getAllQuotations
   );
@@ -165,9 +167,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Get quotation detail by ID. ${roleDescription([1, 2, 3, 4, 7])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        params: zodToSwagger(idParamSchema),
+        params: IdParamSchema,
       },
-      preHandler: [authorize(1, 2, 3, 4, 7), validate(idParamSchema, 'params')],
+      preHandler: [authorize(1, 2, 3, 4, 7)],
     },
     getQuotationById
   );
@@ -180,76 +182,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Create a new quotation. ${roleDescription([1, 2, 3])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        body: {
-          type: 'object',
-          required: ['customer_id', 'contact_id', 'address_id', 'quo_date'],
-          properties: {
-            quo_status: { type: 'string', enum: ['Created', 'Order'] },
-            quo_date: { type: 'string', description: 'Date in DD-MM-YYYY or YYYY-MM-DD format' },
-            sampling_request: { type: ['boolean', 'string', 'number'] },
-            sampling_date: { type: 'string', nullable: true },
-            customer_id: { type: 'integer' },
-            contact_id: { type: 'integer' },
-            address_id: { type: 'integer' },
-            volume: { type: 'string', nullable: true },
-            remarks: { type: 'string', nullable: true },
-            min_volume_sample: { type: 'string' },
-            sub_total: { type: 'number' },
-            percent_discount: { type: 'number' },
-            percent_vat: { type: 'number' },
-            percent_pc: { type: 'number', nullable: true },
-            price_group: { type: 'integer', nullable: true },
-            priority: { type: 'string', enum: ['normal', 'urgent', 'very urgent'] },
-            lab: { type: 'string', enum: ['1', '2'] },
-            samples: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  name: { type: 'string' },
-                  quantity: { type: 'integer' },
-                  priority: { type: 'string' },
-                  services: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'integer' },
-                        quantity: { type: 'integer' },
-                        discount: { type: 'number' },
-                      },
-                    },
-                  },
-                  packages: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'integer' },
-                        quantity: { type: 'integer' },
-                        discount: { type: 'number' },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            products: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  name: { type: 'string' },
-                  quantity: { type: 'integer' },
-                  price: { type: 'number' },
-                  discount: { type: 'number' },
-                },
-              },
-            },
-          },
-        },
+        body: CreateQuotationBodySchema,
       },
-      preHandler: [authorize(1, 2, 3), validate(createQuotationSchema)],
+      preHandler: [authorize(1, 2, 3)],
     },
     createQuotation
   );
@@ -262,31 +197,10 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Update an existing quotation. ${roleDescription([1, 2, 3, 10])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        params: zodToSwagger(idParamSchema),
-        body: {
-          type: 'object',
-          properties: {
-            quo_status: { type: 'string' },
-            quo_date: { type: 'string' },
-            sampling_request: { type: ['boolean', 'string', 'number'] },
-            sampling_date: { type: 'string', nullable: true },
-            customer_id: { type: 'integer' },
-            contact_id: { type: 'integer' },
-            address_id: { type: 'integer' },
-            volume: { type: 'string', nullable: true },
-            remarks: { type: 'string', nullable: true },
-            min_volume_sample: { type: 'string' },
-            sub_total: { type: 'number' },
-            percent_discount: { type: 'number' },
-            percent_vat: { type: 'number' },
-            price_group: { type: 'integer', nullable: true },
-            priority: { type: 'string' },
-            samples: { type: 'array' },
-            products: { type: 'array' },
-          },
-        },
+        params: IdParamSchema,
+        body: UpdateQuotationBodySchema,
       },
-      preHandler: [authorize(1, 2, 3, 10), validate(idParamSchema, 'params')],
+      preHandler: [authorize(1, 2, 3, 10)],
     },
     updateQuotation
   );
@@ -299,9 +213,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Delete a quotation (soft delete). ${roleDescription([1, 2])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        params: zodToSwagger(idParamSchema),
+        params: IdParamSchema,
       },
-      preHandler: [authorize(1, 2), validate(idParamSchema, 'params')],
+      preHandler: [authorize(1, 2)],
     },
     deleteQuotation
   );
@@ -316,9 +230,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Get quotation detail items. ${roleDescription([1, 2, 3, 4, 7, 8])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        params: zodToSwagger(idParamSchema),
+        params: IdParamSchema,
       },
-      preHandler: [authorize(1, 2, 3, 4, 7, 8), validate(idParamSchema, 'params')],
+      preHandler: [authorize(1, 2, 3, 4, 7, 8)],
     },
     getQuotationDetails
   );
@@ -331,9 +245,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Check if quotation has linked order. ${roleDescription([1, 2, 3, 4, 7])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        params: zodToSwagger(idParamSchema),
+        params: IdParamSchema,
       },
-      preHandler: [authorize(1, 2, 3, 4, 7), validate(idParamSchema, 'params')],
+      preHandler: [authorize(1, 2, 3, 4, 7)],
     },
     checkLinkedOrder
   );
@@ -346,9 +260,9 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Check if quotation has linked pre-order. ${roleDescription([1, 2, 3, 4, 7])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        params: zodToSwagger(idParamSchema),
+        params: IdParamSchema,
       },
-      preHandler: [authorize(1, 2, 3, 4, 7), validate(idParamSchema, 'params')],
+      preHandler: [authorize(1, 2, 3, 4, 7)],
     },
     checkLinkedPreOrder
   );
@@ -361,13 +275,8 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
         description: `Preview quotation as PDF document. ${roleDescription([1, 2, 3, 4, 7, 8])}`,
         tags: ['Quotations'],
         security: [{ bearerAuth: [] }],
-        params: zodToSwagger(idParamSchema),
-        querystring: {
-          type: 'object',
-          properties: {
-            format: { type: 'string', enum: ['pdf', 'html'], description: 'Output format (default: pdf)' },
-          },
-        },
+        params: IdParamSchema,
+        querystring: PdfPreviewQuerySchema,
         response: {
           200: {
             description: 'PDF document or HTML preview',
@@ -376,7 +285,7 @@ const quotationRoutes: FastifyPluginAsync = async fastify => {
           },
         },
       },
-      preHandler: [authorize(1, 2, 3, 4, 7, 8), validate(idParamSchema, 'params')],
+      preHandler: [authorize(1, 2, 3, 4, 7, 8)],
     },
     previewQuotationPdf
   );

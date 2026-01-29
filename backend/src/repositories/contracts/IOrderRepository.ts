@@ -55,6 +55,35 @@ export interface OrderFilter {
 }
 
 /**
+ * Sample Service DTO for worksheet creation
+ */
+export interface SampleServiceDTO {
+  serviceId: number;
+  packageId?: number | null;
+  discount?: number;
+  price?: number;
+}
+
+/**
+ * Sample DTO for order creation
+ */
+export interface CreateSampleDTO {
+  name: string;
+  description?: string | null;
+  quantity?: number | null;
+  volume?: string | null;
+  sampleStorage?: string | null;
+  packagingType?: string | null;
+  standardId?: number | null;
+  dueDate?: Date | null;
+  priority?: string;
+  leadTime?: string;
+  price?: number | null;
+  discount?: number | null;
+  services?: SampleServiceDTO[];
+}
+
+/**
  * Create Order DTO
  */
 export interface CreateOrderDTO {
@@ -79,6 +108,8 @@ export interface CreateOrderDTO {
   notesInternal?: string | null;
   lab?: number;
   createdBy: number;
+  // Samples with services for atomic creation
+  samples?: CreateSampleDTO[];
 }
 
 /**
@@ -294,9 +325,11 @@ export interface IOrderRepository {
 
   /**
    * Generate next order code
-   * Format: ORD{YY}{MM}{0000000}
+   * Format: OD.YYMM#### (4 digit sequence)
+   * Example: OD.24010001
+   * Environmental: OD.E.YYMM####
    */
-  generateCode(): Promise<RepositoryResult<string>>;
+  generateCode(isEnvironmental?: boolean): Promise<RepositoryResult<string>>;
 
   // ===== Review Workflow =====
 

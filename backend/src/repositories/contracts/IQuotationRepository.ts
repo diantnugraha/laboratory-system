@@ -468,4 +468,9 @@ export interface IQuotationRepository {
    * Check if quotation has linked pre-order
    */
   hasLinkedPreOrder(quotationId: number): Promise<RepositoryResult<{ hasPreOrder: boolean; preOrderId?: number; preOrderCode?: string }>>;
+
+  /**
+   * Get user display name by ID
+   */
+  getUserDisplayName(userId: number): Promise<RepositoryResult<string | null>>;
 }

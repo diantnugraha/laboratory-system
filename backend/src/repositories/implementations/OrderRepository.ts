@@ -11,7 +11,7 @@ import {
   InvoiceStatusInfo,
 } from '../contracts/IOrderRepository';
 import { RepositoryResult, PaginatedData } from '../results/RepositoryResult';
-import { buildMultiFieldSearchCondition } from '../../utils/searchHelper';
+// buildMultiFieldSearchCondition removed - not needed for Prisma built-in queries
 import { orderCodeCache } from '../../services/cacheService';
 
 /**
@@ -120,24 +120,25 @@ export class OrderRepository implements IOrderRepository {
       const { search, customerId, contactId, status, priority, dateFrom, dateTo, lab, page = 1, limit = 20 } = filter;
       const skip = (page - 1) * limit;
 
+      // Build Prisma where clause
       const where: any = { trash: null };
 
-      // Multi-field search on code
+      // Search filter
       if (search) {
-        Object.assign(where, buildMultiFieldSearchCondition(['code'], search));
+        where.code = { contains: search };
       }
 
-      // Filter by customer
+      // Customer filter
       if (customerId) {
         where.customer_id = customerId;
       }
 
-      // Filter by contact
+      // Contact filter
       if (contactId) {
         where.contact_id = contactId;
       }
 
-      // Filter by status
+      // Status filter
       if (status) {
         if (Array.isArray(status)) {
           where.order_status = { in: status };
@@ -146,100 +147,71 @@ export class OrderRepository implements IOrderRepository {
         }
       }
 
-      // Filter by priority
+      // Priority filter
       if (priority) {
         where.order_priority = priority;
       }
 
-      // Filter by date range
-      if (dateFrom) {
-        where.order_date = { ...where.order_date, gte: dateFrom };
-      }
-      if (dateTo) {
-        where.order_date = { ...where.order_date, lte: dateTo };
+      // Date range filter
+      if (dateFrom || dateTo) {
+        where.order_date = {};
+        if (dateFrom) {
+          where.order_date.gte = new Date(dateFrom);
+        }
+        if (dateTo) {
+          where.order_date.lte = new Date(dateTo);
+        }
       }
 
-      // Filter by lab
+      // Lab filter
       if (lab !== undefined) {
         where.lab = lab;
       }
 
-      // Apply enhanced role-based filtering
+      // Apply role-based filters
       this.applyRoleBasedFilters(where, filter);
 
-      // Use raw query to avoid Prisma's date parsing issues with invalid MySQL dates
-      const rawData = await this.prisma.$queryRaw<any[]>`
-        SELECT
-          o.id,
-          o.code,
-          o.order_status,
-          o.order_priority,
-          DATE_FORMAT(o.order_date, '%Y-%m-%d') as order_date,
-          o.sub_total,
-          o.total,
-          o.created_by,
-          o.customer_id,
-          o.contact_id,
-          o.address_id,
-          c.id as customer_id_rel,
-          c.code as customer_code,
-          c.customer_name,
-          ct.id as contact_id_rel,
-          ct.first_name,
-          ct.surname,
-          ct.email,
-          ct.phone,
-          a.id as address_id_rel,
-          a.address,
-          a.city
-        FROM \`order\` o
-        LEFT JOIN customer c ON o.customer_id = c.id
-        LEFT JOIN contact ct ON o.contact_id = ct.id
-        LEFT JOIN address a ON o.address_id = a.id
-        WHERE o.trash IS NULL
-        ORDER BY o.id DESC
-        LIMIT ${limit} OFFSET ${skip}
-      `;
+      // Execute Prisma query
+      const [rawData, total] = await Promise.all([
+        this.prisma.order.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { id: 'desc' },
+          include: {
+            customer: {
+              select: {
+                id: true,
+                code: true,
+                customer_name: true,
+              },
+            },
+            contact: {
+              select: {
+                id: true,
+                first_name: true,
+                surname: true,
+                email: true,
+                phone: true,
+              },
+            },
+            address: {
+              select: {
+                id: true,
+                address: true,
+                city: true,
+              },
+            },
+          },
+        }),
+        this.prisma.order.count({ where }),
+      ]);
 
-      const totalResult = await this.prisma.$queryRaw<[{count: bigint}]>`
-        SELECT COUNT(*) as count FROM \`order\` WHERE trash IS NULL
-      `;
-      const total = Number(totalResult[0]?.count || 0);
-
-      // Transform raw data to expected format
-      const data = rawData.map(row => ({
-        id: row.id,
-        code: row.code,
-        order_status: row.order_status,
-        order_priority: row.order_priority,
-        order_date: row.order_date,
-        sub_total: row.sub_total,
-        total: row.total,
-        created_by: row.created_by,
-        customer: row.customer_id_rel ? {
-          id: row.customer_id_rel,
-          code: row.customer_code,
-          customer_name: row.customer_name,
-        } : null,
-        contact: row.contact_id_rel ? {
-          id: row.contact_id_rel,
-          first_name: row.first_name,
-          surname: row.surname,
-          email: row.email,
-          phone: row.phone,
-        } : null,
-        address: row.address_id_rel ? {
-          id: row.address_id_rel,
-          address: row.address,
-          city: row.city,
-        } : null,
-      }));
-
-      // Sanitize date fields to handle any remaining invalid dates
-      const sanitizedData = data.map(order => sanitizeOrderDates(order));
+      // Sanitize dates to handle any edge cases
+      const data = rawData.map(order => sanitizeOrderDates(order));
 
       return RepositoryResult.ok({
-        data: sanitizedData as unknown as OrderWithRelations[],
+        data: data as unknown as OrderWithRelations[],
         pagination: {
           page,
           limit,
@@ -527,45 +499,179 @@ export class OrderRepository implements IOrderRepository {
     }
   }
 
+  /**
+   * Generate sample code within a transaction
+   * Format: SC.YYMM##### (5 digit sequence)
+   * Example: SC.240100001
+   */
+  private async generateSampleCodeInTransaction(tx: any): Promise<string> {
+    const now = new Date();
+    const year = now.getFullYear().toString().slice(-2);
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const yearMonth = `${year}${month}`;
+    const prefix = `SC.${yearMonth}`;
+
+    const lastSample = await tx.sample.findFirst({
+      where: {
+        code: { startsWith: prefix },
+        trash: null,
+      },
+      orderBy: { code: 'desc' },
+      select: { code: true },
+    });
+
+    let sequence = 1;
+    if (lastSample?.code) {
+      const lastSequence = parseInt(lastSample.code.slice(-5), 10);
+      if (!isNaN(lastSequence)) {
+        sequence = lastSequence + 1;
+      }
+    }
+
+    return `${prefix}${sequence.toString().padStart(5, '0')}`;
+  }
+
+  /**
+   * Generate worksheet code within a transaction
+   * Format: WSYYMM####### (7 digit sequence)
+   * Example: WS24010000001
+   */
+  private async generateWorksheetCodeInTransaction(tx: any): Promise<string> {
+    const now = new Date();
+    const year = now.getFullYear().toString().slice(-2);
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const yearMonth = `${year}${month}`;
+    const prefix = `WS${yearMonth}`;
+
+    const lastWorksheet = await tx.worksheet.findFirst({
+      where: {
+        code: { startsWith: prefix },
+        trash: null,
+      },
+      orderBy: { code: 'desc' },
+      select: { code: true },
+    });
+
+    let sequence = 1;
+    if (lastWorksheet?.code) {
+      const lastSequence = parseInt(lastWorksheet.code.slice(-7), 10);
+      if (!isNaN(lastSequence)) {
+        sequence = lastSequence + 1;
+      }
+    }
+
+    return `${prefix}${sequence.toString().padStart(7, '0')}`;
+  }
+
   async create(data: CreateOrderDTO): Promise<RepositoryResult<OrderWithRelations>> {
     try {
-      const order = await this.prisma.order.create({
-        data: {
-          code: data.code,
-          customer_id: data.customerId,
-          contact_id: data.contactId,
-          address_id: data.addressId,
-          pre_order_id: data.preOrderId,
-          quotation_id: data.quotationId,
-          order_status: data.status,
-          order_priority: data.priority,
-          order_date: data.orderDate,
-          sub_total: data.subTotal ?? 0,
-          percent_discount: data.discountPercent ?? 0,
-          percent_vat: data.vatPercent ?? 11,
-          total: data.total ?? 0,
-          remarks: data.remarks,
-          created_by: data.createdBy,
-          created_at: new Date(),
-        },
-        include: {
-          customer: {
-            select: {
-              id: true,
-              code: true,
-              customer_name: true,
+      // Use transaction to create order with samples atomically
+      const order = await this.prisma.$transaction(async (tx) => {
+        // 1. Create the order
+        const createdOrder = await tx.order.create({
+          data: {
+            code: data.code,
+            customer_id: data.customerId,
+            contact_id: data.contactId,
+            address_id: data.addressId,
+            pre_order_id: data.preOrderId,
+            quotation_id: data.quotationId,
+            order_status: data.status,
+            order_priority: data.priority,
+            order_date: data.orderDate,
+            sub_total: data.subTotal ?? 0,
+            percent_discount: data.discountPercent ?? 0,
+            percent_vat: data.vatPercent ?? 11,
+            total: data.total ?? 0,
+            remarks: data.remarks,
+            created_by: data.createdBy,
+            created_at: new Date(),
+          },
+        });
+
+        // 2. Create samples if provided
+        if (data.samples && data.samples.length > 0) {
+          for (const sampleData of data.samples) {
+            // Generate sample code
+            const sampleCode = await this.generateSampleCodeInTransaction(tx);
+
+            // Create sample
+            const createdSample = await tx.sample.create({
+              data: {
+                code: sampleCode,
+                order_id: createdOrder.id,
+                name: sampleData.name,
+                description: sampleData.description,
+                volume: sampleData.volume,
+                sample_storage: sampleData.sampleStorage,
+                packaging_type: sampleData.packagingType,
+                quantity: sampleData.quantity ?? 1,
+                sample_status: 'Process',
+                priority: sampleData.priority ?? 'Normal',
+                lead_time: sampleData.leadTime ?? 'Normal',
+                due_date: sampleData.dueDate,
+                standart_id: sampleData.standardId,
+                price: sampleData.price,
+                discount: sampleData.discount,
+                created_by: data.createdBy,
+                created_at: new Date(),
+              },
+            });
+
+            // 3. Create worksheets for each service in the sample
+            if (sampleData.services && sampleData.services.length > 0) {
+              for (let i = 0; i < sampleData.services.length; i++) {
+                const serviceData = sampleData.services[i];
+                // Generate worksheet code
+                const worksheetCode = await this.generateWorksheetCodeInTransaction(tx);
+                await tx.worksheet.create({
+                  data: {
+                    code: worksheetCode,
+                    sample_id: createdSample.id,
+                    service_id: serviceData.serviceId,
+                    package_id: serviceData.packageId,
+                    discount: serviceData.discount ?? 0,
+                    status: 'Process',
+                    index_array: i + 1,
+                    created_by: data.createdBy,
+                    created_at: new Date(),
+                  },
+                });
+              }
+            }
+          }
+        }
+
+        // Return order with relations
+        return tx.order.findUnique({
+          where: { id: createdOrder.id },
+          include: {
+            customer: {
+              select: {
+                id: true,
+                code: true,
+                customer_name: true,
+              },
+            },
+            contact: {
+              select: {
+                id: true,
+                first_name: true,
+                surname: true,
+                email: true,
+                phone: true,
+              },
+            },
+            samples: {
+              where: { trash: null },
+              select: {
+                id: true,
+                code: true,
+                name: true,
+              },
             },
           },
-          contact: {
-            select: {
-              id: true,
-              first_name: true,
-              surname: true,
-              email: true,
-              phone: true,
-            },
-          },
-        },
+        });
       });
 
       return RepositoryResult.ok(order as unknown as OrderWithRelations);
@@ -664,11 +770,21 @@ export class OrderRepository implements IOrderRepository {
     }
   }
 
-  async generateCode(): Promise<RepositoryResult<string>> {
+  /**
+   * Generate order code
+   * Format: OD.YYMM#### (4 digit sequence)
+   * Example: OD.24010001
+   * Environmental: OD.E.YYMM####
+   */
+  async generateCode(isEnvironmental: boolean = false): Promise<RepositoryResult<string>> {
     try {
       const now = new Date();
-      const yearMonth = now.toISOString().slice(2, 4) + (now.getMonth() + 1).toString().padStart(2, '0');
-      const prefix = `ORD${yearMonth}`;
+      const year = now.getFullYear().toString().slice(-2);
+      const month = (now.getMonth() + 1).toString().padStart(2, '0');
+      const yearMonth = `${year}${month}`;
+
+      // Standard: OD.YYMM | Environmental: OD.E.YYMM
+      const prefix = isEnvironmental ? `OD.E.${yearMonth}` : `OD.${yearMonth}`;
       const cacheKey = `order_sequence_${prefix}`;
 
       // Try to get last sequence from cache first
@@ -679,6 +795,7 @@ export class OrderRepository implements IOrderRepository {
         const lastOrder = await this.prisma.order.findFirst({
           where: {
             code: { startsWith: prefix },
+            trash: null,
           },
           orderBy: { code: 'desc' },
           select: { code: true },
@@ -686,7 +803,7 @@ export class OrderRepository implements IOrderRepository {
 
         sequence = 0;
         if (lastOrder?.code) {
-          const lastSequence = parseInt(lastOrder.code.slice(-7), 10);
+          const lastSequence = parseInt(lastOrder.code.slice(-4), 10);
           if (!isNaN(lastSequence)) {
             sequence = lastSequence;
           }
@@ -697,7 +814,7 @@ export class OrderRepository implements IOrderRepository {
       sequence++;
       orderCodeCache.set(cacheKey, sequence, 60000); // 1 minute TTL
 
-      const code = `${prefix}${sequence.toString().padStart(7, '0')}`;
+      const code = `${prefix}${sequence.toString().padStart(4, '0')}`;
       return RepositoryResult.ok(code);
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to generate order code: ${error.message}`);

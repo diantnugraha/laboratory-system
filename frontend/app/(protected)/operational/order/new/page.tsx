@@ -718,6 +718,39 @@ export default function OrderNewPage() {
     try {
       setIsSubmitting(true);
 
+      // Map samples to API format
+      const sampleData = samples.map(sample => ({
+        name: sample.sampleName,
+        description: sample.description || null,
+        quantity: sample.quantity || 1,
+        volume: sample.volume || null,
+        sample_storage: sample.storage === 'dry' ? 'Dry' : sample.storage === 'chill' ? 'Chill' : 'Frozen',
+        standard_id: sample.standardId ? parseInt(sample.standardId) : null,
+        priority: data.priority === 'normal' ? 'Normal' :
+                  data.priority === 'urgent' ? 'Urgent' :
+                  data.priority === 'very_urgent' ? 'Very Urgent' : 'Special Request',
+        // Expand services: for packages, create one entry per service in the package
+        services: sample.services.flatMap(svc => {
+          if (svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0) {
+            // Package: create one service entry for each service in the package
+            return svc.packageServices.map(ps => ({
+              service_id: ps.serviceId,
+              package_id: svc.serviceId, // The package ID
+              discount: svc.discount || 0,
+              price: svc.price ? Math.round(svc.price / svc.packageServices!.length) : 0,
+            }));
+          } else {
+            // Individual service
+            return [{
+              service_id: svc.serviceId,
+              package_id: null,
+              discount: svc.discount || 0,
+              price: svc.price || 0,
+            }];
+          }
+        }),
+      }));
+
       const orderData: OrderFormData = {
         customer_id: data.customerId,
         contact_id: data.contactId,
@@ -734,6 +767,7 @@ export default function OrderNewPage() {
         submited_by: data.submittedBy,
         expense: data.expenseCharge === 'charged' ? (data.companyExpenseId || null) : null,
         pre_order_id: preorderId ? parseInt(preorderId) : null,
+        samples: sampleData,
       };
 
       const response = await orderService.create(orderData);

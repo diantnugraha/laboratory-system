@@ -1630,4 +1630,17 @@ export class QuotationRepository implements IQuotationRepository {
       return RepositoryResult.fail(`Failed to check linked pre-order: ${error.message}`);
     }
   }
+
+  async getUserDisplayName(userId: number): Promise<RepositoryResult<string | null>> {
+    try {
+      const user = await this.prisma.users.findUnique({
+        where: { id: userId },
+        select: { display_name: true },
+      });
+
+      return RepositoryResult.ok(user?.display_name || null);
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to get user display name: ${error.message}`);
+    }
+  }
 }

@@ -51,6 +51,12 @@ import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
+import {
+  calculateQuotationTotals,
+  getPriorityRate,
+  formatCurrency,
+  QuotationLineItem,
+} from "@/lib/quotationCalculation";
 
 const formatDate = (dateString: string | null) => {
   if (!dateString) return '-';
@@ -64,19 +70,6 @@ const formatDate = (dateString: string | null) => {
   } catch {
     return dateString;
   }
-};
-
-// Minimum quotation values (same as backend)
-const MIN_TOTAL = 200000;
-const MIN_VAT = 22000;
-const MIN_GRAND_TOTAL = 222000;
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-  }).format(value);
 };
 
 const getPriorityText = (priority: string | null): string => {
@@ -215,59 +208,63 @@ export default function QuotationDetailPage() {
   );
   const productDetails = Array.isArray(details) ? details.filter(d => d.product === 1) : [];
 
-  // Priority charge rates: normal = 0%, urgent = 50%, very urgent = 100%
-  const getPriorityChargeRate = (priority: string | null): number => {
-    switch (priority?.toLowerCase()) {
-      case 'urgent':
-        return 0.5; // 50%
-      case 'very urgent':
-        return 1.0; // 100%
-      default:
-        return 0; // normal = 0%
-    }
-  };
+  // Build line items for calculation using shared utility
+  const lineItems: QuotationLineItem[] = [];
 
-  // Calculate subtotal from displayed items (consolidated)
-  const calculateSubtotal = () => {
-    let subTotal = 0;
-
-    sampleGroups.forEach(group => {
-      group.items.filter(item => item.product !== 1).forEach(item => {
-        const price = item.package?.totalPrice || item.service?.price || item.price || 0;
-        const quantity = item.quantity || 1;
-        const discount = item.percentDiscount || 0;
-        const itemTotal = price * quantity * (1 - discount / 100);
-        subTotal += itemTotal;
-      });
-    });
-
-    // Add products (products don't have priority charge)
-    productDetails.forEach(item => {
-      const price = item.price || 0;
+  // Add service/package items
+  sampleGroups.forEach(group => {
+    const sampleQty = group.quantity || 1;
+    group.items.filter(item => item.product !== 1).forEach(item => {
+      const price = item.package?.totalPrice || item.service?.price || item.price || 0;
       const quantity = item.quantity || 1;
       const discount = item.percentDiscount || 0;
-      const itemTotal = price * quantity * (1 - discount / 100);
-      subTotal += itemTotal;
+
+      lineItems.push({
+        unitPrice: price,
+        serviceQuantity: quantity,
+        sampleQuantity: sampleQty,
+        discountPercent: discount,
+        applyPriorityCharge: true, // Services and packages apply PC
+      });
     });
+  });
 
-    return subTotal;
-  };
+  // Add products (products don't have priority charge)
+  productDetails.forEach(item => {
+    const price = item.price || 0;
+    const quantity = item.quantity || 1;
+    const discount = item.percentDiscount || 0;
 
-  // Calculate totals - priority is from quotation level, not sample level
-  const subTotal = calculateSubtotal();
+    lineItems.push({
+      unitPrice: price,
+      serviceQuantity: quantity,
+      sampleQuantity: 1,
+      discountPercent: discount,
+      applyPriorityCharge: false,
+    });
+  });
+
+  // Calculate totals using shared utility
   const percentDiscount = quotation.percent_discount || 0;
   const percentVat = quotation.percent_vat || 0;
-  const priorityRate = getPriorityChargeRate(quotation.priority);
 
-  const discountAmount = Math.round(subTotal * (percentDiscount / 100));
-  const afterDiscount = subTotal - discountAmount;
-  const pcAmount = Math.round(afterDiscount * priorityRate); // Priority charge from quotation priority
-  const afterPc = afterDiscount + pcAmount;
+  const calculatedTotals = calculateQuotationTotals({
+    items: lineItems,
+    quotationDiscountPercent: percentDiscount,
+    priority: quotation.priority || 'normal',
+    vatPercent: percentVat,
+  });
 
-  // Apply minimum total rule (same as backend)
-  const isMinimumApplied = afterPc < MIN_TOTAL;
-  const vatAmount = isMinimumApplied ? MIN_VAT : Math.round(afterPc * (percentVat / 100));
-  const calculatedTotal = isMinimumApplied ? MIN_GRAND_TOTAL : afterPc + vatAmount;
+  // Destructure for template usage (match existing variable names)
+  const subTotal = calculatedTotals.afterItemDiscount;
+  const discountAmount = calculatedTotals.quotationDiscountTotal;
+  const afterDiscount = calculatedTotals.afterQuotationDiscount;
+  const pcAmount = calculatedTotals.priorityChargeTotal;
+  const afterPc = calculatedTotals.subTotal;
+  const vatAmount = calculatedTotals.vatTotal;
+  const calculatedTotal = calculatedTotals.grandTotal;
+  const isMinimumApplied = calculatedTotals.isMinimumApplied;
+  const priorityRate = calculatedTotals.priorityRate;
 
   return (
     <div className="space-y-6">

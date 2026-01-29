@@ -1,510 +1,450 @@
 # Backend Development Guidelines
 
-## Project Overview
-
-Laboratory Management System Backend built with **Fastify + Prisma + TypeScript**.
-
-- **Framework**: Fastify 5.2.1
-- **Runtime**: Node.js (ES Modules)
-- **Database**: MySQL via Prisma 7.2.0 with MariaDB adapter
-- **Language**: TypeScript 5.7.2 (strict mode)
+> Fastify 5 + Prisma 7 + TypeScript 5 (strict) + TypeBox
 
 ---
 
 ## Project Structure
 
 ```
-backend/src/
-├── config/              # Configuration files (database, methods, orders, roles, etc.)
-├── constants/           # Error messages and constants
-├── controllers/         # HTTP request handlers
-├── errors/              # Custom error classes (AppError, ValidationError, etc.)
-├── middleware/          # Fastify middleware (auth, errorHandler, zodValidator)
-├── plugins/             # Fastify plugins (auth, swagger, fileUpload)
-├── repositories/        # Data access layer
-│   ├── contracts/       # Repository interfaces
-│   ├── implementations/ # Repository implementations
-│   └── results/         # RepositoryResult<T> wrapper
-├── routes/              # API route definitions
-├── schemas/             # Swagger/OpenAPI schemas
-├── services/            # Business logic services
-├── types/               # TypeScript type definitions
-├── utils/               # Utility functions
-└── validators/          # Zod validation schemas
+src/
+├── config/         # Database, app config
+├── constants/      # Enums, error messages
+├── controllers/    # Request handlers (typed FastifyRequest)
+├── errors/         # AppError classes
+├── repositories/   # Data access (RepositoryResult pattern)
+├── routes/         # Route definitions with schema validation
+├── schemas/        # TypeBox schemas (query, body, params)
+├── services/       # Business logic
+└── validators/     # Zod (complex business rules only)
 ```
 
 ---
 
-## Architecture Patterns
-
-### 1. Repository Pattern
-
-Always use the Repository-Result pattern for data access:
+## ⛔ FORBIDDEN (Anti-Patterns)
 
 ```typescript
-// Contract (Interface) - src/repositories/contracts/IExampleRepository.ts
-import { RepositoryResult } from '../results/RepositoryResult.js'
-import { Example, CreateExampleDTO, UpdateExampleDTO } from '../../types/example.js'
+// ❌ Type Safety Violations
+request.query as Record<string, unknown>
+request.body as Record<string, unknown>
+request.params as { id: string }
+typeof queryObj.search === 'string' ? queryObj.search : undefined
+const id = parseInt(request.params.id)
+const data = result.getValue() as any
+items.map((item: any) => ...)
 
-export interface IExampleRepository {
-  findAll(): Promise<RepositoryResult<Example[]>>
-  findById(id: number): Promise<RepositoryResult<Example | null>>
-  create(data: CreateExampleDTO): Promise<RepositoryResult<Example>>
-  update(id: number, data: UpdateExampleDTO): Promise<RepositoryResult<Example>>
-  delete(id: number): Promise<RepositoryResult<boolean>>
-}
+// ❌ Architecture Violations
+await prisma.contact.findFirst({ where: { id } })  // Direct prisma in controller
+status: (status as string) || 'Created'            // Magic strings
+if (order.status === 'Completed') { ... }          // Hardcoded enum
 
-// Implementation - src/repositories/implementations/ExampleRepository.ts
-import { PrismaClient } from '../../config/database.js'
-import { RepositoryResult } from '../results/RepositoryResult.js'
-import { IExampleRepository } from '../contracts/IExampleRepository.js'
-
-export class ExampleRepository implements IExampleRepository {
-  constructor(private prisma: PrismaClient) {}
-
-  async findAll(): Promise<RepositoryResult<Example[]>> {
-    try {
-      const data = await this.prisma.example.findMany({
-        where: { trash: null }
-      })
-      return RepositoryResult.ok(data)
-    } catch (error) {
-      return RepositoryResult.fail('Failed to fetch examples')
-    }
-  }
-
-  async findById(id: number): Promise<RepositoryResult<Example | null>> {
-    try {
-      const data = await this.prisma.example.findFirst({
-        where: { id, trash: null }
-      })
-      return RepositoryResult.ok(data)
-    } catch (error) {
-      return RepositoryResult.fail('Failed to fetch example')
-    }
-  }
-
-  // ... other methods
-}
+// ❌ Code Quality Violations
+} catch (error) { }                                // Empty catch
+} catch (error) { throw error }                    // Useless catch
+console.log('debug:', data)                        // Console in production
+// @ts-ignore                                      // Suppressing errors
+!                                                  // Non-null assertion without guard
 ```
 
-### 2. Controller Pattern
+---
 
-Controllers handle HTTP requests and delegate to repositories:
+## ✅ REQUIRED (Correct Patterns)
+
+### 1. Schema Definition
 
 ```typescript
-// src/controllers/exampleController.ts
-import { FastifyRequest, FastifyReply } from 'fastify'
-import { ExampleRepository } from '../repositories/implementations/ExampleRepository.js'
-import { prisma } from '../config/database.js'
-import { NotFoundError, ValidationError } from '../errors/AppError.js'
+// src/schemas/common.ts
+export const PaginationQuerySchema = Type.Object({
+  page: Type.Optional(Type.Integer({ minimum: 1, default: 1 })),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 20 })),
+  search: Type.Optional(Type.String())
+})
+export type PaginationQuery = Static<typeof PaginationQuerySchema>
 
-const repository = new ExampleRepository(prisma)
+export const IdParamSchema = Type.Object({
+  id: Type.Integer({ minimum: 1 })
+})
+export type IdParam = Static<typeof IdParamSchema>
+```
 
-export async function getAllExamples(
-  request: FastifyRequest,
+### 2. Feature Schema
+
+```typescript
+// src/schemas/{feature}.ts
+export const FeatureStatusSchema = Type.Union([
+  Type.Literal('Active'),
+  Type.Literal('Inactive')
+])
+
+export const FeatureQuerySchema = Type.Object({
+  ...PaginationQuerySchema.properties,
+  status: Type.Optional(FeatureStatusSchema),
+  category_id: Type.Optional(Type.Integer({ minimum: 1 }))
+})
+export type FeatureQuery = Static<typeof FeatureQuerySchema>
+
+export const CreateFeatureBodySchema = Type.Object({
+  name: Type.String({ minLength: 1 }),
+  status: Type.Optional(FeatureStatusSchema)
+})
+export type CreateFeatureBody = Static<typeof CreateFeatureBodySchema>
+```
+
+### 3. Route with Schema
+
+```typescript
+// src/routes/{feature}Routes.ts
+app.get<{ Querystring: FeatureQuery }>('/', {
+  schema: { querystring: FeatureQuerySchema }
+}, controller.getAll)
+
+app.get<{ Params: IdParam }>('/:id', {
+  schema: { params: IdParamSchema }
+}, controller.getById)
+
+app.post<{ Body: CreateFeatureBody }>('/', {
+  schema: { body: CreateFeatureBodySchema }
+}, controller.create)
+
+app.put<{ Params: IdParam; Body: UpdateFeatureBody }>('/:id', {
+  schema: { params: IdParamSchema, body: UpdateFeatureBodySchema }
+}, controller.update)
+```
+
+### 4. Typed Controller
+
+```typescript
+// src/controllers/{feature}Controller.ts
+export async function getAll(
+  request: FastifyRequest<{ Querystring: FeatureQuery }>,
   reply: FastifyReply
 ) {
-  const result = await repository.findAll()
-
-  if (result.isFailure()) {
-    throw new Error(result.getError())
-  }
-
-  return reply.send({
-    success: true,
-    data: result.getValue()
-  })
+  const { page = 1, limit = 20, search, status } = request.query
+  // ✅ All fields are typed, no manual parsing needed
 }
 
-export async function getExampleById(
-  request: FastifyRequest<{ Params: { id: string } }>,
+export async function getById(
+  request: FastifyRequest<{ Params: IdParam }>,
   reply: FastifyReply
 ) {
-  const id = parseInt(request.params.id)
-
-  if (isNaN(id)) {
-    throw new ValidationError('Invalid ID format')
-  }
-
-  const result = await repository.findById(id)
-
-  if (result.isFailure()) {
-    throw new Error(result.getError())
-  }
-
-  const example = result.getValue()
-
-  if (!example) {
-    throw new NotFoundError('Example not found')
-  }
-
-  return reply.send({
-    success: true,
-    data: example
-  })
-}
-```
-
-### 3. Route Pattern
-
-Routes define API endpoints with validation:
-
-```typescript
-// src/routes/exampleRoutes.ts
-import { FastifyInstance } from 'fastify'
-import { authenticate } from '../middleware/auth.js'
-import { validate } from '../middleware/zodValidator.js'
-import { createExampleSchema, updateExampleSchema } from '../validators/exampleValidator.js'
-import * as controller from '../controllers/exampleController.js'
-
-export default async function exampleRoutes(app: FastifyInstance) {
-  // All routes require authentication
-  app.addHook('preHandler', authenticate)
-
-  // GET /api/examples
-  app.get('/', controller.getAllExamples)
-
-  // GET /api/examples/:id
-  app.get('/:id', controller.getExampleById)
-
-  // POST /api/examples
-  app.post('/', {
-    preHandler: validate(createExampleSchema)
-  }, controller.createExample)
-
-  // PUT /api/examples/:id
-  app.put('/:id', {
-    preHandler: validate(updateExampleSchema)
-  }, controller.updateExample)
-
-  // DELETE /api/examples/:id
-  app.delete('/:id', controller.deleteExample)
-}
-
-// Register in app.ts
-app.register(exampleRoutes, { prefix: '/api/examples' })
-```
-
-### 4. Validation Pattern (Zod)
-
-Always validate input with Zod schemas:
-
-```typescript
-// src/validators/exampleValidator.ts
-import { z } from 'zod'
-
-export const createExampleSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  code: z.string().min(1, 'Code is required'),
-  description: z.string().optional(),
-  status: z.enum(['Active', 'Inactive']).default('Active'),
-  price: z.number().positive('Price must be positive').optional()
-})
-
-export const updateExampleSchema = createExampleSchema.partial()
-
-export type CreateExampleDTO = z.infer<typeof createExampleSchema>
-export type UpdateExampleDTO = z.infer<typeof updateExampleSchema>
-```
-
----
-
-## Error Handling
-
-### Error Classes
-
-Use typed error classes from `src/errors/AppError.ts`:
-
-```typescript
-import {
-  ValidationError,    // 400 - Invalid input
-  AuthenticationError, // 401 - Not authenticated
-  AuthorizationError,  // 403 - Not authorized
-  NotFoundError,       // 404 - Resource not found
-  ConflictError,       // 409 - Duplicate/conflict
-  BusinessError,       // 400 - Business rule violation
-  DatabaseError,       // 500 - Database error
-  FileError            // 400/500 - File operation error
-} from '../errors/AppError.js'
-
-// Usage
-throw new ValidationError('Email format is invalid')
-throw new NotFoundError('Customer not found')
-throw new ConflictError('Email already exists')
-throw new AuthenticationError('Invalid credentials')
-```
-
-### Error Messages
-
-Use centralized error messages from `src/constants/errorMessages.ts`:
-
-```typescript
-import { ERROR_MESSAGES } from '../constants/errorMessages.js'
-
-throw new NotFoundError(ERROR_MESSAGES.NOT_FOUND('Customer'))
-throw new ConflictError(ERROR_MESSAGES.DUPLICATE('email'))
-```
-
----
-
-## Database Patterns (Prisma)
-
-### Soft Deletes
-
-Always use `trash` field for soft deletes:
-
-```typescript
-// Fetch active records
-const records = await prisma.example.findMany({
-  where: { trash: null }
-})
-
-// Soft delete
-await prisma.example.update({
-  where: { id },
-  data: { trash: 1 }
-})
-
-// Hard delete (rarely used)
-await prisma.example.delete({ where: { id } })
-```
-
-### Relations
-
-Include relations explicitly:
-
-```typescript
-const order = await prisma.orders.findFirst({
-  where: { id, trash: null },
-  include: {
-    customer: true,
-    contact: true,
-    order_services: {
-      include: {
-        service: true,
-        method: true
-      }
-    }
-  }
-})
-```
-
-### Timestamps
-
-Prisma handles timestamps automatically:
-
-```prisma
-model Example {
-  id         Int      @id @default(autoincrement())
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
-  trash      Int?
+  const { id } = request.params  // ✅ Already a number
 }
 ```
 
 ---
 
-## API Response Format
-
-### Success Response
+## 📦 Response Format (DO NOT CHANGE)
 
 ```typescript
 // Single item
-return reply.send({
-  success: true,
-  data: item,
-  message: 'Item created successfully' // optional
-})
+{ success: true, data: item, message?: string }
 
 // List
-return reply.send({
-  success: true,
-  data: items
-})
+{ success: true, data: items }
 
 // Paginated
-return reply.send({
-  success: true,
-  data: items,
-  pagination: {
-    page: 1,
-    limit: 10,
-    total: 100,
-    totalPages: 10
+{ success: true, data: items, pagination: { page, limit, total, totalPages } }
+
+// Error
+{ success: false, message: string, code?: string }
+```
+
+---
+
+## 🗄️ Repository Pattern
+
+```typescript
+// Always use RepositoryResult
+const result = await repository.findById(id)
+if (result.isFailure()) {
+  throw new AppError(500, result.error)
+}
+const data = result.getValue()
+
+// Soft delete filter - ALWAYS add this
+where: { trash: null }
+```
+
+---
+
+## 🔧 Validation Strategy
+
+| Layer | Tool | Use Case |
+|-------|------|----------|
+| Route | TypeBox | Request structure (query, body, params) |
+| Service | Zod | Complex business rules |
+| Repository | Prisma | Database constraints |
+
+---
+
+## 🎯 Clean Code Principles
+
+### Function Guidelines
+
+```typescript
+// ✅ Max 30 lines per function - split if longer
+// ✅ Max 3 parameters - use object if more
+// ✅ Single responsibility - 1 function = 1 task
+// ✅ Early return for guard clauses
+
+// ❌ BAD
+async function processOrder(order, customer, items, config, options, flags) {
+  if (order) {
+    if (customer) {
+      if (items.length > 0) {
+        // ... 100 lines of nested code
+      }
+    }
   }
+}
+
+// ✅ GOOD
+async function processOrder(params: ProcessOrderParams) {
+  const { order, customer, items } = params
+  
+  if (!order) throw new ValidationError('Order required')
+  if (!customer) throw new ValidationError('Customer required')
+  if (items.length === 0) throw new ValidationError('Items required')
+  
+  // ... flat code
+}
+```
+
+### Naming Conventions
+
+```typescript
+// Functions: verb + noun (what it does)
+getOrderById()      // ✅
+fetchCustomerData() // ✅
+validateInput()     // ✅
+order()             // ❌ unclear
+
+// Booleans: is/has/can/should prefix
+isActive            // ✅
+hasPermission       // ✅
+canDelete           // ✅
+active              // ❌ ambiguous
+
+// Constants: UPPER_SNAKE_CASE
+ORDER_STATUS        // ✅
+MAX_RETRY_COUNT     // ✅
+
+// Avoid abbreviations
+usr, cust, ord      // ❌
+user, customer, order // ✅
+```
+
+---
+
+## ⚡ Performance Rules
+
+### Database
+
+```typescript
+// ❌ N+1 Query Problem
+const orders = await prisma.order.findMany()
+for (const order of orders) {
+  const customer = await prisma.customer.findFirst({ where: { id: order.customer_id } })
+}
+
+// ✅ Use include/join
+const orders = await prisma.order.findMany({
+  include: { customer: true }
 })
+
+// ✅ Select only needed fields
+const orders = await prisma.order.findMany({
+  select: { id: true, code: true, status: true }
+})
+
+// ✅ Always paginate lists
+findMany({ skip: (page - 1) * limit, take: limit })
 ```
 
-### Error Response (handled by errorHandler plugin)
+### Parallel Execution
 
 ```typescript
-{
-  success: false,
-  message: 'Error description',
-  code: 'ERROR_CODE' // optional
-}
-```
+// ❌ Sequential (slow)
+const customer = await customerRepo.findById(id)
+const orders = await orderRepo.findByCustomerId(id)
+const invoices = await invoiceRepo.findByCustomerId(id)
 
----
-
-## Authentication
-
-### JWT Authentication
-
-```typescript
-// Protect routes with authenticate middleware
-import { authenticate } from '../middleware/auth.js'
-
-app.addHook('preHandler', authenticate)
-
-// Access user in controller
-const userId = request.user.id
-const userRole = request.user.role
-```
-
-### Password Handling
-
-```typescript
-import bcrypt from 'bcryptjs'
-
-// Hash password
-const hashedPassword = await bcrypt.hash(password, 10)
-
-// Verify password
-const isValid = await bcrypt.compare(password, hashedPassword)
+// ✅ Parallel (fast)
+const [customer, orders, invoices] = await Promise.all([
+  customerRepo.findById(id),
+  orderRepo.findByCustomerId(id),
+  invoiceRepo.findByCustomerId(id)
+])
 ```
 
 ---
 
-## File Naming Conventions
-
-| Type | Pattern | Example |
-|------|---------|---------|
-| Controllers | `{feature}Controller.ts` | `userController.ts` |
-| Routes | `{feature}Routes.ts` | `userRoutes.ts` |
-| Repository Contract | `I{Feature}Repository.ts` | `IUserRepository.ts` |
-| Repository Impl | `{Feature}Repository.ts` | `UserRepository.ts` |
-| Validators | `{feature}Validator.ts` | `userValidator.ts` |
-| Services | `{feature}Service.ts` | `emailService.ts` |
-| Types | `{feature}.ts` | `user.ts` |
-
----
-
-## Import Conventions
-
-Always use `.js` extension for local imports (ESM compatibility):
+## 🔒 Security Rules
 
 ```typescript
-// Correct
-import { prisma } from '../config/database.js'
-import { NotFoundError } from '../errors/AppError.js'
-import { UserRepository } from '../repositories/implementations/UserRepository.js'
+// ✅ Parameterized queries (Prisma handles this)
+prisma.user.findFirst({ where: { email } })  // Safe
 
-// Incorrect
-import { prisma } from '../config/database'
+// ✅ Validate & sanitize file uploads
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
+const MAX_SIZE = 5 * 1024 * 1024  // 5MB
+
+// ✅ Rate limiting on sensitive endpoints
+// ✅ Sanitize output to prevent XSS
+// ✅ Validate foreign keys before create/update
+// ✅ Check ownership before update/delete
+
+// ❌ NEVER expose sensitive data
+select: { password: true }           // ❌
+return { ...user }                   // ❌ may include password
+return { id, name, email }           // ✅ explicit fields
 ```
 
 ---
 
-## Code Style
-
-### Naming
-
-- **Variables/Functions**: camelCase (`getUserById`, `isActive`)
-- **Classes/Types/Interfaces**: PascalCase (`UserRepository`, `CreateUserDTO`)
-- **Constants**: UPPER_SNAKE_CASE (`ERROR_MESSAGES`, `MAX_RETRIES`)
-- **Database fields**: snake_case (mapped via `@map()`)
-
-### TypeScript
-
-- Enable strict mode
-- Define explicit return types for public functions
-- Use `z.infer<typeof schema>` for DTO types
-- Avoid `any`, use `unknown` if type is uncertain
-
-### Async/Await
-
-Always use async/await, avoid raw Promises:
+## 🚨 Error Handling
 
 ```typescript
-// Correct
-async function getData() {
-  const result = await repository.findAll()
-  return result.getValue()
-}
+// ✅ Use typed errors
+throw new ValidationError('Email is required')
+throw new NotFoundError('Order not found')
+throw new BusinessError('Insufficient stock')
+throw new ConflictError('Email already exists')
 
-// Avoid
-function getData() {
-  return repository.findAll().then(result => result.getValue())
-}
-```
+// ✅ Meaningful error messages
+throw new ValidationError('Email is required')           // ✅
+throw new ValidationError('Invalid input')               // ❌ not specific
 
----
-
-## Services
-
-### When to Create a Service
-
-Create a service for:
-- Complex business logic spanning multiple repositories
-- External integrations (email, PDF, file storage)
-- Reusable operations across controllers
-
-```typescript
-// src/services/orderService.ts
-export class OrderService {
-  constructor(
-    private orderRepo: IOrderRepository,
-    private customerRepo: ICustomerRepository,
-    private emailService: EmailService
-  ) {}
-
-  async createOrderWithNotification(data: CreateOrderDTO) {
-    // 1. Create order
-    const orderResult = await this.orderRepo.create(data)
-    if (orderResult.isFailure()) {
-      throw new Error(orderResult.getError())
+// ✅ Handle specific errors
+try {
+  await repository.create(data)
+} catch (error) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') {
+      throw new ConflictError(`${field} already exists`)
     }
-
-    // 2. Get customer
-    const customerResult = await this.customerRepo.findById(data.customer_id)
-
-    // 3. Send notification
-    if (customerResult.getValue()?.email) {
-      await this.emailService.sendOrderConfirmation(
-        customerResult.getValue()!.email,
-        orderResult.getValue()
-      )
-    }
-
-    return orderResult.getValue()
   }
+  throw error  // Re-throw unknown errors
+}
+
+// ✅ Log errors with context
+request.log.error({ err: error, orderId: id }, 'Failed to process order')
+```
+
+---
+
+## 🔄 Transaction Handling
+
+```typescript
+// ✅ Use transaction for multiple writes
+const result = await prisma.$transaction(async (tx) => {
+  const order = await tx.order.create({ data: orderData })
+  
+  await tx.sample.createMany({
+    data: samples.map(s => ({ ...s, order_id: order.id }))
+  })
+  
+  await tx.inventory.updateMany({
+    where: { id: { in: itemIds } },
+    data: { quantity: { decrement: 1 } }
+  })
+  
+  return order
+})
+
+// ✅ Handle transaction failure
+try {
+  await prisma.$transaction(async (tx) => { ... })
+} catch (error) {
+  // Transaction auto-rollback, handle error
+  throw new BusinessError('Failed to create order')
 }
 ```
 
 ---
 
-## Testing Checklist
+## 📝 Constants for Enums
 
-Before committing:
+```typescript
+// src/constants/{feature}Constants.ts
+export const ORDER_STATUS = {
+  CREATED: 'Created',
+  REVIEWED: 'Reviewed',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled'
+} as const
 
-- [ ] All Zod schemas validate expected input
-- [ ] Repository methods handle errors gracefully
-- [ ] Controllers return proper response format
-- [ ] Routes have appropriate authentication
-- [ ] No hardcoded values (use config/env)
-- [ ] TypeScript compiles without errors
-- [ ] Imports use `.js` extension
+export type OrderStatus = typeof ORDER_STATUS[keyof typeof ORDER_STATUS]
+
+// ✅ Use in code
+if (status === ORDER_STATUS.COMPLETED) { ... }
+
+// ✅ Use for defaults
+const status = data.status ?? ORDER_STATUS.CREATED
+```
 
 ---
 
-## Common Mistakes to Avoid
+## 📋 Code Review Checklist
 
-1. **Don't bypass repository pattern** - Never use `prisma` directly in controllers
-2. **Don't forget soft delete filter** - Always add `where: { trash: null }`
-3. **Don't skip validation** - Always validate input with Zod
-4. **Don't expose internal errors** - Map to appropriate HTTP errors
-5. **Don't hardcode config** - Use environment variables
-6. **Don't forget `.js` in imports** - Required for ESM
-7. **Don't ignore RepositoryResult** - Always check `isFailure()` before `getValue()`
+### Type Safety
+- [ ] No `as Record<string, unknown>`
+- [ ] No `any` type
+- [ ] No `parseInt(params.id)`
+- [ ] Schema defined in `src/schemas/`
+- [ ] Route uses schema validation
+- [ ] Controller uses typed `FastifyRequest`
+
+### Architecture
+- [ ] No direct Prisma in controller
+- [ ] Repository returns `RepositoryResult`
+- [ ] Soft delete filter `{ trash: null }`
+- [ ] Response format unchanged
+
+### Code Quality
+- [ ] Functions < 30 lines
+- [ ] Max 3 parameters
+- [ ] Early returns (guard clauses)
+- [ ] No empty catch blocks
+- [ ] No console.log
+- [ ] Meaningful variable names
+
+### Performance
+- [ ] No N+1 queries (use include)
+- [ ] Lists are paginated
+- [ ] Use Promise.all for parallel
+- [ ] Select only needed fields
+
+### Security
+- [ ] Sensitive data not exposed
+- [ ] Foreign keys validated
+- [ ] Ownership checked before update/delete
+- [ ] File uploads validated
+
+### Error Handling
+- [ ] Use typed error classes
+- [ ] Specific error messages
+- [ ] Errors logged with context
+- [ ] Transactions for multiple writes
+
+---
+
+## 🚫 Common Mistakes Quick Reference
+
+| Mistake | Fix |
+|---------|-----|
+| `as Record<string, unknown>` | Use TypeBox schema |
+| `parseInt(params.id)` | Use `IdParamSchema` |
+| Magic strings `'Active'` | Use constants |
+| `any` type | Define proper types |
+| Direct prisma in controller | Use repository |
+| N+1 queries | Use `include` |
+| Sequential async | Use `Promise.all` |
+| Empty catch block | Handle or re-throw |
+| Nested if statements | Use early returns |
+| Function > 50 lines | Split into smaller functions |
+| > 3 parameters | Use params object |
+| `console.log` | Use `request.log` |
+| Expose password | Explicit select fields |
+| Missing pagination | Always paginate lists |
+| No transaction | Use `$transaction` for multi-write |

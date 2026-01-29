@@ -148,6 +148,35 @@ export interface OrderListItem {
   } | null;
 }
 
+/**
+ * Service data for sample worksheets
+ */
+export interface OrderSampleService {
+  service_id: number;
+  package_id?: number | null;
+  discount?: number;
+  price?: number;
+}
+
+/**
+ * Sample data for order creation
+ */
+export interface OrderSampleFormData {
+  name: string;
+  description?: string | null;
+  quantity?: number | null;
+  volume?: string | null;
+  sample_storage?: string | null;
+  packaging_type?: string | null;
+  standard_id?: number | null;
+  due_date?: string | null;
+  priority?: string;
+  lead_time?: string;
+  price?: number | null;
+  discount?: number | null;
+  services?: OrderSampleService[];
+}
+
 export interface OrderFormData {
   customer_id: number;
   contact_id: number;
@@ -171,6 +200,8 @@ export interface OrderFormData {
   submited_by?: string;
   expense?: number | null;
   delivery?: string | null;
+  // Samples with services for atomic creation
+  samples?: OrderSampleFormData[];
 }
 
 // ===== Response Interfaces =====

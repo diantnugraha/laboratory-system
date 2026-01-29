@@ -3,6 +3,7 @@ import bwipjs from 'bwip-js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { quotationCalculationService, QuotationLineItem } from './quotationCalculationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,9 +54,6 @@ function getTuvNordGroupLogoBuffer(): Buffer {
 
 const SPECIAL_CUSTOMER_IDS = [34, 2013, 65];
 const PRIORITY_RATES: Record<string, number> = { normal: 0, urgent: 50, 'very urgent': 100, 'very-urgent': 100 };
-const MIN_TOTAL = 200000;
-const MIN_VAT = 22000;
-const MIN_GRAND_TOTAL = 222000;
 
 // Helper function to decode HTML entities
 function decodeHtmlEntities(text: string): string {
@@ -240,63 +238,102 @@ export class QuotationPdfService {
     }
   }
 
-  private calculateTotals(data: QuotationPdfData, _isSpecial: boolean) {
-    // Use pre-calculated totals from database if available (same as frontend)
+  private calculateTotals(data: QuotationPdfData, isSpecial: boolean) {
+    // Use pre-calculated totals from controller if available
     if (data.totals) {
-      // Apply minimum total rule even for pre-calculated totals
-      let subTotal = Math.round(data.totals.subTotal);
-      let vat = Math.round(data.totals.vat);
-      let grandTotal = Math.round(data.totals.grandTotal);
-
-      if (subTotal < MIN_TOTAL) {
-        subTotal = MIN_TOTAL;
-        vat = MIN_VAT;
-        grandTotal = MIN_GRAND_TOTAL;
-      }
-
       return {
         totalBasePrice: Math.round(data.totals.total),
         totalDiscount: Math.round(data.totals.discount),
         totalPriorityCharge: Math.round(data.totals.priorityCharge),
-        subTotal,
-        vat,
-        grandTotal,
+        subTotal: Math.round(data.totals.subTotal),
+        vat: Math.round(data.totals.vat),
+        grandTotal: Math.round(data.totals.grandTotal),
         productSubTotal: 0,
       };
     }
 
-    // Fallback: calculate from items (legacy behavior)
-    let totalBasePrice = 0, totalDiscount = 0, totalPriorityCharge = 0, productSubTotal = 0;
+    // Fallback: calculate from items using unified calculation service
+    const items: QuotationLineItem[] = [];
+    let productSubTotal = 0;
 
+    // Add products
     for (const product of data.products || []) {
-      const price = Number(product.price) || 0, quantity = Number(product.quantity) || 0, discount = Number(product.discount) || 0;
-      const basePrice = price * quantity, discountAmount = (discount / 100) * basePrice;
+      const price = Number(product.price) || 0;
+      const quantity = Number(product.quantity) || 0;
+      const discount = Number(product.discount) || 0;
+      const basePrice = price * quantity;
+      const discountAmount = (discount / 100) * basePrice;
       productSubTotal += basePrice - discountAmount;
-      totalBasePrice += basePrice;
-      totalDiscount += discountAmount;
+
+      items.push({
+        unitPrice: price,
+        serviceQuantity: quantity,
+        sampleQuantity: 1,
+        discountPercent: discount,
+        applyPriorityCharge: false, // Products don't have PC
+      });
     }
 
+    // Add services from samples
     for (const sample of data.samples || []) {
-      const priorityRate = this.getPriorityRate(sample.priority), sampleQty = Number(sample.quantity) || 1;
+      const sampleQty = Number(sample.quantity) || 1;
+
       for (const item of sample.services || []) {
-        let itemPrice = item.package ? (Number(item.package.totalPrice) || 0) : item.service ? (Number(item.service.price) || Number(item.price) || 0) : item.isProduct ? (Number(item.price) || 0) : 0;
-        const itemQty = Number(item.quantity) || 1, itemDiscount = Number(item.discount) || 0;
-        const basePrice = itemPrice * itemQty * sampleQty, discountAmount = (itemDiscount / 100) * basePrice, afterDiscount = basePrice - discountAmount;
-        let priorityCharge = 0;
-        if (!_isSpecial) {
-          if (item.service) { const canApplyPc = item.service.parameter_id !== 0 || item.service.parameter_id === undefined; if (canApplyPc || item.service.use_pc) priorityCharge = (priorityRate / 100) * afterDiscount; }
-          else if (item.package) priorityCharge = (priorityRate / 100) * afterDiscount;
+        let itemPrice = 0;
+        let applyPc = false;
+
+        if (item.package) {
+          itemPrice = Number(item.package.totalPrice) || 0;
+          applyPc = !isSpecial; // Packages apply PC unless special customer
+        } else if (item.service) {
+          itemPrice = Number(item.service.price) || Number(item.price) || 0;
+          // Check if PC should apply
+          if (!isSpecial) {
+            const canApplyPc = item.service.parameter_id !== 0 || item.service.parameter_id === undefined;
+            applyPc = canApplyPc || Boolean(item.service.use_pc);
+          }
+        } else if (item.isProduct) {
+          itemPrice = Number(item.price) || 0;
+          applyPc = false;
         }
-        totalBasePrice += basePrice; totalDiscount += discountAmount; totalPriorityCharge += priorityCharge;
+
+        const itemQty = Number(item.quantity) || 1;
+        const itemDiscount = Number(item.discount) || 0;
+
+        items.push({
+          unitPrice: itemPrice,
+          serviceQuantity: itemQty,
+          sampleQuantity: sampleQty,
+          discountPercent: itemDiscount,
+          applyPriorityCharge: applyPc,
+        });
       }
     }
 
-    let subTotal = totalBasePrice - totalDiscount + totalPriorityCharge;
+    // Use shared calculation service
     const percentVat = Number(data.percent_vat) || 11;
-    let vat: number, grandTotal: number;
-    if (subTotal <= MIN_TOTAL) { subTotal = MIN_TOTAL; vat = MIN_VAT; grandTotal = MIN_GRAND_TOTAL; }
-    else { vat = (percentVat / 100) * subTotal; grandTotal = subTotal + vat; }
-    return { totalBasePrice: Math.round(totalBasePrice), totalDiscount: Math.round(totalDiscount), totalPriorityCharge: Math.round(totalPriorityCharge), subTotal: Math.round(subTotal), vat: Math.round(vat), grandTotal: Math.round(grandTotal), productSubTotal: Math.round(productSubTotal) };
+    const percentDiscount = Number(data.percent_discount) || 0;
+
+    const totals = quotationCalculationService.calculateFromItems({
+      items,
+      quotationDiscountPercent: percentDiscount,
+      priority: data.priority || 'normal',
+      vatPercent: percentVat,
+    });
+
+    // Map to legacy format expected by PDF rendering
+    // Note: totalDiscount now includes BOTH item-level and quotation-level discounts
+    const totalDiscount = totals.itemDiscountTotal + totals.quotationDiscountTotal;
+
+    return {
+      totalBasePrice: totals.grossTotal,
+      totalDiscount: totalDiscount,
+      totalPriorityCharge: totals.priorityChargeTotal,
+      subTotal: totals.subTotal,
+      vat: totals.vatTotal,
+      grandTotal: totals.grandTotal,
+      productSubTotal: Math.round(productSubTotal),
+    };
   }
 
   private getBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {

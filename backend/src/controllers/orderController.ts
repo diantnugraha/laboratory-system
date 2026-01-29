@@ -1,7 +1,8 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../config/database.js';
 import { OrderRepository } from '../repositories/implementations/OrderRepository.js';
-import { parseId, parseQueryParam, ApiResponse } from '../types/index.js';
+import { OrderStatus, OrderPriority, OrderWithRelations } from '../repositories/contracts/IOrderRepository.js';
+import { ApiResponse } from '../types/index.js';
 import {
   exportService,
   OrderExportData,
@@ -33,24 +34,27 @@ import {
   SUCCESS_MESSAGES,
   FILE_ERRORS,
 } from '../constants/errorMessages.js';
+import type { IdParam } from '../validators/common.js';
+import type {
+  OrderQuery,
+  CreateOrderBody,
+  UpdateOrderBody,
+  UpdateOrderStatusBody,
+  ReviewOrderBody,
+  CreateRevisionBody,
+  OrderStatsQuery,
+} from '../validators/order.js';
 
 // Initialize repository
 const orderRepo = new OrderRepository(prisma);
 
 /**
- * Parse and validate pagination parameters with bounds checking
+ * Clamp pagination values to configured bounds
  */
-const parsePaginationParams = (query: FastifyRequest['query']): { page: number; limit: number } => {
-  const queryObj = query as Record<string, unknown>;
-  let page = parseQueryParam(queryObj.page, ORDER_CONFIG.DEFAULT_PAGE);
-  let limit = parseQueryParam(queryObj.limit, ORDER_CONFIG.DEFAULT_LIMIT);
-
-  // Validate bounds
-  page = Math.max(ORDER_CONFIG.MIN_PAGE, Math.min(page, ORDER_CONFIG.MAX_PAGE));
-  limit = Math.max(ORDER_CONFIG.MIN_LIMIT, Math.min(limit, ORDER_CONFIG.MAX_LIMIT));
-
-  return { page, limit };
-};
+const clampPagination = (page: number, limit: number): { page: number; limit: number } => ({
+  page: Math.max(ORDER_CONFIG.MIN_PAGE, Math.min(page, ORDER_CONFIG.MAX_PAGE)),
+  limit: Math.max(ORDER_CONFIG.MIN_LIMIT, Math.min(limit, ORDER_CONFIG.MAX_LIMIT)),
+});
 
 /**
  * Build enhanced role-based filter parameters from user context
@@ -112,21 +116,20 @@ export const getGeneratedCode = async (_request: FastifyRequest, reply: FastifyR
 /**
  * GET /api/orders - List with search & pagination
  */
-export const getAllOrders = async (request: FastifyRequest, reply: FastifyReply) => {
-  const { page, limit } = parsePaginationParams(request.query);
-  const queryObj = request.query as Record<string, unknown>;
-  const search = typeof queryObj.search === 'string' ? queryObj.search : undefined;
-  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
-  const status = typeof queryObj.status === 'string' ? queryObj.status : undefined;
-  const priority = typeof queryObj.priority === 'string' ? queryObj.priority : undefined;
+export const getAllOrders = async (
+  request: FastifyRequest<{ Querystring: OrderQuery }>,
+  reply: FastifyReply
+) => {
+  const { search, customer_id, status, priority, page = ORDER_CONFIG.DEFAULT_PAGE, limit = ORDER_CONFIG.DEFAULT_LIMIT } = request.query;
+  const { page: clampedPage, limit: clampedLimit } = clampPagination(page, limit);
 
   const result = await orderRepo.findAll({
     search,
-    customerId: customerId || undefined,
+    customerId: customer_id,
     status,
     priority,
-    page,
-    limit,
+    page: clampedPage,
+    limit: clampedLimit,
     ...buildRoleBasedFilters(request.user),
   });
 
@@ -147,13 +150,11 @@ export const getAllOrders = async (request: FastifyRequest, reply: FastifyReply)
 /**
  * GET /api/orders/:id
  */
-export const getOrderById = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
+export const getOrderById = async (
+  request: FastifyRequest<{ Params: IdParam }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
 
   const result = await orderRepo.findById(id);
 
@@ -161,7 +162,10 @@ export const getOrderById = async (request: FastifyRequest, reply: FastifyReply)
     throw new NotFoundError(result.error || RESOURCE_ERRORS.ORDER_NOT_FOUND);
   }
 
-  const order = result.getValue() as any;
+  const order = result.getValue();
+  if (!order) {
+    throw new NotFoundError(RESOURCE_ERRORS.ORDER_NOT_FOUND);
+  }
 
   // Transform samples and worksheets to match frontend expected format
   const transformedData = {
@@ -236,15 +240,22 @@ export const getOrderById = async (request: FastifyRequest, reply: FastifyReply)
   return reply.send({ success: true, data: transformedData });
 };
 
+/** Query type for JSON autocomplete endpoint */
+interface OrderJsonQuery {
+  q?: string;
+  customer_id?: number;
+}
+
 /**
  * GET /api/orders/json - For autocomplete/dropdown
  */
-export const getOrdersJson = async (request: FastifyRequest, reply: FastifyReply) => {
-  const queryObj = request.query as Record<string, unknown>;
-  const search = typeof queryObj.q === 'string' ? queryObj.q : undefined;
-  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
+export const getOrdersJson = async (
+  request: FastifyRequest<{ Querystring: OrderJsonQuery }>,
+  reply: FastifyReply
+) => {
+  const { q: search, customer_id: customerId } = request.query;
 
-  const result = await orderRepo.findForAutocomplete(search, customerId || undefined);
+  const result = await orderRepo.findForAutocomplete(search, customerId);
 
   if (result.isFailure()) {
     throw new AppError(500, result.error || RESOURCE_ERRORS.FETCH_FAILED('order'));
@@ -256,15 +267,13 @@ export const getOrdersJson = async (request: FastifyRequest, reply: FastifyReply
 /**
  * GET /api/orders/single-json/:id - Get lightweight single order for dropdown selection
  */
-export const getSingleOrderJson = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
+export const getSingleOrderJson = async (
+  request: FastifyRequest<{ Params: IdParam }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
 
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
-
-  // Use a lightweight query for dropdown selection
+  // TODO: Move to repository method findLightweight(id)
   const order = await prisma.order.findFirst({
     where: { id, trash: null },
     select: {
@@ -300,28 +309,40 @@ export const getSingleOrderJson = async (request: FastifyRequest, reply: Fastify
 /**
  * POST /api/orders
  */
-export const createOrder = async (request: FastifyRequest, reply: FastifyReply) => {
-  const {
-    customer_id,
-    contact_id,
-    address_id,
-    contract_id,
-    pre_order_id,
-    quotation_id,
-    status,
-    priority,
-    order_date,
-    due_date,
-    sub_total,
-    discount_percent,
-    discount_value,
-    vat_percent,
-    vat_value,
-    total,
-    remarks,
-    notes_internal,
-    lab,
-  } = request.body as Record<string, unknown>;
+export const createOrder = async (
+  request: FastifyRequest<{ Body: CreateOrderBody }>,
+  reply: FastifyReply
+) => {
+  const body = request.body;
+
+  // TODO: Move contact/address validation to repository
+  // Validate that contact belongs to the customer
+  const contact = await prisma.contact.findFirst({
+    where: {
+      id: body.contact_id,
+      customer_id: body.customer_id,
+      trash: null,
+    },
+  });
+
+  if (!contact) {
+    throw new ValidationError('Contact does not belong to the selected customer');
+  }
+
+  // Validate that address belongs to the customer (if provided)
+  if (body.address_id) {
+    const address = await prisma.address.findFirst({
+      where: {
+        id: body.address_id,
+        customer_id: body.customer_id,
+        trash: null,
+      },
+    });
+
+    if (!address) {
+      throw new ValidationError('Address does not belong to the selected customer');
+    }
+  }
 
   // Generate code
   const codeResult = await orderRepo.generateCode();
@@ -329,28 +350,51 @@ export const createOrder = async (request: FastifyRequest, reply: FastifyReply) 
     throw new AppError(500, codeResult.error || RESOURCE_ERRORS.FETCH_FAILED('kode order'));
   }
 
+  // Transform samples to DTO format
+  const samplesData = body.samples.map((sample) => ({
+    name: sample.name,
+    description: sample.description ?? null,
+    quantity: sample.quantity ?? 1,
+    volume: sample.volume ?? null,
+    sampleStorage: sample.sample_storage ?? null,
+    packagingType: sample.packaging_type ?? null,
+    standardId: sample.standard_id ?? null,
+    dueDate: sample.due_date ? safeParseDate(sample.due_date) : null,
+    priority: sample.priority ?? OrderPriority.NORMAL,
+    leadTime: sample.lead_time ?? 'Normal',
+    price: sample.price ?? null,
+    discount: sample.discount ?? null,
+    services: sample.services.map((svc) => ({
+      serviceId: svc.service_id,
+      packageId: svc.package_id ?? null,
+      discount: svc.discount ?? 0,
+      price: svc.price ?? 0,
+    })),
+  }));
+
   const result = await orderRepo.create({
     code: codeResult.getValue(),
-    customerId: customer_id as number,
-    contactId: contact_id as number,
-    addressId: address_id as number,
-    contractId: contract_id as number | undefined,
-    preOrderId: pre_order_id as number | undefined,
-    quotationId: quotation_id as number | undefined,
-    status: (status as string) || 'Created',
-    priority: (priority as string) || 'Normal',
-    orderDate: parseRequiredDate(order_date, 'order_date'),
-    dueDate: safeParseDate(due_date),
-    subTotal: sub_total as number,
-    discountPercent: discount_percent as number,
-    discountValue: discount_value as number,
-    vatPercent: vat_percent as number,
-    vatValue: vat_value as number,
-    total: total as number,
-    remarks: remarks as string | undefined,
-    notesInternal: notes_internal as string | undefined,
-    lab: lab as number,
+    customerId: body.customer_id,
+    contactId: body.contact_id,
+    addressId: body.address_id ?? null,
+    contractId: body.contract_id ?? undefined,
+    preOrderId: body.pre_order_id ?? undefined,
+    quotationId: body.quotation_id ?? undefined,
+    status: body.status ?? OrderStatus.CREATED,
+    priority: body.priority ?? OrderPriority.NORMAL,
+    orderDate: parseRequiredDate(body.order_date, 'order_date'),
+    dueDate: safeParseDate(body.due_date),
+    subTotal: body.sub_total,
+    discountPercent: body.discount_percent,
+    discountValue: body.discount_value,
+    vatPercent: body.vat_percent,
+    vatValue: body.vat_value,
+    total: body.total,
+    remarks: body.remarks ?? undefined,
+    notesInternal: body.notes_internal ?? undefined,
+    lab: body.lab,
     createdBy: request.user!.id,
+    samples: samplesData,
   });
 
   if (result.isFailure()) {
@@ -363,13 +407,12 @@ export const createOrder = async (request: FastifyRequest, reply: FastifyReply) 
 /**
  * PUT /api/orders/:id
  */
-export const updateOrder = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
+export const updateOrder = async (
+  request: FastifyRequest<{ Params: IdParam; Body: UpdateOrderBody }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
+  const body = request.body;
 
   // Check if order exists
   const existingResult = await orderRepo.findById(id);
@@ -377,50 +420,27 @@ export const updateOrder = async (request: FastifyRequest, reply: FastifyReply) 
     throw new NotFoundError(existingResult.error || RESOURCE_ERRORS.ORDER_NOT_FOUND);
   }
 
-  const {
-    customer_id,
-    contact_id,
-    address_id,
-    contract_id,
-    pre_order_id,
-    quotation_id,
-    status,
-    priority,
-    order_date,
-    due_date,
-    complete_date,
-    sub_total,
-    discount_percent,
-    discount_value,
-    vat_percent,
-    vat_value,
-    total,
-    remarks,
-    notes_internal,
-    lab,
-  } = request.body as Record<string, unknown>;
-
   const result = await orderRepo.update(id, {
-    customerId: customer_id as number | undefined,
-    contactId: contact_id as number | undefined,
-    addressId: address_id as number | undefined,
-    contractId: contract_id as number | undefined,
-    preOrderId: pre_order_id as number | undefined,
-    quotationId: quotation_id as number | undefined,
-    status: status as string | undefined,
-    priority: priority as string | undefined,
-    orderDate: parseOptionalDate(order_date) ?? undefined,
-    dueDate: parseOptionalDate(due_date),
-    completeDate: parseOptionalDate(complete_date),
-    subTotal: sub_total as number | undefined,
-    discountPercent: discount_percent as number | undefined,
-    discountValue: discount_value as number | undefined,
-    vatPercent: vat_percent as number | undefined,
-    vatValue: vat_value as number | undefined,
-    total: total as number | undefined,
-    remarks: remarks as string | undefined,
-    notesInternal: notes_internal as string | undefined,
-    lab: lab as number | undefined,
+    customerId: body.customer_id,
+    contactId: body.contact_id,
+    addressId: body.address_id,
+    contractId: body.contract_id ?? undefined,
+    preOrderId: body.pre_order_id ?? undefined,
+    quotationId: body.quotation_id ?? undefined,
+    status: body.status,
+    priority: body.priority,
+    orderDate: parseOptionalDate(body.order_date) ?? undefined,
+    dueDate: parseOptionalDate(body.due_date),
+    completeDate: parseOptionalDate(body.complete_date),
+    subTotal: body.sub_total,
+    discountPercent: body.discount_percent,
+    discountValue: body.discount_value,
+    vatPercent: body.vat_percent,
+    vatValue: body.vat_value,
+    total: body.total,
+    remarks: body.remarks ?? undefined,
+    notesInternal: body.notes_internal ?? undefined,
+    lab: body.lab,
     updatedBy: request.user!.id,
   });
 
@@ -434,15 +454,12 @@ export const updateOrder = async (request: FastifyRequest, reply: FastifyReply) 
 /**
  * PATCH /api/orders/:id/status - Update order status
  */
-export const updateOrderStatus = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
-
-  const { status } = request.body as { status: string };
+export const updateOrderStatus = async (
+  request: FastifyRequest<{ Params: IdParam; Body: UpdateOrderStatusBody }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
+  const { status } = request.body;
 
   const result = await orderRepo.updateStatus(id, status, request.user!.id);
 
@@ -456,13 +473,11 @@ export const updateOrderStatus = async (request: FastifyRequest, reply: FastifyR
 /**
  * DELETE /api/orders/:id
  */
-export const deleteOrder = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
+export const deleteOrder = async (
+  request: FastifyRequest<{ Params: IdParam }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
 
   const result = await orderRepo.delete(id, request.user!.id);
 
@@ -476,15 +491,12 @@ export const deleteOrder = async (request: FastifyRequest, reply: FastifyReply) 
 /**
  * POST /api/orders/:id/review - Review order (approve/reject)
  */
-export const reviewOrder = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
-
-  const { status, reason } = request.body as { status: string; reason?: string };
+export const reviewOrder = async (
+  request: FastifyRequest<{ Params: IdParam; Body: ReviewOrderBody }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
+  const { status, reason } = request.body;
 
   const result = await orderRepo.reviewOrder(id, {
     status,
@@ -506,11 +518,11 @@ export const reviewOrder = async (request: FastifyRequest, reply: FastifyReply) 
       contactName,
       order.code,
       order.customer?.customer_name ?? '',
-      status as 'Reviewed' | 'To Be Verified' | 'Cancelled',
+      status,
       reason
     ).catch(err => {
       // Log but don't fail the request if email fails
-      console.error('Failed to send review notification email:', err);
+      request.log.error({ err, orderId: id }, 'Failed to send review notification email');
     });
   }
 
@@ -520,13 +532,11 @@ export const reviewOrder = async (request: FastifyRequest, reply: FastifyReply) 
 /**
  * POST /api/orders/:id/upload-payment - Upload payment document
  */
-export const uploadPaymentDocument = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
+export const uploadPaymentDocument = async (
+  request: FastifyRequest<{ Params: IdParam }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
 
   // Save file using Fastify multipart
   let fileResult;
@@ -556,18 +566,19 @@ export const uploadPaymentDocument = async (request: FastifyRequest, reply: Fast
 
   const order = result.getValue();
 
-  // Send notification to admin users about payment upload
-  // Get admin emails (roles 1=SuperAdmin, 2=Admin)
+  // TODO: Move admin email lookup to repository
+  // Send notification to admin users about payment upload (roles 1=SuperAdmin, 2=Admin)
   const admins = await prisma.users.findMany({
     where: {
       role_id: { in: [1, 2] },
-      trash: null,
-      email: { not: null },
+      trash: { equals: null },
     },
     select: { email: true },
   });
 
-  const adminEmails = admins.map(a => a.email).filter((e): e is string => !!e);
+  const adminEmails = admins
+    .map(a => a.email)
+    .filter((e): e is string => e !== null && e !== '');
 
   if (adminEmails.length > 0) {
     const contactName = order.contact
@@ -581,7 +592,7 @@ export const uploadPaymentDocument = async (request: FastifyRequest, reply: Fast
       contactName,
       paymentDateValue
     ).catch(err => {
-      console.error('Failed to send payment upload notification email:', err);
+      request.log.error({ err, orderId: id }, 'Failed to send payment upload notification email');
     });
   }
 
@@ -591,13 +602,11 @@ export const uploadPaymentDocument = async (request: FastifyRequest, reply: Fast
 /**
  * POST /api/orders/:id/confirm-payment - Confirm payment by admin
  */
-export const confirmPayment = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
+export const confirmPayment = async (
+  request: FastifyRequest<{ Params: IdParam }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
 
   const result = await orderRepo.confirmPayment(id, request.user!.id);
 
@@ -608,18 +617,20 @@ export const confirmPayment = async (request: FastifyRequest, reply: FastifyRepl
   return reply.send({ success: true, data: result.getValue() });
 };
 
+/** Body type for resend email endpoint */
+interface ResendEmailBody {
+  email_type?: 'review' | 'status' | 'payment';
+}
+
 /**
  * POST /api/orders/:id/resend-email - Resend order notification email
  */
-export const resendOrderEmail = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
-
-  const { email_type } = request.body as { email_type?: 'review' | 'status' | 'payment' };
+export const resendOrderEmail = async (
+  request: FastifyRequest<{ Params: IdParam; Body: ResendEmailBody }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
+  const { email_type } = request.body;
 
   const result = await orderRepo.findById(id);
 
@@ -642,9 +653,11 @@ export const resendOrderEmail = async (request: FastifyRequest, reply: FastifyRe
 
   try {
     switch (email_type) {
-      case 'review':
+      case 'review': {
         // Resend review notification (status depends on current order status)
-        const reviewStatus = order.status === 'Reviewed' ? 'Reviewed' : 'To Be Verified';
+        const reviewStatus = order.status === OrderStatus.REVIEWED
+          ? OrderStatus.REVIEWED
+          : OrderStatus.TO_BE_VERIFIED;
         await emailService.sendOrderReviewedNotification(
           order.contact.email,
           contactName,
@@ -653,6 +666,7 @@ export const resendOrderEmail = async (request: FastifyRequest, reply: FastifyRe
           reviewStatus as 'Reviewed' | 'To Be Verified' | 'Cancelled'
         );
         break;
+      }
 
       case 'status':
         // Resend current status notification
@@ -676,8 +690,8 @@ export const resendOrderEmail = async (request: FastifyRequest, reply: FastifyRe
           contactName,
           order.code,
           customerName,
-          'Payment Confirmation',
-          'Under Process'
+          OrderStatus.PAYMENT_CONFIRMATION,
+          OrderStatus.UNDER_PROCESS
         );
         break;
 
@@ -697,23 +711,21 @@ export const resendOrderEmail = async (request: FastifyRequest, reply: FastifyRe
       success: true,
       message: `Email notification resent to ${order.contact.email}`,
     });
-  } catch (error: any) {
-    throw new AppError(500, `Failed to resend email: ${error.message}`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new AppError(500, `Failed to resend email: ${errorMessage}`);
   }
 };
 
 /**
  * POST /api/orders/:id/revise - Create revision of order
  */
-export const createRevision = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
-
-  const { reason } = request.body as { reason?: string };
+export const createRevision = async (
+  request: FastifyRequest<{ Params: IdParam; Body: CreateRevisionBody }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
+  const { reason } = request.body;
 
   const result = await orderRepo.createRevision(id, request.user!.id, reason);
 
@@ -727,13 +739,11 @@ export const createRevision = async (request: FastifyRequest, reply: FastifyRepl
 /**
  * POST /api/orders/:id/unlock - Unlock order for editing
  */
-export const unlockOrder = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
-
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
+export const unlockOrder = async (
+  request: FastifyRequest<{ Params: IdParam }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
 
   const result = await orderRepo.unlockOrder(id, request.user!.id);
 
@@ -747,10 +757,11 @@ export const unlockOrder = async (request: FastifyRequest, reply: FastifyReply) 
 /**
  * GET /api/orders/stats - Get order statistics
  */
-export const getOrderStats = async (request: FastifyRequest, reply: FastifyReply) => {
-  const queryObj = request.query as Record<string, unknown>;
-  const type = queryObj.type as 'today' | 'month' | 'year';
-  const invoiceDate = queryObj.invoice_date === 'true';
+export const getOrderStats = async (
+  request: FastifyRequest<{ Querystring: OrderStatsQuery }>,
+  reply: FastifyReply
+) => {
+  const { type, invoice_date: invoiceDate } = request.query;
 
   const result = await orderRepo.getOrderStats(type, invoiceDate);
 
@@ -764,17 +775,18 @@ export const getOrderStats = async (request: FastifyRequest, reply: FastifyReply
 /**
  * GET /api/orders/waiting-payment - Get orders waiting for payment
  */
-export const getWaitingPaymentOrders = async (request: FastifyRequest, reply: FastifyReply) => {
-  const { page, limit } = parsePaginationParams(request.query);
-  const queryObj = request.query as Record<string, unknown>;
-  const search = typeof queryObj.search === 'string' ? queryObj.search : undefined;
-  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
+export const getWaitingPaymentOrders = async (
+  request: FastifyRequest<{ Querystring: OrderQuery }>,
+  reply: FastifyReply
+) => {
+  const { search, customer_id, page = ORDER_CONFIG.DEFAULT_PAGE, limit = ORDER_CONFIG.DEFAULT_LIMIT } = request.query;
+  const { page: clampedPage, limit: clampedLimit } = clampPagination(page, limit);
 
   const result = await orderRepo.findWaitingPayment({
     search,
-    customerId: customerId || undefined,
-    page,
-    limit,
+    customerId: customer_id,
+    page: clampedPage,
+    limit: clampedLimit,
     ...buildRoleBasedFilters(request.user),
   });
 
@@ -795,17 +807,18 @@ export const getWaitingPaymentOrders = async (request: FastifyRequest, reply: Fa
 /**
  * GET /api/orders/outstanding-whitelist - Get outstanding whitelist orders
  */
-export const getOutstandingWhitelistOrders = async (request: FastifyRequest, reply: FastifyReply) => {
-  const { page, limit } = parsePaginationParams(request.query);
-  const queryObj = request.query as Record<string, unknown>;
-  const search = typeof queryObj.search === 'string' ? queryObj.search : undefined;
-  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
+export const getOutstandingWhitelistOrders = async (
+  request: FastifyRequest<{ Querystring: OrderQuery }>,
+  reply: FastifyReply
+) => {
+  const { search, customer_id, page = ORDER_CONFIG.DEFAULT_PAGE, limit = ORDER_CONFIG.DEFAULT_LIMIT } = request.query;
+  const { page: clampedPage, limit: clampedLimit } = clampPagination(page, limit);
 
   const result = await orderRepo.findOutstandingWhitelist({
     search,
-    customerId: customerId || undefined,
-    page,
-    limit,
+    customerId: customer_id,
+    page: clampedPage,
+    limit: clampedLimit,
     ...buildRoleBasedFilters(request.user),
   });
 
@@ -823,16 +836,19 @@ export const getOutstandingWhitelistOrders = async (request: FastifyRequest, rep
   return reply.send(response);
 };
 
+/** Query type for invoice status batch endpoint */
+interface InvoiceBatchQuery {
+  order_ids: string;
+}
+
 /**
  * GET /api/orders/invoices - Get invoice status for multiple orders
  */
-export const getOrderInvoiceStatusBatch = async (request: FastifyRequest, reply: FastifyReply) => {
-  const queryObj = request.query as Record<string, unknown>;
-  const orderIdsParam = queryObj.order_ids as string;
-
-  if (!orderIdsParam) {
-    throw new ValidationError(VALIDATION_ERRORS.REQUIRED('order_ids'));
-  }
+export const getOrderInvoiceStatusBatch = async (
+  request: FastifyRequest<{ Querystring: InvoiceBatchQuery }>,
+  reply: FastifyReply
+) => {
+  const { order_ids: orderIdsParam } = request.query;
 
   const orderIds = orderIdsParam.split(',').map(Number).filter(id => !isNaN(id));
   if (orderIds.length === 0) {
@@ -850,28 +866,38 @@ export const getOrderInvoiceStatusBatch = async (request: FastifyRequest, reply:
   return reply.send({ success: true, data });
 };
 
+/** Query type for export endpoints */
+interface ExportQuery {
+  search?: string;
+  customer_id?: number;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+  streaming?: string;
+}
+
 /**
  * GET /api/orders/export - Export orders to CSV (streaming)
  *
  * Uses streaming export for memory efficiency.
  * Can handle 100K+ records without memory issues.
  */
-export const exportOrders = async (request: FastifyRequest, reply: FastifyReply) => {
-  const queryObj = request.query as Record<string, unknown>;
-  const search = typeof queryObj.search === 'string' ? queryObj.search : undefined;
-  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
-  const status = typeof queryObj.status === 'string' ? queryObj.status : undefined;
-  const dateFrom = safeParseDate(queryObj.date_from as string) ?? undefined;
-  const dateTo = safeParseDate(queryObj.date_to as string) ?? undefined;
+export const exportOrders = async (
+  request: FastifyRequest<{ Querystring: ExportQuery }>,
+  reply: FastifyReply
+) => {
+  const { search, customer_id: customerId, status, date_from, date_to, streaming } = request.query;
+  const dateFrom = safeParseDate(date_from) ?? undefined;
+  const dateTo = safeParseDate(date_to) ?? undefined;
 
   // Check if streaming is requested (default: true for better performance)
-  const useStreaming = queryObj.streaming !== 'false';
+  const useStreaming = streaming !== 'false';
 
   if (useStreaming) {
     // Streaming export - memory efficient for large datasets
     const filter = {
       search,
-      customerId: customerId || undefined,
+      customerId,
       status,
       dateFrom,
       dateTo,
@@ -896,7 +922,7 @@ export const exportOrders = async (request: FastifyRequest, reply: FastifyReply)
     // Legacy export using exportService (for backward compatibility)
     const result = await orderRepo.findAll({
       search,
-      customerId: customerId || undefined,
+      customerId,
       status,
       dateFrom,
       dateTo,
@@ -911,7 +937,7 @@ export const exportOrders = async (request: FastifyRequest, reply: FastifyReply)
     const orders = result.getValue().data;
 
     // Map to export format
-    const exportData: OrderExportData[] = orders.map(order => ({
+    const exportData: OrderExportData[] = orders.map((order: OrderWithRelations) => ({
       code: order.code,
       orderDate: order.orderDate.toISOString(),
       customerCode: order.customer.code,
@@ -937,30 +963,35 @@ export const exportOrders = async (request: FastifyRequest, reply: FastifyReply)
   }
 };
 
+/** Query type for download endpoint */
+interface DownloadQuery {
+  type?: 'sppc' | 'quotation' | 'request_form' | 'coa_request' | 'coa_release';
+}
+
 /**
  * GET /api/orders/:id/download - Download order document as PDF
  */
-export const downloadOrderDocument = async (request: FastifyRequest, reply: FastifyReply) => {
-  const params = request.params as { id: string };
-  const id = parseId(params.id);
+export const downloadOrderDocument = async (
+  request: FastifyRequest<{ Params: IdParam; Querystring: DownloadQuery }>,
+  reply: FastifyReply
+) => {
+  const { id } = request.params;
+  const docType = request.query.type ?? 'sppc';
 
-  if (!id) {
-    throw new ValidationError(VALIDATION_ERRORS.INVALID_ID);
-  }
-
-  const queryObj = request.query as Record<string, unknown>;
-  const docType = (queryObj.type as string) || 'sppc';
-
+  // TODO: Move sample and worksheet fetching to repository
   // Fetch order and samples in parallel for better performance
   const [result, samples] = await Promise.all([
     orderRepo.findById(id),
     prisma.sample.findMany({
-      where: { order_id: id, trash: null },
+      where: { order_id: id, trash: { equals: null } },
       include: {
         standart: true,
       },
     }),
   ]);
+
+  // Type alias for sample with standard relation (used in map callbacks)
+  type SampleWithStandard = (typeof samples)[number];
 
   if (result.isFailure()) {
     throw new NotFoundError(RESOURCE_ERRORS.ORDER_NOT_FOUND);
@@ -972,11 +1003,11 @@ export const downloadOrderDocument = async (request: FastifyRequest, reply: Fast
   }
 
   // Fetch worksheets (services) for each sample
-  const sampleIds = samples.map(s => s.id);
+  const sampleIds = samples.map((s: SampleWithStandard) => s.id);
   const worksheets = await prisma.worksheet.findMany({
     where: {
       sample_id: { in: sampleIds },
-      trash: null,
+      trash: { equals: null },
     },
     include: {
       service: {
@@ -1017,7 +1048,7 @@ export const downloadOrderDocument = async (request: FastifyRequest, reply: Fast
         address: order.address?.address ?? '',
         phone: order.contact?.phone ?? '',
         email: order.contact?.email ?? '',
-        samples: samples.map(sample => {
+        samples: samples.map((sample: SampleWithStandard) => {
           const sampleWorksheets = worksheetsBySample[sample.id] ?? [];
           // Get matrix from first worksheet's method if available
           const firstMatrix = sampleWorksheets[0]?.service?.method?.matrix?.name ?? '';
@@ -1055,7 +1086,7 @@ export const downloadOrderDocument = async (request: FastifyRequest, reply: Fast
         address: order.address?.address ?? '',
         phone: order.contact?.phone ?? '',
         email: order.contact?.email ?? '',
-        services: samples.flatMap((sample, sIdx) => {
+        services: samples.flatMap((sample: SampleWithStandard, sIdx: number) => {
           const sampleWorksheets = worksheetsBySample[sample.id] ?? [];
           return sampleWorksheets
             .filter(ws => ws.service?.parameter)
@@ -1089,7 +1120,7 @@ export const downloadOrderDocument = async (request: FastifyRequest, reply: Fast
         address: order.address?.address ?? '',
         phone: order.contact?.phone ?? '',
         email: order.contact?.email ?? '',
-        samples: samples.map(sample => {
+        samples: samples.map((sample: SampleWithStandard) => {
           const sampleWorksheets = worksheetsBySample[sample.id] ?? [];
           const firstMatrix = sampleWorksheets[0]?.service?.method?.matrix?.name ?? '';
           return {
@@ -1122,7 +1153,7 @@ export const downloadOrderDocument = async (request: FastifyRequest, reply: Fast
         address: order.address?.address ?? '',
         phone: order.contact?.phone ?? '',
         email: order.contact?.email ?? '',
-        samples: samples.map(sample => {
+        samples: samples.map((sample: SampleWithStandard) => {
           const sampleWorksheets = worksheetsBySample[sample.id] ?? [];
           const firstMatrix = sampleWorksheets[0]?.service?.method?.matrix?.name ?? '';
           return {
@@ -1148,7 +1179,7 @@ export const downloadOrderDocument = async (request: FastifyRequest, reply: Fast
         customerName: order.customer?.customer_name ?? '',
         contactName,
         address: order.address?.address ?? '',
-        samples: samples.map(sample => ({
+        samples: samples.map((sample: SampleWithStandard) => ({
           code: sample.code,
           name: sample.name,
           coaCode: `COA-${sample.code}`,
@@ -1170,18 +1201,27 @@ export const downloadOrderDocument = async (request: FastifyRequest, reply: Fast
   return reply.send(pdfBuffer);
 };
 
+/** Query type for CTS/NCTS/Calibration export endpoints */
+interface SpecialExportQuery {
+  customer_id?: number;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
 /**
  * GET /api/orders/export/cts - Export CTS (Customer Testing Service) orders to CSV
  */
-export const exportCTS = async (request: FastifyRequest, reply: FastifyReply) => {
-  const queryObj = request.query as Record<string, unknown>;
-  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
-  const status = typeof queryObj.status === 'string' ? queryObj.status : undefined;
-  const dateFrom = safeParseDate(queryObj.date_from as string) ?? undefined;
-  const dateTo = safeParseDate(queryObj.date_to as string) ?? undefined;
+export const exportCTS = async (
+  request: FastifyRequest<{ Querystring: SpecialExportQuery }>,
+  reply: FastifyReply
+) => {
+  const { customer_id: customerId, status, date_from, date_to } = request.query;
+  const dateFrom = safeParseDate(date_from) ?? undefined;
+  const dateTo = safeParseDate(date_to) ?? undefined;
 
   const result = await orderRepo.findForCTSExport({
-    customerId: customerId || undefined,
+    customerId,
     status,
     dateFrom,
     dateTo,
@@ -1204,15 +1244,16 @@ export const exportCTS = async (request: FastifyRequest, reply: FastifyReply) =>
 /**
  * GET /api/orders/export/ncts - Export Non-CTS (subcontracted) orders to CSV
  */
-export const exportNonCTS = async (request: FastifyRequest, reply: FastifyReply) => {
-  const queryObj = request.query as Record<string, unknown>;
-  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
-  const status = typeof queryObj.status === 'string' ? queryObj.status : undefined;
-  const dateFrom = safeParseDate(queryObj.date_from as string) ?? undefined;
-  const dateTo = safeParseDate(queryObj.date_to as string) ?? undefined;
+export const exportNonCTS = async (
+  request: FastifyRequest<{ Querystring: SpecialExportQuery }>,
+  reply: FastifyReply
+) => {
+  const { customer_id: customerId, status, date_from, date_to } = request.query;
+  const dateFrom = safeParseDate(date_from) ?? undefined;
+  const dateTo = safeParseDate(date_to) ?? undefined;
 
   const result = await orderRepo.findForNonCTSExport({
-    customerId: customerId || undefined,
+    customerId,
     status,
     dateFrom,
     dateTo,
@@ -1235,15 +1276,16 @@ export const exportNonCTS = async (request: FastifyRequest, reply: FastifyReply)
 /**
  * GET /api/orders/export/calibration - Export calibration orders to CSV
  */
-export const exportCalibration = async (request: FastifyRequest, reply: FastifyReply) => {
-  const queryObj = request.query as Record<string, unknown>;
-  const customerId = queryObj.customer_id ? parseId(queryObj.customer_id as string) : undefined;
-  const status = typeof queryObj.status === 'string' ? queryObj.status : undefined;
-  const dateFrom = safeParseDate(queryObj.date_from as string) ?? undefined;
-  const dateTo = safeParseDate(queryObj.date_to as string) ?? undefined;
+export const exportCalibration = async (
+  request: FastifyRequest<{ Querystring: SpecialExportQuery }>,
+  reply: FastifyReply
+) => {
+  const { customer_id: customerId, status, date_from, date_to } = request.query;
+  const dateFrom = safeParseDate(date_from) ?? undefined;
+  const dateTo = safeParseDate(date_to) ?? undefined;
 
   const result = await orderRepo.findForCalibrationExport({
-    customerId: customerId || undefined,
+    customerId,
     status,
     dateFrom,
     dateTo,
@@ -1263,13 +1305,22 @@ export const exportCalibration = async (request: FastifyRequest, reply: FastifyR
   return reply.send(csv);
 };
 
+/** Query type for date range export endpoints */
+interface DateRangeQuery {
+  date_from?: string;
+  date_to?: string;
+}
+
 /**
  * GET /api/orders/export/active-customers - Export active customers report to CSV
  */
-export const exportActiveCustomers = async (request: FastifyRequest, reply: FastifyReply) => {
-  const queryObj = request.query as Record<string, unknown>;
-  const dateFrom = safeParseDate(queryObj.date_from as string) ?? undefined;
-  const dateTo = safeParseDate(queryObj.date_to as string) ?? undefined;
+export const exportActiveCustomers = async (
+  request: FastifyRequest<{ Querystring: DateRangeQuery }>,
+  reply: FastifyReply
+) => {
+  const { date_from, date_to } = request.query;
+  const dateFrom = safeParseDate(date_from) ?? undefined;
+  const dateTo = safeParseDate(date_to) ?? undefined;
 
   const result = await orderRepo.findActiveCustomers(dateFrom, dateTo);
 
@@ -1286,13 +1337,22 @@ export const exportActiveCustomers = async (request: FastifyRequest, reply: Fast
   return reply.send(csv);
 };
 
+/** Query type for required date range export */
+interface RequiredDateRangeQuery {
+  date_from: string;
+  date_to: string;
+}
+
 /**
  * GET /api/orders/export/report - Generate order report by date range
  */
-export const exportOrderReport = async (request: FastifyRequest, reply: FastifyReply) => {
-  const queryObj = request.query as Record<string, unknown>;
-  const dateFrom = safeParseDate(queryObj.date_from as string);
-  const dateTo = safeParseDate(queryObj.date_to as string);
+export const exportOrderReport = async (
+  request: FastifyRequest<{ Querystring: RequiredDateRangeQuery }>,
+  reply: FastifyReply
+) => {
+  const { date_from, date_to } = request.query;
+  const dateFrom = safeParseDate(date_from);
+  const dateTo = safeParseDate(date_to);
 
   if (!dateFrom || !dateTo) {
     throw new ValidationError('date_from and date_to are required');

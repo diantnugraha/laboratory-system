@@ -61,6 +61,35 @@ export const orderJsonQuerySchema = z.object({
 });
 
 /**
+ * Service schema for sample worksheets
+ */
+export const sampleServiceSchema = z.object({
+  service_id: z.number().int().positive('Service ID must be positive'),
+  package_id: z.number().int().positive().nullable().optional(),
+  discount: z.number().min(0).max(100).optional().default(0),
+  price: z.number().min(0).optional(),
+});
+
+/**
+ * Sample schema for order creation
+ */
+export const orderSampleSchema = z.object({
+  name: z.string().min(1, 'Sample name is required'),
+  description: z.string().nullable().optional(),
+  quantity: z.number().int().positive().nullable().optional(),
+  volume: z.string().nullable().optional(),
+  sample_storage: z.string().nullable().optional(),
+  packaging_type: z.string().nullable().optional(),
+  standard_id: z.number().int().positive().nullable().optional(),
+  due_date: z.string().nullable().optional(),
+  priority: z.string().optional().default('Normal'),
+  lead_time: z.string().optional().default('Normal'),
+  price: z.number().min(0).nullable().optional(),
+  discount: z.number().min(0).max(100).nullable().optional(),
+  services: z.array(sampleServiceSchema).optional().default([]),
+});
+
+/**
  * Create order schema
  */
 export const createOrderSchema = z.object({
@@ -83,6 +112,8 @@ export const createOrderSchema = z.object({
   remarks: z.string().trim().nullable().optional(),
   notes_internal: z.string().trim().nullable().optional(),
   lab: z.number().int().min(0).max(2).optional().default(0),
+  // Samples with services for atomic creation
+  samples: z.array(orderSampleSchema).optional().default([]),
 });
 
 /**
@@ -157,3 +188,5 @@ export type ReviewOrderBody = z.infer<typeof reviewOrderSchema>;
 export type UploadPaymentBody = z.infer<typeof uploadPaymentSchema>;
 export type CreateRevisionBody = z.infer<typeof createRevisionSchema>;
 export type OrderStatsQuery = z.infer<typeof orderStatsQuerySchema>;
+export type OrderSampleBody = z.infer<typeof orderSampleSchema>;
+export type SampleServiceBody = z.infer<typeof sampleServiceSchema>;
