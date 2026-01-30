@@ -443,8 +443,8 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
         properties: {
           type: {
             type: 'string',
-            enum: ['sppc', 'quotation', 'request_form', 'coa_request', 'coa_release'],
-            description: 'Document type to download: sppc (Sample Processing Payment Confirmation), quotation, request_form (Sample Request Form), coa_request (COA Request), coa_release (COA Release)'
+            enum: ['sppc', 'quotation', 'request_form', 'coa_request', 'coa_release', 'order_detail'],
+            description: 'Document type to download: sppc (Sample Processing Payment Confirmation), quotation, request_form (Sample Request Form), coa_request (COA Request), coa_release (COA Release), order_detail (Order Detail for Review)'
           }
         }
       }

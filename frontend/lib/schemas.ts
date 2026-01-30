@@ -202,7 +202,15 @@ export const analystRuleSchema = z.object({
   status: statusSchema.optional().default("Active"),
 });
 
+// Order Reject Schema (for Review Order)
+export const orderRejectSchema = z.object({
+  reason: z.string()
+    .min(1, "Reason is required")
+    .max(500, "Reason must be at most 500 characters"),
+});
+
 // Type exports
+export type OrderRejectFormData = z.infer<typeof orderRejectSchema>;
 export type ContractDetailFormData = z.infer<typeof contractDetailSchema>;
 export type ContractFormData = z.infer<typeof contractSchema>;
 export type MethodFormData = z.infer<typeof methodSchema>;

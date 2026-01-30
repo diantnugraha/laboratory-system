@@ -350,7 +350,7 @@ export const orderService = {
   },
 
   // Download order document
-  downloadDocument: async (id: number | string, type: 'sppc' | 'quotation' | 'request_form' | 'coa_request' | 'coa_release'): Promise<Blob> => {
+  downloadDocument: async (id: number | string, type: 'sppc' | 'quotation' | 'request_form' | 'coa_request' | 'coa_release' | 'order_detail'): Promise<Blob> => {
     const response = await api.get(`/orders/${id}/download`, {
       params: { type },
       responseType: 'blob',

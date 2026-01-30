@@ -26,7 +26,8 @@ export type PDFDocumentType =
   | 'request_form'   // Form Permintaan
   | 'coa_request'    // COA Request
   | 'coa_release'    // COA Release
-  | 'invoice';       // Invoice
+  | 'invoice'        // Invoice
+  | 'order_detail';  // Order Detail for Review
 
 /**
  * PDF Generation Options
@@ -233,6 +234,42 @@ export interface COAReleaseData {
   receivedDate?: string;
   remarks?: string;
   releasedBy?: string;
+}
+
+/**
+ * Order Detail Data Interface (for Review)
+ */
+export interface OrderDetailData {
+  orderCode: string;
+  orderDate: string;
+  orderStatus: string;
+  priority: string | null;
+  customerName: string;
+  customerCode: string;
+  contactName: string;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  address: string | null;
+  samples: Array<{
+    code: string;
+    name: string;
+    priority: string;
+    dueDate: string | null;
+    services: Array<{
+      parameter: string;
+      method: string;
+      price: number;
+    }>;
+  }>;
+  subTotal: number;
+  discountPercent: number;
+  discountValue: number;
+  vatPercent: number;
+  vatValue: number;
+  total: number;
+  remarks: string | null;
+  quotationCode: string | null;
+  preOrderCode: string | null;
 }
 
 /**
@@ -1600,6 +1637,257 @@ export class PDFService {
               <div style="border-bottom: 1px solid #000; height: 50px; margin: 5px 0;"></div>
               <p>${data.receivedBy || '_________________'}</p>
               <p style="font-size: 9px;">Date: ${data.receivedDate ? this.formatDateEnglish(data.receivedDate) : '_________________'}</p>
+            </div>
+          </div>
+
+          ${this.buildFooter(1, 1)}
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  /**
+   * Generate Order Detail Document (for Review)
+   */
+  async generateOrderDetail(data: OrderDetailData): Promise<Buffer> {
+    const html = this.buildOrderDetailTemplate(data);
+    return this.generatePDF(html);
+  }
+
+  /**
+   * Build Order Detail HTML Template - TÜV NORD style
+   */
+  private buildOrderDetailTemplate(data: OrderDetailData): string {
+    const samplesHtml = data.samples.map((sample, idx) => `
+      <tr style="background-color: #f5f5f5;">
+        <td colspan="4" style="font-weight: bold;">${idx + 1}. ${sample.code} - ${sample.name}</td>
+      </tr>
+      <tr>
+        <td class="text-center" style="width: 44px;">-</td>
+        <td>Priority: ${sample.priority || 'Normal'}</td>
+        <td colspan="2">Due Date: ${sample.dueDate ? this.formatDateEnglish(sample.dueDate) : '-'}</td>
+      </tr>
+      ${sample.services.map((service, sIdx) => `
+        <tr>
+          <td class="text-center">${idx + 1}.${sIdx + 1}</td>
+          <td>${service.parameter}</td>
+          <td>${service.method}</td>
+          <td class="text-right">${this.formatCurrency(service.price)}</td>
+        </tr>
+      `).join('')}
+    `).join('');
+
+    const getStatusColor = (status: string) => {
+      switch (status?.toLowerCase()) {
+        case 'created': return '#2563eb';
+        case 'to be verified': return '#ea580c';
+        case 'reviewed': return '#16a34a';
+        case 'need to revise': return '#dc2626';
+        case 'under process': return '#7c3aed';
+        case 'complete': return '#059669';
+        case 'cancelled': return '#dc2626';
+        default: return '#6b7280';
+      }
+    };
+
+    const getPriorityColor = (priority: string | null) => {
+      switch (priority?.toLowerCase()) {
+        case 'urgent': return '#ea580c';
+        case 'very urgent': return '#dc2626';
+        case 'special request': return '#7c3aed';
+        default: return '#16a34a';
+      }
+    };
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          ${this.getSharedStyles()}
+          .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 10px;
+            text-transform: uppercase;
+          }
+          .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+          }
+          .info-box {
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            padding: 12px;
+          }
+          .info-box-title {
+            font-weight: bold;
+            font-size: 11px;
+            color: #005b9a;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #e5e7eb;
+          }
+          .info-row {
+            display: flex;
+            margin-bottom: 4px;
+            font-size: 10px;
+          }
+          .info-label {
+            font-weight: bold;
+            width: 80px;
+            flex-shrink: 0;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          ${this.buildHeader('ORDER DETAIL', data.orderCode, data.orderDate)}
+
+          <!-- Status and Priority Badges -->
+          <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+            <span class="status-badge" style="background-color: ${getStatusColor(data.orderStatus)}20; color: ${getStatusColor(data.orderStatus)}; border: 1px solid ${getStatusColor(data.orderStatus)};">
+              ${data.orderStatus}
+            </span>
+            ${data.priority ? `
+            <span class="status-badge" style="background-color: ${getPriorityColor(data.priority)}20; color: ${getPriorityColor(data.priority)}; border: 1px solid ${getPriorityColor(data.priority)};">
+              ${data.priority}
+            </span>
+            ` : ''}
+          </div>
+
+          <!-- Info Grid -->
+          <div class="info-grid">
+            <!-- Customer Info -->
+            <div class="info-box">
+              <div class="info-box-title">Customer Information</div>
+              <div class="info-row">
+                <span class="info-label">Customer</span>
+                <span>${data.customerName}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Code</span>
+                <span>${data.customerCode}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Contact</span>
+                <span>${data.contactName}</span>
+              </div>
+              ${data.contactEmail ? `
+              <div class="info-row">
+                <span class="info-label">Email</span>
+                <span>${data.contactEmail}</span>
+              </div>
+              ` : ''}
+              ${data.contactPhone ? `
+              <div class="info-row">
+                <span class="info-label">Phone</span>
+                <span>${data.contactPhone}</span>
+              </div>
+              ` : ''}
+            </div>
+
+            <!-- Order Info -->
+            <div class="info-box">
+              <div class="info-box-title">Order Information</div>
+              <div class="info-row">
+                <span class="info-label">Order Code</span>
+                <span>${data.orderCode}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Order Date</span>
+                <span>${this.formatDateEnglish(data.orderDate)}</span>
+              </div>
+              ${data.quotationCode ? `
+              <div class="info-row">
+                <span class="info-label">Quotation</span>
+                <span>${data.quotationCode}</span>
+              </div>
+              ` : ''}
+              ${data.preOrderCode ? `
+              <div class="info-row">
+                <span class="info-label">Pre-Order</span>
+                <span>${data.preOrderCode}</span>
+              </div>
+              ` : ''}
+            </div>
+          </div>
+
+          ${data.address ? `
+          <div style="margin-bottom: 15px; padding: 8px 12px; background-color: #f9fafb; border-radius: 4px; font-size: 10px;">
+            <strong>Address:</strong> ${data.address}
+          </div>
+          ` : ''}
+
+          <!-- Samples Table -->
+          <table style="margin-bottom: 4mm; font-size: 10px;">
+            <thead>
+              <tr>
+                <th style="width: 44px;">No</th>
+                <th>Parameter</th>
+                <th style="width: 140px;">Method</th>
+                <th style="width: 120px;">Price (IDR)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${samplesHtml}
+            </tbody>
+          </table>
+
+          <!-- Summary Section -->
+          <div class="summary-section">
+            <div class="remarks-box">
+              <strong>Remarks :</strong>
+              ${data.remarks ? `<div>${data.remarks}</div>` : '<div style="color: #9ca3af;">No remarks</div>'}
+            </div>
+            <table class="summary-table">
+              <tr>
+                <td class="summary-label">Sub Total (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.subTotal)}</td>
+              </tr>
+              ${data.discountValue > 0 ? `
+              <tr>
+                <td class="summary-label">Discount ${data.discountPercent > 0 ? `(${data.discountPercent}%)` : ''}</td>
+                <td class="summary-value">-${this.formatCurrency(data.discountValue)}</td>
+              </tr>
+              ` : ''}
+              <tr>
+                <td class="summary-label">VAT (${data.vatPercent}%)</td>
+                <td class="summary-value">${this.formatCurrency(data.vatValue)}</td>
+              </tr>
+              <tr class="grand-total">
+                <td class="summary-label">Grand Total (IDR)</td>
+                <td class="summary-value">${this.formatCurrency(data.total)}</td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Review Section -->
+          <div style="margin-top: 15mm; padding: 12px; border: 2px solid #005b9a; border-radius: 4px; background-color: #f0f9ff;">
+            <div style="font-weight: bold; color: #005b9a; margin-bottom: 8px; font-size: 11px;">FOR REVIEWER USE</div>
+            <div style="display: flex; gap: 20px;">
+              <div style="flex: 1;">
+                <div style="margin-bottom: 3mm;">
+                  <span style="font-weight: bold;">Decision:</span>
+                  <span style="margin-left: 10px;">☐ Approved</span>
+                  <span style="margin-left: 10px;">☐ Need Revision</span>
+                </div>
+                <div>
+                  <span style="font-weight: bold;">Notes:</span>
+                  <div style="border-bottom: 1px solid #000; height: 30px; margin-top: 2mm;"></div>
+                </div>
+              </div>
+              <div style="width: 120px; text-align: center;">
+                <div style="font-weight: bold; margin-bottom: 2mm;">Reviewer</div>
+                <div style="border-bottom: 1px solid #000; height: 40px;"></div>
+                <div style="font-size: 9px; margin-top: 2mm;">Date: ____________</div>
+              </div>
             </div>
           </div>
 

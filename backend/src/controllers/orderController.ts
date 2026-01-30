@@ -965,7 +965,7 @@ export const exportOrders = async (
 
 /** Query type for download endpoint */
 interface DownloadQuery {
-  type?: 'sppc' | 'quotation' | 'request_form' | 'coa_request' | 'coa_release';
+  type?: 'sppc' | 'quotation' | 'request_form' | 'coa_request' | 'coa_release' | 'order_detail';
 }
 
 /**
@@ -1192,8 +1192,60 @@ export const downloadOrderDocument = async (
       filename = `COARelease_${order.code}.pdf`;
       break;
 
+    case 'order_detail':
+      // Build full address string
+      const fullAddress = order.address
+        ? [order.address.address, order.address.city, order.address.province, order.address.postal_code]
+            .filter(Boolean)
+            .join(', ')
+        : null;
+
+      // Calculate discount value
+      const discountValue = order.sub_total * (order.percent_discount / 100);
+      const vatValue = (order.sub_total - discountValue) * (order.percent_vat / 100);
+
+      pdfBuffer = await pdfService.generateOrderDetail({
+        orderCode: order.code,
+        orderDate: order.orderDate.toISOString(),
+        orderStatus: order.order_status,
+        priority: order.order_priority,
+        customerName: order.customer?.customer_name ?? '',
+        customerCode: order.customer?.code ?? '',
+        contactName,
+        contactEmail: order.contact?.email ?? null,
+        contactPhone: order.contact?.phone ?? null,
+        address: fullAddress,
+        samples: samples.map((sample: SampleWithStandard) => {
+          const sampleWorksheets = worksheetsBySample[sample.id] ?? [];
+          return {
+            code: sample.code,
+            name: sample.name,
+            priority: sample.priority ?? 'Normal',
+            dueDate: sample.due_date?.toISOString() ?? null,
+            services: sampleWorksheets
+              .filter((ws) => ws.service)
+              .map((ws) => ({
+                parameter: ws.service?.parameter?.name ?? '',
+                method: ws.service?.method?.name ?? '',
+                price: ws.price ?? ws.service?.price ?? 0,
+              })),
+          };
+        }),
+        subTotal: order.sub_total,
+        discountPercent: order.percent_discount,
+        discountValue: discountValue,
+        vatPercent: order.percent_vat,
+        vatValue: vatValue,
+        total: order.total,
+        remarks: order.remarks,
+        quotationCode: order.quotation?.code ?? null,
+        preOrderCode: order.pre_order?.code ?? null,
+      });
+      filename = `OrderDetail_${order.code}.pdf`;
+      break;
+
     default:
-      throw new ValidationError('Invalid document type. Valid types: sppc, quotation, request_form, coa_request, coa_release');
+      throw new ValidationError('Invalid document type. Valid types: sppc, quotation, request_form, coa_request, coa_release, order_detail');
   }
 
   reply.header('Content-Type', 'application/pdf');

@@ -29,14 +29,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Form,
   FormControl,
   FormField,
@@ -203,8 +195,8 @@ const fetchPackageDetails = async (packageId: number) => {
   return null;
 };
 
-// Sortable service row component for drag-and-drop
-interface SortableServiceRowProps {
+// Sortable service card component for drag-and-drop
+interface SortableServiceCardProps {
   svc: SampleServiceItem;
   sampleId: string;
   formatCurrency: (value: number) => string;
@@ -212,13 +204,13 @@ interface SortableServiceRowProps {
   removeServiceFromSample: (sampleId: string, serviceId: string) => void;
 }
 
-function SortableServiceRow({
+function SortableServiceCard({
   svc,
   sampleId,
   formatCurrency,
   updateServiceDiscount,
   removeServiceFromSample,
-}: SortableServiceRowProps) {
+}: SortableServiceCardProps) {
   const {
     attributes,
     listeners,
@@ -234,90 +226,122 @@ function SortableServiceRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const finalPrice = svc.price * (1 - svc.discount / 100);
+
   return (
-    <TableRow ref={setNodeRef} style={style}>
-      {/* Drag Handle */}
-      <TableCell className="w-[40px] align-top">
-        <button
-          type="button"
-          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-      </TableCell>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "group relative bg-background border rounded-lg p-4 transition-all",
+        "hover:shadow-sm hover:border-primary/20",
+        isDragging && "shadow-lg border-primary/30 bg-primary/5"
+      )}
+    >
+      {/* Drag Handle - positioned absolute */}
+      <button
+        type="button"
+        className="absolute left-2 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
 
-      {/* Type Badge */}
-      <TableCell className="w-[100px] align-top">
-        <Badge variant={svc.type === 'package' ? 'default' : 'secondary'}>
-          {svc.type === 'package' ? 'Package' : 'Service'}
-        </Badge>
-      </TableCell>
-
-      {/* Name with Package Services */}
-      <TableCell className="font-medium align-top">
-        <div>
-          <RenderHTML as="div" html={svc.name} className="font-semibold" />
-          {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0 && (
-            <ul className="mt-1 text-xs text-muted-foreground list-disc list-inside">
-              {svc.packageServices.map((pkgSvc, idx) => (
-                <li key={`${svc.id}-${pkgSvc.id}-${idx}`}><RenderHTML html={pkgSvc.name} /></li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </TableCell>
-
-      {/* Method */}
-      <TableCell className="text-muted-foreground align-top">
-        {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0
-          ? 'Various Methods'
-          : svc.method || '-'}
-      </TableCell>
-
-      {/* Price with Discount */}
-      <TableCell className="text-right align-top">
-        {svc.discount > 0 ? (
-          <div>
-            <span className="line-through text-muted-foreground text-xs">
-              {formatCurrency(svc.price)}
-            </span>
-            <br />
-            <span className="text-green-600 font-medium">
-              {formatCurrency(svc.price * (1 - svc.discount / 100))}
-            </span>
+      <div className="pl-4">
+        {/* Top row: Type badge + Name + Delete */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-start gap-2 min-w-0 flex-1">
+            <Badge
+              variant={svc.type === 'package' ? 'default' : 'outline'}
+              className={cn(
+                "shrink-0 text-[10px] font-medium uppercase tracking-wide",
+                svc.type === 'package'
+                  ? "bg-primary/10 text-primary border-primary/20 hover:bg-primary/15"
+                  : "bg-muted/50 text-muted-foreground"
+              )}
+            >
+              {svc.type === 'package' ? 'PKG' : 'SVC'}
+            </Badge>
+            <div className="min-w-0 flex-1">
+              <RenderHTML
+                as="div"
+                html={svc.name}
+                className="font-medium text-sm leading-tight line-clamp-2"
+              />
+              {svc.method && svc.type === 'service' && (
+                <p className="text-xs text-muted-foreground mt-0.5">{svc.method}</p>
+              )}
+            </div>
           </div>
-        ) : (
-          formatCurrency(svc.price)
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={() => removeServiceFromSample(sampleId, svc.id)}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        {/* Package services list (if package) */}
+        {svc.type === 'package' && svc.packageServices && svc.packageServices.length > 0 && (
+          <div className="mb-3 pl-1">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+              Includes {svc.packageServices.length} services
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {svc.packageServices.slice(0, 4).map((pkgSvc, idx) => (
+                <span
+                  key={`${svc.id}-${pkgSvc.id}-${idx}`}
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-muted/50 text-muted-foreground"
+                >
+                  <RenderHTML html={pkgSvc.name} className="truncate max-w-[120px]" />
+                </span>
+              ))}
+              {svc.packageServices.length > 4 && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-muted/50 text-muted-foreground">
+                  +{svc.packageServices.length - 4} more
+                </span>
+              )}
+            </div>
+          </div>
         )}
-      </TableCell>
 
-      {/* Discount Input */}
-      <TableCell className="text-center w-[100px] align-top">
-        <Input
-          type="number"
-          min={0}
-          max={100}
-          value={svc.discount}
-          onChange={(e) => updateServiceDiscount(sampleId, svc.id, parseFloat(e.target.value) || 0)}
-          className="h-8 w-16 text-center mx-auto"
-        />
-      </TableCell>
-
-      {/* Delete Button */}
-      <TableCell className="w-[50px] align-top">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-destructive hover:text-destructive"
-          onClick={() => removeServiceFromSample(sampleId, svc.id)}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      </TableCell>
-    </TableRow>
+        {/* Bottom row: Price + Discount */}
+        <div className="flex items-center justify-between gap-4 pt-2 border-t border-dashed">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-muted-foreground uppercase">Disc</span>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={svc.discount}
+                onChange={(e) => updateServiceDiscount(sampleId, svc.id, parseFloat(e.target.value) || 0)}
+                className="h-7 w-14 text-xs text-center px-1"
+              />
+              <span className="text-[10px] text-muted-foreground">%</span>
+            </div>
+          </div>
+          <div className="text-right">
+            {svc.discount > 0 ? (
+              <div className="flex items-baseline gap-2">
+                <span className="line-through text-xs text-muted-foreground/60">
+                  {formatCurrency(svc.price)}
+                </span>
+                <span className="font-semibold text-sm text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(finalPrice)}
+                </span>
+              </div>
+            ) : (
+              <span className="font-semibold text-sm">{formatCurrency(svc.price)}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1309,61 +1333,90 @@ export default function QuotationNewPage() {
                     onOpenChange={() => toggleSampleExpanded(sample.id)}
                   >
                     {/* Sample Header */}
-                    <div className="flex items-center justify-between p-4 bg-muted/20 hover:bg-muted/30 transition-colors">
-                      <div className="flex items-center gap-3 flex-1">
-                        <CollapsibleTrigger asChild>
-                          <button type="button" className="flex items-center gap-3 text-left">
-                            {sample.isExpanded ? (
-                              <ChevronDown className="h-4 w-4" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4" />
-                            )}
-                            <span className="font-medium">{sample.name}</span>
-                            <Badge variant="outline">Qty: {sample.quantity}</Badge>
-                          </button>
-                        </CollapsibleTrigger>
-                        <Button
+                    <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-muted/30 to-transparent hover:from-muted/40 transition-colors">
+                      {/* Expand Toggle */}
+                      <CollapsibleTrigger asChild>
+                        <button
                           type="button"
-                          variant="ghost"
-                          size="icon"
-                          className={cn(
-                            "h-6 w-6 -ml-1",
-                            sample.isDetailsExpanded ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                          className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-muted/50 transition-colors"
+                        >
+                          {sample.isExpanded ? (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
                           )}
-                          onClick={() => toggleSampleDetails(sample.id)}
-                          title="Edit Sample Details"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        {sample.priority !== 'normal' && (
-                          <Badge
-                            variant={sample.priority === 'very urgent' ? 'destructive' : 'outline'}
-                            className={sample.priority === 'urgent' ? 'text-orange-600 border-orange-600' : ''}
+                        </button>
+                      </CollapsibleTrigger>
+
+                      {/* Sample Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-base truncate">{sample.name}</h3>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                              "h-6 w-6 shrink-0",
+                              sample.isDetailsExpanded
+                                ? "text-primary bg-primary/10"
+                                : "text-muted-foreground hover:text-foreground"
+                            )}
+                            onClick={() => toggleSampleDetails(sample.id)}
+                            title="Edit Sample Details"
                           >
-                            {sample.priority}
-                          </Badge>
-                        )}
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-xs text-muted-foreground">
+                            Qty: <span className="font-medium text-foreground">{sample.quantity}</span>
+                          </span>
+                          <span className="text-muted-foreground/30">•</span>
+                          <span className="text-xs text-muted-foreground">
+                            {sample.services.length} {sample.services.length === 1 ? 'service' : 'services'}
+                          </span>
+                          {sample.priority !== 'normal' && (
+                            <>
+                              <span className="text-muted-foreground/30">•</span>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "text-[10px] font-medium uppercase h-5",
+                                  sample.priority === 'very urgent'
+                                    ? "bg-destructive/10 text-destructive border-destructive/30"
+                                    : "bg-orange-500/10 text-orange-600 border-orange-500/30"
+                                )}
+                              >
+                                {sample.priority}
+                              </Badge>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1">
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-primary"
+                          size="sm"
+                          className="h-8 px-2 text-muted-foreground hover:text-foreground"
                           onClick={() => copySample(sample.id)}
-                          title="Copy sample"
+                          title="Duplicate sample"
                         >
-                          <Copy className="h-4 w-4" />
+                          <Copy className="h-3.5 w-3.5 mr-1.5" />
+                          <span className="text-xs">Duplicate</span>
                         </Button>
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                           onClick={() => removeSample(sample.id)}
                           title="Delete sample"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
@@ -1403,16 +1456,11 @@ export default function QuotationNewPage() {
                       </Collapsible>
 
                       {/* Service/Package Search */}
-                      <div className="p-4 bg-muted/20 border-b">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                          Add Service / Package
-                        </p>
-                        <div className="grid grid-cols-2 gap-4">
-                          {/* Add Service */}
-                          <div className="space-y-2">
-                            <label className="text-sm font-semibold text-foreground uppercase tracking-wide">
-                              Add Service
-                            </label>
+                      <div className="px-4 py-3 bg-muted/10 border-b">
+                        <div className="flex items-center gap-3">
+                          <Plus className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <div className="flex-1 flex items-center gap-2">
+                            {/* Add Service */}
                             <Popover
                               open={openServicePopover === sample.id}
                               onOpenChange={(open) => {
@@ -1424,32 +1472,34 @@ export default function QuotationNewPage() {
                                 <Button
                                   type="button"
                                   variant="outline"
-                                  className="w-full justify-between h-10 bg-background font-normal"
+                                  size="sm"
+                                  className="h-8 gap-2 bg-background hover:bg-muted/50"
                                 >
-                                  <span className="text-muted-foreground">Search service...</span>
-                                  <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                  <Search className="h-3.5 w-3.5" />
+                                  <span>Add Service</span>
                                 </Button>
                               </PopoverTrigger>
-                              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                              <PopoverContent className="w-80 p-0" align="start">
                                 <Command shouldFilter={false}>
                                   <div className="flex items-center px-3 py-2 border-b">
                                     <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
                                     <input
                                       type="text"
-                                      placeholder="Type at least 2 characters..."
+                                      placeholder="Search services..."
                                       value={serviceSearchQueries[sample.id] || ''}
                                       onChange={(e) => setServiceQuery(sample.id, e.target.value)}
                                       className="flex h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                                      autoFocus
                                     />
                                   </div>
-                                  <CommandList className="max-h-48">
+                                  <CommandList className="max-h-64">
                                     {loadingServiceSearch ? (
                                       <div className="py-6 text-center text-sm text-muted-foreground">
                                         <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                                       </div>
                                     ) : (serviceSearchQueries[sample.id]?.length || 0) < 2 ? (
                                       <div className="py-6 text-center text-sm text-muted-foreground">
-                                        Type at least 2 characters to search
+                                        Type at least 2 characters
                                       </div>
                                     ) : serviceSearchResults.length === 0 ? (
                                       <CommandEmpty>No service found</CommandEmpty>
@@ -1460,11 +1510,14 @@ export default function QuotationNewPage() {
                                             key={service.id}
                                             value={String(service.id)}
                                             onSelect={() => addServiceToSample(sample.id, service)}
-                                            className="cursor-pointer"
+                                            className="cursor-pointer py-2.5"
                                           >
-                                            <div className="flex flex-col">
-                                              <span>{service.code} - {service.name}</span>
-                                              <span className="text-xs text-muted-foreground">
+                                            <div className="flex items-center justify-between w-full gap-3">
+                                              <div className="min-w-0 flex-1">
+                                                <p className="font-medium text-sm truncate">{service.name}</p>
+                                                <p className="text-xs text-muted-foreground">{service.code}</p>
+                                              </div>
+                                              <span className="text-sm font-medium text-primary shrink-0">
                                                 {formatCurrency(service.price)}
                                               </span>
                                             </div>
@@ -1476,13 +1529,8 @@ export default function QuotationNewPage() {
                                 </Command>
                               </PopoverContent>
                             </Popover>
-                          </div>
 
-                          {/* Add Package */}
-                          <div className="space-y-2">
-                            <label className="text-sm font-semibold text-foreground uppercase tracking-wide">
-                              Add Package
-                            </label>
+                            {/* Add Package */}
                             <Popover
                               open={openPackagePopover === sample.id}
                               onOpenChange={(open) => {
@@ -1494,32 +1542,34 @@ export default function QuotationNewPage() {
                                 <Button
                                   type="button"
                                   variant="outline"
-                                  className="w-full justify-between h-10 bg-background font-normal"
+                                  size="sm"
+                                  className="h-8 gap-2 bg-background hover:bg-muted/50"
                                 >
-                                  <span className="text-muted-foreground">Search package...</span>
-                                  <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                  <Search className="h-3.5 w-3.5" />
+                                  <span>Add Package</span>
                                 </Button>
                               </PopoverTrigger>
-                              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                              <PopoverContent className="w-80 p-0" align="start">
                                 <Command shouldFilter={false}>
                                   <div className="flex items-center px-3 py-2 border-b">
                                     <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
                                     <input
                                       type="text"
-                                      placeholder="Type at least 2 characters..."
+                                      placeholder="Search packages..."
                                       value={packageSearchQueries[sample.id] || ''}
                                       onChange={(e) => setPackageQuery(sample.id, e.target.value)}
                                       className="flex h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                                      autoFocus
                                     />
                                   </div>
-                                  <CommandList className="max-h-48">
+                                  <CommandList className="max-h-64">
                                     {loadingPackageSearch ? (
                                       <div className="py-6 text-center text-sm text-muted-foreground">
                                         <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                                       </div>
                                     ) : (packageSearchQueries[sample.id]?.length || 0) < 2 ? (
                                       <div className="py-6 text-center text-sm text-muted-foreground">
-                                        Type at least 2 characters to search
+                                        Type at least 2 characters
                                       </div>
                                     ) : packageSearchResults.length === 0 ? (
                                       <CommandEmpty>No package found</CommandEmpty>
@@ -1530,11 +1580,16 @@ export default function QuotationNewPage() {
                                             key={pkg.id}
                                             value={String(pkg.id)}
                                             onSelect={() => addPackageToSample(sample.id, pkg)}
-                                            className="cursor-pointer"
+                                            className="cursor-pointer py-2.5"
                                           >
-                                            <div className="flex flex-col">
-                                              <span>{pkg.code} - {pkg.name}</span>
-                                              <span className="text-xs text-muted-foreground">
+                                            <div className="flex items-center justify-between w-full gap-3">
+                                              <div className="min-w-0 flex-1">
+                                                <p className="font-medium text-sm truncate">{pkg.name}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                  {pkg.code} • {pkg.services?.length || 0} services
+                                                </p>
+                                              </div>
+                                              <span className="text-sm font-medium text-primary shrink-0">
                                                 {formatCurrency(pkg.price)}
                                               </span>
                                             </div>
@@ -1550,32 +1605,33 @@ export default function QuotationNewPage() {
                         </div>
                       </div>
 
-                      {/* Services Table */}
+                      {/* Services Grid */}
                       {sample.services.length > 0 ? (
-                        <DndContext
-                          sensors={sensors}
-                          collisionDetection={closestCenter}
-                          onDragEnd={handleDragEnd(sample.id)}
-                        >
-                          <SortableContext
-                            items={sample.services.map(s => s.id)}
-                            strategy={verticalListSortingStrategy}
+                        <div className="p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                              {sample.services.length} {sample.services.length === 1 ? 'Item' : 'Items'}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Subtotal: <span className="font-medium text-foreground">
+                                {formatCurrency(sample.services.reduce((sum, svc) =>
+                                  sum + (svc.price * (1 - svc.discount / 100) * svc.quantity), 0
+                                ) * sample.quantity)}
+                              </span>
+                            </p>
+                          </div>
+                          <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEnd(sample.id)}
                           >
-                            <Table>
-                              <TableHeader>
-                                <TableRow className="bg-muted/10">
-                                  <TableHead className="w-[40px]"></TableHead>
-                                  <TableHead className="w-[100px]">Type</TableHead>
-                                  <TableHead>Name</TableHead>
-                                  <TableHead>Method</TableHead>
-                                  <TableHead className="text-right w-[120px]">Price</TableHead>
-                                  <TableHead className="text-center w-[100px]">Disc (%)</TableHead>
-                                  <TableHead className="w-[50px]"></TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
+                            <SortableContext
+                              items={sample.services.map(s => s.id)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              <div className="grid gap-2">
                                 {sample.services.map((svc) => (
-                                  <SortableServiceRow
+                                  <SortableServiceCard
                                     key={svc.id}
                                     svc={svc}
                                     sampleId={sample.id}
@@ -1584,13 +1640,17 @@ export default function QuotationNewPage() {
                                     removeServiceFromSample={removeServiceFromSample}
                                   />
                                 ))}
-                              </TableBody>
-                            </Table>
-                          </SortableContext>
-                        </DndContext>
+                              </div>
+                            </SortableContext>
+                          </DndContext>
+                        </div>
                       ) : (
-                        <div className="text-center py-6 text-muted-foreground text-sm">
-                          No services added to this sample yet.
+                        <div className="text-center py-8 text-muted-foreground">
+                          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-muted/50 mb-3">
+                            <FlaskConical className="h-5 w-5 opacity-50" />
+                          </div>
+                          <p className="text-sm">No services added yet</p>
+                          <p className="text-xs mt-1">Search and add services or packages above</p>
                         </div>
                       )}
                     </CollapsibleContent>

@@ -27,7 +27,7 @@ export type SamplePriority = 'Normal' | 'Urgent' | 'Very Urgent' | 'Subcontracte
  * - coaRelease: COA release deadline
  */
 export const SAMPLE_DUE_DATE_OFFSETS: Record<SamplePriority, { dueDate: number; coaRelease: number }> = {
-  'Normal': { dueDate: 7, coaRelease: 9 },
+  'Normal': { dueDate: 6, coaRelease: 8 },
   'Urgent': { dueDate: 4, coaRelease: 6 },
   'Very Urgent': { dueDate: 2, coaRelease: 4 },
   'Subcontracted': { dueDate: 12, coaRelease: 14 },

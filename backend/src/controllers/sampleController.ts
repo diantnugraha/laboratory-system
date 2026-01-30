@@ -538,17 +538,45 @@ export const receiveSample = async (request: FastifyRequest, reply: FastifyReply
 
   const body = request.body as ReceiveSampleBody;
 
+  // Fetch sample to get order's number_holiday
+  const sampleResult = await sampleRepo.findById(id);
+  if (sampleResult.isFailure()) {
+    throw new NotFoundError(sampleResult.error || RESOURCE_ERRORS.SAMPLE_NOT_FOUND);
+  }
+
+  const sample = sampleResult.getValue();
+  if (!sample) {
+    throw new NotFoundError(RESOURCE_ERRORS.SAMPLE_NOT_FOUND);
+  }
+
+  // Get number_holiday from order (defaults to 0 if not set)
+  const orderHolidayCount = (sample.order as any)?.number_holiday ?? 0;
+
   // Parse received date
   const receivedDate = new Date(body.received_date);
   if (isNaN(receivedDate.getTime())) {
     throw new ValidationError('Invalid received date');
   }
 
+  // Extract time from received date for time-of-day adjustment
+  // Format: "HH:mm" - if received after 14:00, adds 1 day to due date
+  const receivedHours = receivedDate.getHours().toString().padStart(2, '0');
+  const receivedMinutes = receivedDate.getMinutes().toString().padStart(2, '0');
+  const receivedTime = `${receivedHours}:${receivedMinutes}`;
+
   // Calculate due dates based on priority
+  // Business rules:
+  // - Normal: 6 working days
+  // - Urgent: 4 working days
+  // - Very Urgent: 2 working days
+  // - Add 1 day if received after 14:00
+  // - Add order.number_holiday days
   const priority = body.priority || 'Normal';
   const dueDates = await dueDateService.calculate({
     startDate: receivedDate,
     priority: priority as SamplePriority,
+    receivedTime: receivedTime,
+    holidayCount: orderHolidayCount,
   });
 
   // Receive sample

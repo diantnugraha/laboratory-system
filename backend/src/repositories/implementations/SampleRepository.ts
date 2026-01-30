@@ -136,6 +136,7 @@ export class SampleRepository implements ISampleRepository {
               code: true,
               order_status: true,
               priority: true,
+              number_holiday: true,
               customer: {
                 select: {
                   id: true,

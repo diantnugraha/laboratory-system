@@ -12,6 +12,7 @@ export interface DueDateInput {
   startDate: Date;
   priority: SamplePriority | string;
   holidayCount?: number; // Optional override from order
+  receivedTime?: string; // Time in HH:mm format (e.g., "14:30") - adds 1 day if after 14:00
 }
 
 /**
@@ -39,9 +40,17 @@ export class DueDateCalculatorService {
   /**
    * Calculate due date and COA release due date based on priority
    * Excludes weekends (Saturday, Sunday) and holidays from Event table
+   *
+   * Business rules:
+   * - Normal: 6 working days
+   * - Urgent: 4 working days
+   * - Very Urgent: 2 working days
+   * - Subcontracted: 12 working days
+   * - Add 1 day if received after 14:00
+   * - Add number_holiday days from order
    */
   async calculate(input: DueDateInput): Promise<DueDateResult> {
-    const { startDate, priority, holidayCount } = input;
+    const { startDate, priority, holidayCount, receivedTime } = input;
     const offsets = getDueDateOffset(priority);
 
     // Get holidays for the calculation period
@@ -52,17 +61,30 @@ export class DueDateCalculatorService {
     const nextYearHolidays = await this.getHolidays(year + 1);
     const allHolidays = [...holidays, ...nextYearHolidays];
 
+    // Calculate time-of-day adjustment (add 1 day if after 14:00)
+    let timeAdjustment = 0;
+    if (receivedTime) {
+      const hour = this.parseHour(receivedTime);
+      if (hour >= 14) {
+        timeAdjustment = 1;
+      }
+    }
+
+    // Total days to add = priority offset + time adjustment
+    const totalDueDays = offsets.dueDate + timeAdjustment;
+    const totalCoaDays = offsets.coaRelease + timeAdjustment;
+
     // Calculate due date (analysis deadline)
     const dueDateResult = await this.addBusinessDays(
       startDate,
-      offsets.dueDate,
+      totalDueDays,
       allHolidays
     );
 
     // Calculate COA release due date
     const coaReleaseDueDateResult = await this.addBusinessDays(
       startDate,
-      offsets.coaRelease,
+      totalCoaDays,
       allHolidays
     );
 
@@ -91,12 +113,26 @@ export class DueDateCalculatorService {
     return {
       dueDate: finalDueDate,
       coaReleaseDueDate: finalCoaReleaseDueDate,
-      businessDaysAdded: offsets.coaRelease + (holidayCount || 0),
+      businessDaysAdded: totalCoaDays + (holidayCount || 0),
       holidaysSkipped:
         dueDateResult.holidaysSkipped +
         coaReleaseDueDateResult.holidaysSkipped +
         additionalHolidaysSkipped,
     };
+  }
+
+  /**
+   * Parse hour from time string (HH:mm or HH:mm:ss format)
+   */
+  private parseHour(timeStr: string): number {
+    const parts = timeStr.split(':');
+    if (parts.length >= 1) {
+      const hour = parseInt(parts[0], 10);
+      if (!isNaN(hour) && hour >= 0 && hour <= 23) {
+        return hour;
+      }
+    }
+    return 0; // Default to midnight if invalid
   }
 
   /**
