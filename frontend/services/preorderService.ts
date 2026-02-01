@@ -227,14 +227,14 @@ export const preorderService = {
     lab?: number;
     date_start?: string;
     date_end?: string;
-  }): Promise<PreOrdersResponse> => {
-    const response = await api.get<PreOrdersResponse>('/pre-orders', { params });
+  }, signal?: AbortSignal): Promise<PreOrdersResponse> => {
+    const response = await api.get<PreOrdersResponse>('/pre-orders', { params, signal });
     return response.data;
   },
 
   // Get preorder by ID with full details
-  getById: async (id: number | string): Promise<PreOrderResponse> => {
-    const response = await api.get<PreOrderResponse>(`/pre-orders/${id}`);
+  getById: async (id: number | string, signal?: AbortSignal): Promise<PreOrderResponse> => {
+    const response = await api.get<PreOrderResponse>(`/pre-orders/${id}`, { signal });
     return response.data;
   },
 

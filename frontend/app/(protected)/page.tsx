@@ -14,6 +14,7 @@ import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ThroughputChart } from '@/components/dashboard/ThroughputChart';
 import { RevenueChart } from '@/components/dashboard/RevenueChart';
 import { ActivityLog } from '@/components/dashboard/ActivityLog';
+import { WorksheetTasksWidget } from '@/components/dashboard/WorksheetTasksWidget';
 import { operationalStats, financialStats } from '@/data/dashboardData';
 import { useBreadcrumbStore } from '@/store/breadcrumbStore';
 import { 
@@ -121,6 +122,9 @@ export default function Dashboard() {
               description="Requires attention"
             />
           </div>
+
+          {/* Worksheet Tasks Widget */}
+          <WorksheetTasksWidget />
 
           {/* Charts Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">

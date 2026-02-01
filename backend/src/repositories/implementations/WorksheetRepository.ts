@@ -51,15 +51,15 @@ export class WorksheetRepository implements IWorksheetRepository {
         id: true,
         code: true,
         name: true,
-        status: true,
+        sample_status: true,
         due_date: true,
         received_date: true,
         order: {
           select: {
             id: true,
             code: true,
-            status: true,
-            priority: true,
+            order_status: true,
+            order_priority: true,
             customer: {
               select: {
                 id: true,
@@ -748,7 +748,7 @@ export class WorksheetRepository implements IWorksheetRepository {
           sample: {
             select: {
               order: {
-                select: { status: true },
+                select: { order_status: true },
               },
             },
           },
@@ -759,7 +759,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         return RepositoryResult.fail('Worksheet not found');
       }
 
-      const orderStatus = worksheet.sample.order.status;
+      const orderStatus = worksheet.sample.order.order_status;
       const statusInt = this.getOrderStatusInt(orderStatus);
       const canUpdate = statusInt >= 4; // Reviewed or higher
 
@@ -923,13 +923,13 @@ export class WorksheetRepository implements IWorksheetRepository {
 
         const currentSample = await tx.sample.findFirst({
           where: { id: worksheet.sample.id },
-          select: { status: true },
+          select: { sample_status: true },
         });
 
-        if (currentSample && currentSample.status !== sampleStatus) {
+        if (currentSample && currentSample.sample_status !== sampleStatus) {
           await tx.sample.update({
             where: { id: worksheet.sample.id },
-            data: { status: sampleStatus },
+            data: { sample_status: sampleStatus },
           });
           sampleStatusChanged = true;
         }
@@ -975,7 +975,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         if (allVerified) {
           await tx.sample.update({
             where: { id: worksheet.sample.id },
-            data: { status: SampleStatus.VERIFIED_BY_QC },
+            data: { sample_status: SampleStatus.VERIFIED_BY_QC },
           });
           sampleStatusChanged = true;
         }
@@ -1022,7 +1022,7 @@ export class WorksheetRepository implements IWorksheetRepository {
           await tx.sample.update({
             where: { id: worksheet.sample.id },
             data: {
-              status: SampleStatus.APPROVED_BY_TM,
+              sample_status: SampleStatus.APPROVED_BY_TM,
               analysis_finished_date: new Date(),
             },
           });
@@ -1031,16 +1031,15 @@ export class WorksheetRepository implements IWorksheetRepository {
           // Check if all samples in order are approved
           const orderSamples = await tx.sample.findMany({
             where: { order_id: worksheet.sample.order_id, trash: null },
-            select: { status: true },
+            select: { sample_status: true },
           });
 
-          const allSamplesApproved = orderSamples.every(s => s.status === SampleStatus.APPROVED_BY_TM);
+          const allSamplesApproved = orderSamples.every(s => s.sample_status === SampleStatus.APPROVED_BY_TM);
           if (allSamplesApproved) {
             await tx.order.update({
               where: { id: worksheet.sample.order_id },
               data: {
-                status: OrderStatus.COMPLETE,
-                complete_date: new Date(),
+                order_status: OrderStatus.COMPLETE,
               },
             });
             orderStatusChanged = true;
@@ -1097,13 +1096,13 @@ export class WorksheetRepository implements IWorksheetRepository {
         // Update sample status
         await tx.sample.update({
           where: { id: worksheet.sample.id },
-          data: { status: SampleStatus.NEED_TO_REVISED },
+          data: { sample_status: SampleStatus.NEED_TO_REVISED },
         });
 
         // Update order status
         await tx.order.update({
           where: { id: worksheet.sample.order_id },
-          data: { status: OrderStatus.WAITING_REVISION },
+          data: { order_status: OrderStatus.WAITING_REVISION },
         });
 
         return RepositoryResult.ok({
@@ -1144,7 +1143,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         // Update sample status
         await tx.sample.update({
           where: { id: worksheet.sample.id },
-          data: { status: SampleStatus.INTERNAL_RETEST },
+          data: { sample_status: SampleStatus.INTERNAL_RETEST },
         });
 
         return RepositoryResult.ok({
@@ -1196,7 +1195,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         // Update order status
         await tx.order.update({
           where: { id: worksheet.sample.order_id },
-          data: { status: OrderStatus.CUSTOMER_RETEST },
+          data: { order_status: OrderStatus.CUSTOMER_RETEST },
         });
 
         // Update sample status with extended due date
@@ -1206,7 +1205,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         await tx.sample.update({
           where: { id: worksheet.sample.id },
           data: {
-            status: SampleStatus.CUSTOMER_RETEST,
+            sample_status: SampleStatus.CUSTOMER_RETEST,
             coa_release_due_date: newDueDate,
           },
         });
@@ -1275,7 +1274,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         await tx.sample.update({
           where: { id: worksheet.sample.id },
           data: {
-            status: SampleStatus.NEED_TO_REVISED,
+            sample_status: SampleStatus.NEED_TO_REVISED,
             auto_publish_date: null,
           },
         });
@@ -1284,7 +1283,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         await tx.order.update({
           where: { id: worksheet.sample.order_id },
           data: {
-            status: OrderStatus.WAITING_REVISION,
+            order_status: OrderStatus.WAITING_REVISION,
             auto_publish_date: null,
           },
         });
@@ -1393,7 +1392,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         await tx.order.update({
           where: { id: worksheet.sample.order_id },
           data: {
-            status: OrderStatus.CUSTOMER_RETEST,
+            order_status: OrderStatus.CUSTOMER_RETEST,
             auto_publish_date: null,
           },
         });
@@ -1405,7 +1404,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         await tx.sample.update({
           where: { id: worksheet.sample.id },
           data: {
-            status: SampleStatus.CUSTOMER_RETEST,
+            sample_status: SampleStatus.CUSTOMER_RETEST,
             coa_release_due_date: newDueDate,
             auto_publish_date: null,
           },
@@ -1574,7 +1573,7 @@ export class WorksheetRepository implements IWorksheetRepository {
         const newStatus = await this.recalculateSampleStatusTx(tx, worksheet.sample.id);
         await tx.sample.update({
           where: { id: worksheet.sample.id },
-          data: { status: newStatus },
+          data: { sample_status: newStatus },
         });
 
         return RepositoryResult.ok({
@@ -1691,18 +1690,18 @@ export class WorksheetRepository implements IWorksheetRepository {
     try {
       const sample = await this.prisma.sample.findFirst({
         where: { id: sampleId },
-        select: { order: { select: { id: true, status: true } } },
+        select: { order: { select: { id: true, order_status: true } } },
       });
 
       if (!sample) {
         return RepositoryResult.fail('Sample not found');
       }
 
-      const statusInt = this.getOrderStatusInt(sample.order.status);
+      const statusInt = this.getOrderStatusInt(sample.order.order_status);
       if (statusInt < 5) { // Not yet Under Process
         await this.prisma.order.update({
           where: { id: sample.order.id },
-          data: { status: OrderStatus.UNDER_PROCESS },
+          data: { order_status: OrderStatus.UNDER_PROCESS },
         });
       }
 
@@ -2004,12 +2003,12 @@ export class WorksheetRepository implements IWorksheetRepository {
         sample: {
           code: ws.sample.code,
           name: ws.sample.name || '',
-          priority: ws.sample.order.priority || 'Normal',
+          priority: ws.sample.order.order_priority || 'Normal',
           dueDate: ws.sample.due_date,
           receivedDate: ws.sample.received_date,
           analysisFinishedDate: ws.sample.analysis_finished_date,
           coaReleaseDueDate: ws.sample.coa_release_due_date,
-          status: ws.sample.status || '',
+          status: ws.sample.sample_status || '',
         },
         service: {
           name: ws.service.name,
@@ -2137,12 +2136,12 @@ export class WorksheetRepository implements IWorksheetRepository {
         sample: {
           code: ws.sample.code,
           name: ws.sample.name || '',
-          priority: ws.sample.order.priority || 'Normal',
+          priority: ws.sample.order.order_priority || 'Normal',
           dueDate: ws.sample.due_date,
           receivedDate: ws.sample.received_date,
           analysisFinishedDate: ws.sample.analysis_finished_date,
           coaReleaseDueDate: ws.sample.coa_release_due_date,
-          status: ws.sample.status || '',
+          status: ws.sample.sample_status || '',
         },
         service: {
           name: ws.service.name,
@@ -2314,14 +2313,14 @@ export class WorksheetRepository implements IWorksheetRepository {
         id: ws.sample.id,
         code: ws.sample.code,
         name: ws.sample.name,
-        status: ws.sample.status,
+        status: ws.sample.sample_status,
         dueDate: ws.sample.due_date,
         receivedDate: ws.sample.received_date,
         order: {
           id: ws.sample.order.id,
           code: ws.sample.order.code,
-          status: ws.sample.order.status,
-          priority: ws.sample.order.priority,
+          status: ws.sample.order.order_status,
+          priority: ws.sample.order.order_priority,
           customer: ws.sample.order.customer,
         },
       },

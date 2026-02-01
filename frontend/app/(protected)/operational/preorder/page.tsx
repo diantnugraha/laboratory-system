@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { Plus, Search } from 'lucide-react';
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { preorderService, PreOrderListItem } from "@/services/preorderService";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RenderHTML } from "@/components/shared/RenderHTML";
@@ -14,6 +13,8 @@ import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/constants/priority";
 
 const formatDate = (dateString: string | null) => {
   if (!dateString) return '-';
@@ -26,20 +27,6 @@ const formatDate = (dateString: string | null) => {
     });
   } catch {
     return dateString;
-  }
-};
-
-const getPriorityBadge = (priority: string | null) => {
-  switch (priority?.toLowerCase()) {
-    case "urgent":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent</Badge>;
-    case "very-urgent":
-      return <Badge variant="destructive">Very Urgent</Badge>;
-    case "special-request":
-      return <Badge variant="outline" className="text-purple-600 border-purple-600">Special</Badge>;
-    case "normal":
-    default:
-      return <Badge variant="outline" className="text-green-600 border-green-600">Normal</Badge>;
   }
 };
 
@@ -100,7 +87,13 @@ const columns: Column<PreOrderListItem>[] = [
   {
     key: "priority",
     label: "Priority",
-    render: (item) => getPriorityBadge(item.priority),
+    render: (item) => (
+      <StatusBadge
+        status={item.priority?.toLowerCase() || 'normal'}
+        colorMap={PRIORITY_COLORS}
+        labelMap={PRIORITY_LABELS}
+      />
+    ),
   },
 ];
 

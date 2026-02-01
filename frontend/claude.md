@@ -23,662 +23,290 @@ frontend/
 │   │   └── master/          # Master data pages
 │   │   └── transactions/    # Transaction pages
 │   ├── login/               # Public pages
-│   ├── setup-password/
-│   ├── forgot-password/
 │   ├── layout.tsx           # Root layout
 │   └── globals.css          # Global styles
 ├── components/
-│   ├── ui/                  # shadcn/ui components (50+)
+│   ├── ui/                  # shadcn/ui components
 │   ├── forms/               # Form dialog components
 │   ├── shared/              # Reusable shared components
 │   ├── layout/              # Layout components (AppLayout, Sidebar)
 │   └── dashboard/           # Dashboard-specific components
 ├── contexts/                # React Context providers
 ├── hooks/                   # Custom React hooks
-├── lib/                     # Utilities and helpers
+├── lib/
+│   ├── constants/           # Constants and enums (status, roles, config)
+│   ├── utils/               # Utility functions (date, format, error)
 │   ├── schemas.ts           # Zod validation schemas
-│   ├── utils.ts             # Utility functions (cn, formatters)
+│   ├── utils.ts             # Core utility (cn)
 │   └── cookieStorage.ts     # Cookie helper for Zustand
 ├── services/                # API service wrappers
 ├── store/                   # Zustand stores
-├── data/                    # Constants and static data
+├── types/                   # TypeScript type definitions
 └── public/                  # Static assets
 ```
 
 ---
 
+## Type Safety Rules
+
+1. **No magic strings** — Status, roles, types harus didefinisikan di `lib/constants/` menggunakan `as const` + inferred type. Jangan pernah tulis string literal langsung di component.
+
+```typescript
+// lib/constants/sampleStatus.ts
+export const SAMPLE_STATUS = {
+  RECEIVED: 'received', IN_PROGRESS: 'in_progress',
+  COMPLETED: 'completed', ON_HOLD: 'on_hold',
+} as const;
+export type SampleStatus = typeof SAMPLE_STATUS[keyof typeof SAMPLE_STATUS];
+export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = { ... };
+```
+
+2. **No `any`** — Gunakan `unknown` untuk error catch, dan `getErrorMessage()` dari `lib/utils/errorHandler.ts` untuk extract message.
+
+3. **All props must be typed** — Setiap component harus punya interface untuk props-nya. Tidak boleh implicit `any`.
+
+4. **API response harus typed** — Setiap service function harus return `Promise<ApiResponse<T>>` dengan type yang eksplisit.
+
+---
+
+## React Hooks Rules
+
+1. **useEffect — Hindari stale closure.** Jangan masukkan mutable state (e.g. `pagination.limit`) ke dependency array. Extract jadi constant di luar component.
+
+```typescript
+const PAGE_LIMIT = 20; // ✅ Di luar component
+useEffect(() => {
+  fetchData(1, search, PAGE_LIMIT);
+}, [search, fetchData]); // ✅ Tanpa pagination.limit
+```
+
+2. **useCallback — Stable fetch functions.** Wrap fetch functions dengan `useCallback`. Semua value yang berubah harus masuk sebagai parameter, bukan dependency.
+
+```typescript
+const fetchSamples = useCallback(async (page: number, search?: string) => {
+  setLoading(true);
+  const res = await sampleService.getAll({ page, search });
+  setSamples(res.data);
+  setPagination(res.pagination);
+  setLoading(false);
+}, []); // ✅ Empty deps — semua via parameter
+```
+
+3. **No redundant state updates.** Jika API response sudah mengandung state yang dibutuhkan (e.g. pagination), jangan set state secara manual sebelum fetch. Cukup panggil fetch — pagination di-update dari response.
+
+4. **useEffect dependency checklist:**
+   - Value yang trigger re-fetch → tambahkan
+   - Constant / stable reference → jangan tambahkan, extract keluar
+   - Function → wrap dengan `useCallback` dulu
+
+5. **AbortController — Cancel fetch saat unmount.** Setiap fetch di useEffect harus memakai AbortController agar tidak update state pada unmounted component.
+
+```typescript
+useEffect(() => {
+  const controller = new AbortController();
+  fetchSamples(1, search, { signal: controller.signal });
+  return () => controller.abort();
+}, [search, fetchSamples]);
+```
+
+Service layer harus forward signal ke axios: `api.get('/samples', { signal })`.
+
+---
+
+## Helper & Utility Organization
+
+**Rule: Jika helper dipakai di lebih dari satu file, extract ke `lib/`.**
+
+```
+lib/
+├── constants/           # SAMPLE_STATUS, ORDER_STATUS, ROLES, dll
+├── utils/
+│   ├── dateUtils.ts     # formatDateID, isOverdue, isValidDateRange
+│   ├── errorHandler.ts  # getErrorMessage
+│   └── formatters.ts    # formatCurrency, formatNumber
+```
+
+- **Date formatting, overdue check** → `lib/utils/dateUtils.ts`
+- **Status badge rendering** → `components/shared/StatusBadge.tsx`
+- **Error message extraction** → `lib/utils/errorHandler.ts`
+- **Jangan definisikan helper di dalam file page** jika bisa dipakai ulang
+
+---
+
+## Input Validation Rules
+
+1. **Date range** — Selalu validasi `fromDate <= toDate` sebelum set state. Tampilkan toast error jika invalid.
+2. **Search minimum length** — Jangan kirim search query ke API jika kurang dari 2 karakter.
+3. **Form validation** — Selalu gunakan Zod schema via `zodResolver`. Jangan validasi manual di `onSubmit`.
+4. **Reusable field schemas** — Gunakan `requiredString(fieldName)`, `emailField`, `phoneField` dari `lib/schemas.ts`.
+
+---
+
+## Loading, Empty & Error States
+
+| Scenario | Pattern |
+|----------|---------|
+| Initial load (no data yet) | Skeleton component (`<TableSkeleton />`) |
+| Refetch / filter change | Subtle overlay atau opacity + spinner |
+| Form submission | Disable button + text (`Saving...`) |
+| Empty data (fetch success, 0 results) | Empty state illustration + message |
+| Fetch error | Error state dengan retry button |
+
+**Rules:**
+- Setiap list page **wajib** handle 3 state: loading, empty, dan error
+- Jangan tampilkan tabel kosong tanpa penjelasan — selalu ada empty state message
+- Error state harus ada tombol "Try Again" yang memanggil ulang fetch
+
+---
+
+## Delete Confirmation
+
+**Rule: Setiap destructive action (delete, bulk delete) wajib menggunakan `AlertDialog` dari shadcn/ui.** Jangan pernah langsung panggil API delete dari button onClick tanpa konfirmasi.
+
+- Tampilkan nama item yang akan dihapus di dialog
+- Button konfirmasi harus `variant="destructive"`
+- Disable button saat proses delete berlangsung
+
+---
+
+## Import Order Convention
+
+Urutkan import secara konsisten di setiap file, pisahkan setiap grup dengan satu baris kosong:
+
+```typescript
+// 1. React / Next.js
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+// 2. Third-party libraries
+import { format } from 'date-fns';
+// 3. Internal: components
+import { DataTable } from '@/components/shared/DataTable';
+import { Button } from '@/components/ui/button';
+// 4. Internal: services, stores, hooks
+import sampleService from '@/services/sampleService';
+import { useDebounce } from '@/hooks/useDebounce';
+// 5. Internal: utils, constants, types
+import { SAMPLE_STATUS } from '@/lib/constants/sampleStatus';
+import type { SampleListItem } from '@/types/sample';
+```
+
+---
+
+## URL State Sync for Filters
+
+**Rule: List page dengan filter (search, status, date range, pagination) harus sync state ke URL search params.** Agar refresh tidak kehilangan filter, URL bisa di-share, dan browser back/forward berfungsi.
+
+```typescript
+const searchParams = useSearchParams();
+const initialSearch = searchParams.get('search') || '';
+const initialPage = Number(searchParams.get('page')) || 1;
+
+// Update URL saat filter berubah
+const updateURL = (params: Record<string, string>) => {
+  const newParams = new URLSearchParams(searchParams);
+  Object.entries(params).forEach(([k, v]) =>
+    v ? newParams.set(k, v) : newParams.delete(k)
+  );
+  router.replace(`?${newParams.toString()}`);
+};
+```
+
+---
+
+## Performance Rules
+
+1. **Table columns** — Definisikan di luar component (module level). Di dalam function body akan re-create setiap render.
+2. **`React.memo`** — Hanya untuk component yang menerima props stabil tapi parent sering re-render (e.g. table row, list item). Jangan pakai di semua component.
+3. **`useMemo`** — Hanya untuk komputasi berat (filtering/sorting array besar). Jangan pakai untuk object/array literal sederhana.
+4. **Image** — Selalu gunakan `next/image` dengan width/height eksplisit. Jangan pakai `<img>` tag.
+5. **Lazy load** — Gunakan `dynamic(() => import(...))` untuk component berat yang tidak visible di initial viewport (chart, dialog content besar).
+
+---
+
 ## Component Patterns
 
-### 1. Page Component Pattern
+### Page Component (List with Filters)
 
-```typescript
-// app/(protected)/master/customers/page.tsx
-'use client'
+**Struktur wajib:**
+1. State declarations (data, loading, filters, pagination)
+2. `useDebounce` untuk search
+3. `useCallback` fetch function dengan empty deps
+4. Single `useEffect` yang listen semua filter changes + AbortController
+5. Handler functions (page change, filter change, clear)
+6. Render: header → filters → DataTable (handle loading/empty/error)
 
-import { useState, useEffect } from 'react'
-import { useToast } from '@/hooks/use-toast'
-import { DataTable } from '@/components/shared/DataTable'
-import { CustomerFormDialog } from '@/components/forms/CustomerFormDialog'
-import { getCustomers, deleteCustomer } from '@/services/customerService'
-import { Customer } from '@/types/customer'
-import { columns } from './columns'
+**Rules:**
+- `'use client'` di baris pertama
+- Columns & PAGE_LIMIT didefinisikan di luar component
+- Filter state sync ke URL search params
+- Loading, empty, error state tertangani
 
-export default function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  const { toast } = useToast()
+### Form Dialog
 
-  const fetchCustomers = async () => {
-    try {
-      setIsLoading(true)
-      const response = await getCustomers()
-      setCustomers(response.data)
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to fetch customers'
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
+**Struktur wajib:**
+1. Props interface: `open`, `onOpenChange`, `entity | null`, `onSuccess`
+2. `useForm` dengan `zodResolver`
+3. `useEffect` untuk `form.reset()` saat dialog dibuka
+4. `onSubmit` handler dengan try/catch
+5. Render: Dialog → Form → Fields → Action buttons
 
-  useEffect(() => {
-    fetchCustomers()
-  }, [])
+**Rules:**
+- Selalu reset form saat `open` berubah
+- Disable submit button saat `isSubmitting`
+- Error handling via `getErrorMessage()`, bukan `error: any`
+- `isEdit` derived dari `!!entity`
 
-  const handleEdit = (customer: Customer) => {
-    setSelectedCustomer(customer)
-    setIsDialogOpen(true)
-  }
+### Protected Layout
 
-  const handleDelete = async (id: number) => {
-    try {
-      await deleteCustomer(id)
-      toast({ title: 'Success', description: 'Customer deleted' })
-      fetchCustomers()
-    } catch (error) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Delete failed' })
-    }
-  }
-
-  const handleSuccess = () => {
-    setIsDialogOpen(false)
-    setSelectedCustomer(null)
-    fetchCustomers()
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Customers</h1>
-        <Button onClick={() => setIsDialogOpen(true)}>Add Customer</Button>
-      </div>
-
-      <DataTable
-        columns={columns}
-        data={customers}
-        isLoading={isLoading}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-      />
-
-      <CustomerFormDialog
-        open={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
-        customer={selectedCustomer}
-        onSuccess={handleSuccess}
-      />
-    </div>
-  )
-}
-```
-
-### 2. Form Dialog Pattern
-
-```typescript
-// components/forms/CustomerFormDialog.tsx
-'use client'
-
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect } from 'react'
-import { useToast } from '@/hooks/use-toast'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { customerSchema, CustomerFormData } from '@/lib/schemas'
-import { createCustomer, updateCustomer } from '@/services/customerService'
-import { Customer } from '@/types/customer'
-
-interface CustomerFormDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  customer: Customer | null
-  onSuccess: () => void
-}
-
-export function CustomerFormDialog({
-  open,
-  onOpenChange,
-  customer,
-  onSuccess
-}: CustomerFormDialogProps) {
-  const { toast } = useToast()
-  const isEdit = !!customer
-
-  const form = useForm<CustomerFormData>({
-    resolver: zodResolver(customerSchema),
-    defaultValues: {
-      code: '',
-      name: '',
-      industry: '',
-      status: 'Active'
-    }
-  })
-
-  // Reset form when dialog opens/closes or customer changes
-  useEffect(() => {
-    if (open) {
-      if (customer) {
-        form.reset({
-          code: customer.code,
-          name: customer.name,
-          industry: customer.industry || '',
-          status: customer.status || 'Active'
-        })
-      } else {
-        form.reset({
-          code: '',
-          name: '',
-          industry: '',
-          status: 'Active'
-        })
-      }
-    }
-  }, [open, customer, form])
-
-  const onSubmit = async (data: CustomerFormData) => {
-    try {
-      if (isEdit) {
-        await updateCustomer(customer.id, data)
-        toast({ title: 'Success', description: 'Customer updated' })
-      } else {
-        await createCustomer(data)
-        toast({ title: 'Success', description: 'Customer created' })
-      }
-      onSuccess()
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error.response?.data?.message || 'Operation failed'
-      })
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {isEdit ? 'Edit Customer' : 'Add Customer'}
-          </DialogTitle>
-        </DialogHeader>
-
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="code"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Code</FormLabel>
-                  <FormControl>
-                    <Input placeholder="CUST001" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Customer name" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* More fields... */}
-
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-```
-
-### 3. Protected Layout Pattern
-
-```typescript
-// app/(protected)/layout.tsx
-'use client'
-
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuth } from '@/contexts/AuthContext'
-import { AppLayout } from '@/components/layout/AppLayout'
-
-export default function ProtectedLayout({
-  children
-}: {
-  children: React.ReactNode
-}) {
-  const { isAuthenticated, isLoading } = useAuth()
-  const router = useRouter()
-
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push('/login')
-    }
-  }, [isAuthenticated, isLoading, router])
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    )
-  }
-
-  if (!isAuthenticated) {
-    return null
-  }
-
-  return <AppLayout>{children}</AppLayout>
-}
-```
+**Rules:**
+- Check `isAuthenticated` via `useAuth()` context
+- Redirect ke `/login` jika unauthenticated
+- Tampilkan loading spinner saat auth state loading
+- Return `null` jika not authenticated (prevent flash)
 
 ---
 
 ## State Management
 
-### Zustand Store Pattern
+**Zustand** — Untuk global state (auth, preferences). Satu store per domain, gunakan `persist` middleware untuk auth. Jangan simpan server data (list items) di Zustand — gunakan local state.
 
-```typescript
-// store/authStore.ts
-import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
-import { cookieStorage } from '@/lib/cookieStorage'
-
-interface User {
-  id: number
-  email: string
-  username: string
-  role: string
-}
-
-interface AuthState {
-  user: User | null
-  token: string | null
-  isAuthenticated: boolean
-  login: (user: User, token: string) => void
-  logout: () => void
-  setAuth: (user: User | null, token: string | null) => void
-}
-
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      user: null,
-      token: null,
-      isAuthenticated: false,
-
-      login: (user, token) => set({
-        user,
-        token,
-        isAuthenticated: true
-      }),
-
-      logout: () => set({
-        user: null,
-        token: null,
-        isAuthenticated: false
-      }),
-
-      setAuth: (user, token) => set({
-        user,
-        token,
-        isAuthenticated: !!user && !!token
-      })
-    }),
-    {
-      name: 'auth-storage',
-      storage: createJSONStorage(() => cookieStorage),
-    }
-  )
-)
-```
-
-### Context Pattern (for providers)
-
-```typescript
-// contexts/AuthContext.tsx
-'use client'
-
-import { createContext, useContext, useEffect, useState } from 'react'
-import { useAuthStore } from '@/store/authStore'
-import Cookies from 'js-cookie'
-
-interface AuthContextType {
-  user: User | null
-  isAuthenticated: boolean
-  isLoading: boolean
-  login: (email: string, password: string) => Promise<void>
-  logout: () => void
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isLoading, setIsLoading] = useState(true)
-  const { user, isAuthenticated, login: storeLogin, logout: storeLogout } = useAuthStore()
-
-  useEffect(() => {
-    // Check for existing auth on mount
-    const token = Cookies.get('auth-token')
-    if (!token) {
-      storeLogout()
-    }
-    setIsLoading(false)
-  }, [])
-
-  const login = async (email: string, password: string) => {
-    const response = await authService.login(email, password)
-    Cookies.set('auth-token', response.data.token, { expires: 7 })
-    storeLogin(response.data.user, response.data.token)
-  }
-
-  const logout = () => {
-    Cookies.remove('auth-token')
-    Cookies.remove('auth-storage')
-    storeLogout()
-  }
-
-  return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  )
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider')
-  }
-  return context
-}
-```
+**Context** — Untuk provider yang butuh side effects (auth flow). Selalu buat custom hook (`useAuth()`) dengan error jika di luar provider.
 
 ---
 
 ## API Service Pattern
 
-```typescript
-// services/api.ts
-import axios from 'axios'
-import Cookies from 'js-cookie'
-
-const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || '/api',
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-})
-
-// Request interceptor - add auth token
-api.interceptors.request.use((config) => {
-  const token = Cookies.get('auth-token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// Response interceptor - handle 401
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      Cookies.remove('auth-token')
-      Cookies.remove('auth-storage')
-      window.location.href = '/login'
-    }
-    return Promise.reject(error)
-  }
-)
-
-export default api
-
-// services/customerService.ts
-import api from './api'
-import { Customer, CreateCustomerDTO, UpdateCustomerDTO } from '@/types/customer'
-
-interface ApiResponse<T> {
-  success: boolean
-  data: T
-  message?: string
-}
-
-export async function getCustomers(): Promise<ApiResponse<Customer[]>> {
-  const response = await api.get('/customers')
-  return response.data
-}
-
-export async function getCustomerById(id: number): Promise<ApiResponse<Customer>> {
-  const response = await api.get(`/customers/${id}`)
-  return response.data
-}
-
-export async function createCustomer(data: CreateCustomerDTO): Promise<ApiResponse<Customer>> {
-  const response = await api.post('/customers', data)
-  return response.data
-}
-
-export async function updateCustomer(id: number, data: UpdateCustomerDTO): Promise<ApiResponse<Customer>> {
-  const response = await api.put(`/customers/${id}`, data)
-  return response.data
-}
-
-export async function deleteCustomer(id: number): Promise<ApiResponse<boolean>> {
-  const response = await api.delete(`/customers/${id}`)
-  return response.data
-}
-```
+- Base axios instance di `services/api.ts` dengan interceptors (auth token, 401 redirect)
+- Satu file service per domain: `customerService.ts`, `sampleService.ts`
+- Setiap function return `Promise<ApiResponse<T>>`
+- Gunakan typed DTOs: `CreateCustomerDTO`, `UpdateCustomerDTO`
+- Timeout: 30 detik
+- Jangan hardcode URL — gunakan `NEXT_PUBLIC_API_URL`
+- Forward `AbortSignal` ke axios saat diperlukan
 
 ---
 
-## Form Validation with Zod
+## Form Validation (Zod)
 
-```typescript
-// lib/schemas.ts
-import { z } from 'zod'
-
-// Customer schema
-export const customerSchema = z.object({
-  code: z.string().min(1, 'Code is required'),
-  name: z.string().min(1, 'Name is required'),
-  industry: z.string().optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().email('Invalid email').optional().or(z.literal('')),
-  status: z.enum(['Active', 'Inactive']).default('Active')
-})
-
-export type CustomerFormData = z.infer<typeof customerSchema>
-
-// Order schema
-export const orderSchema = z.object({
-  customer_id: z.number().min(1, 'Customer is required'),
-  contact_id: z.number().optional(),
-  order_date: z.date(),
-  due_date: z.date().optional(),
-  notes: z.string().optional(),
-  services: z.array(z.object({
-    service_id: z.number(),
-    method_id: z.number(),
-    quantity: z.number().min(1),
-    price: z.number().min(0)
-  })).min(1, 'At least one service is required')
-})
-
-export type OrderFormData = z.infer<typeof orderSchema>
-
-// Reusable field schemas
-export const emailField = z.string().email('Invalid email format')
-export const phoneField = z.string().regex(/^[0-9+\-\s()]+$/, 'Invalid phone format').optional()
-export const requiredString = (fieldName: string) => z.string().min(1, `${fieldName} is required`)
-```
+- Semua schema di `lib/schemas.ts`
+- Export `type FormData = z.infer<typeof schema>` untuk setiap schema
+- Gunakan reusable fields: `requiredString(fieldName)`, `emailField`, `phoneField`
+- Array fields gunakan `.min(1, 'message')` untuk required
+- Optional email: `.email().optional().or(z.literal(''))`
 
 ---
 
-## Styling with Tailwind CSS
+## Styling (Tailwind CSS)
 
-### Design Tokens (CSS Variables)
-
-```css
-/* app/globals.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    /* ... dark mode values */
-  }
-}
-```
-
-### Component Styling
-
-```typescript
-// Use cn() utility for conditional classes
-import { cn } from '@/lib/utils'
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span className={cn(
-      'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-      status === 'Active' && 'bg-green-100 text-green-800',
-      status === 'Inactive' && 'bg-gray-100 text-gray-800',
-      status === 'Pending' && 'bg-yellow-100 text-yellow-800'
-    )}>
-      {status}
-    </span>
-  )
-}
-```
-
-### Common Tailwind Patterns
-
-```typescript
-// Card layout
-<div className="bg-card rounded-lg border p-6 shadow-sm">
-
-// Flex layouts
-<div className="flex items-center justify-between gap-4">
-<div className="flex flex-col gap-2">
-
-// Grid layouts
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-
-// Form spacing
-<form className="space-y-4">
-
-// Button group
-<div className="flex justify-end gap-2">
-
-// Page header
-<div className="flex items-center justify-between mb-6">
-  <h1 className="text-2xl font-bold">Title</h1>
-  <Button>Action</Button>
-</div>
-
-// Loading state
-<div className="flex items-center justify-center min-h-[200px]">
-  <Loader2 className="h-6 w-6 animate-spin" />
-</div>
-```
+- Gunakan CSS variables dari `globals.css` untuk warna (`--primary`, `--muted`, dll)
+- Conditional classes via `cn()` dari `lib/utils`
+- Status styles → object map `Record<Status, string>`, bukan inline ternary chain
+- Responsive: mobile-first (`flex-col` → `lg:flex-row`)
+- Spacing: gunakan `space-y-*` dan `gap-*`, bukan manual margin
 
 ---
 
 ## shadcn/ui Components
-
-### Available Components
 
 Located in `components/ui/`:
 
@@ -690,92 +318,18 @@ Located in `components/ui/`:
 - **Overlay**: `dialog`, `popover`, `tooltip`, `hover-card`
 - **Inputs**: `date-picker`, `combobox`, `multi-select`
 
-### Usage Example
-
-```typescript
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-
-// Button variants
-<Button variant="default">Primary</Button>
-<Button variant="secondary">Secondary</Button>
-<Button variant="outline">Outline</Button>
-<Button variant="ghost">Ghost</Button>
-<Button variant="destructive">Delete</Button>
-<Button variant="link">Link</Button>
-
-// Sizes
-<Button size="sm">Small</Button>
-<Button size="default">Default</Button>
-<Button size="lg">Large</Button>
-<Button size="icon"><Icon /></Button>
-```
+**Button variants**: `default`, `secondary`, `outline`, `ghost`, `destructive`, `link`
+**Button sizes**: `sm`, `default`, `lg`, `icon`
 
 ---
 
-## Custom Hooks
+## Error Handling
 
-```typescript
-// hooks/useDebounce.ts
-import { useState, useEffect } from 'react'
-
-export function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value)
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedValue(value), delay)
-    return () => clearTimeout(timer)
-  }, [value, delay])
-
-  return debouncedValue
-}
-
-// Usage
-const [search, setSearch] = useState('')
-const debouncedSearch = useDebounce(search, 300)
-
-useEffect(() => {
-  if (debouncedSearch) {
-    // Fetch filtered data
-  }
-}, [debouncedSearch])
-```
-
-```typescript
-// hooks/use-mobile.tsx
-import { useEffect, useState } from 'react'
-
-const MOBILE_BREAKPOINT = 768
-
-export function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false)
-
-  useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const onChange = () => setIsMobile(mql.matches)
-    mql.addEventListener('change', onChange)
-    setIsMobile(mql.matches)
-    return () => mql.removeEventListener('change', onChange)
-  }, [])
-
-  return isMobile
-}
-```
+- Centralized di `lib/utils/errorHandler.ts` — fungsi `getErrorMessage(error: unknown): string`
+- Catch block selalu `catch (error)` tanpa type annotation (infers `unknown`)
+- Toast error via `getErrorMessage()`, bukan manual chaining
+- Setiap app route harus punya `error.tsx` sebagai error boundary
+- Toast success setelah mutasi berhasil (create, update, delete)
 
 ---
 
@@ -789,113 +343,49 @@ export function useIsMobile() {
 | UI Components | `kebab-case.tsx` | `button.tsx`, `data-table.tsx` |
 | Services | `camelCaseService.ts` | `customerService.ts` |
 | Stores | `camelCaseStore.ts` | `authStore.ts` |
-| Hooks | `use-kebab-case.ts` | `use-toast.ts`, `use-mobile.tsx` |
-| Schemas | `schemas.ts` | `lib/schemas.ts` |
+| Hooks | `use-kebab-case.ts` | `use-toast.ts` |
+| Constants | `camelCase.ts` | `sampleStatus.ts` |
+| Utilities | `camelCase.ts` | `dateUtils.ts` |
 | Types | `camelCase.ts` | `customer.ts` |
-| Utilities | `camelCase.ts` | `utils.ts`, `cookieStorage.ts` |
-
----
-
-## Toast Notifications
-
-```typescript
-import { useToast } from '@/hooks/use-toast'
-
-function MyComponent() {
-  const { toast } = useToast()
-
-  // Success
-  toast({
-    title: 'Success',
-    description: 'Operation completed successfully'
-  })
-
-  // Error
-  toast({
-    variant: 'destructive',
-    title: 'Error',
-    description: 'Something went wrong'
-  })
-
-  // With action
-  toast({
-    title: 'Item deleted',
-    description: 'The item has been deleted',
-    action: (
-      <ToastAction altText="Undo" onClick={handleUndo}>
-        Undo
-      </ToastAction>
-    )
-  })
-}
-```
-
----
-
-## Error Handling
-
-```typescript
-// In components
-try {
-  await someAsyncOperation()
-  toast({ title: 'Success', description: 'Operation completed' })
-} catch (error: any) {
-  // Handle API errors
-  const message = error.response?.data?.message
-    || error.message
-    || 'An unexpected error occurred'
-
-  toast({
-    variant: 'destructive',
-    title: 'Error',
-    description: message
-  })
-}
-
-// Error boundary (for unhandled errors)
-// app/error.tsx
-'use client'
-
-export default function Error({
-  error,
-  reset
-}: {
-  error: Error
-  reset: () => void
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen">
-      <h2 className="text-xl font-bold mb-4">Something went wrong!</h2>
-      <Button onClick={reset}>Try again</Button>
-    </div>
-  )
-}
-```
 
 ---
 
 ## Common Mistakes to Avoid
 
-1. **Don't forget 'use client'** - Required for components with hooks/state
-2. **Don't skip form.reset()** - Always reset form when dialog opens
-3. **Don't hardcode API URLs** - Use `NEXT_PUBLIC_API_URL` env variable
-4. **Don't ignore loading states** - Show spinner/skeleton during fetch
-5. **Don't skip error handling** - Always catch and display errors
-6. **Don't mutate state directly** - Use setter functions
-7. **Don't forget dependencies** - Include all deps in useEffect array
-8. **Don't import from wrong paths** - Use `@/` alias consistently
+1. Lupa `'use client'` — Required untuk components dengan hooks/state
+2. Skip `form.reset()` — Selalu reset saat dialog dibuka
+3. Hardcode API URLs — Gunakan `NEXT_PUBLIC_API_URL`
+4. Ignore loading/empty/error states — Handle ketiganya di setiap list page
+5. Skip error handling — Selalu catch dan gunakan `getErrorMessage()`
+6. Mutate state directly — Gunakan setter functions
+7. Missing useEffect deps — Semua deps masuk array, function wrap `useCallback`
+8. Wrong import paths — Selalu pakai `@/` alias
+9. Magic strings — Definisikan di `lib/constants/` dengan `as const`
+10. `error: any` — Gunakan `error: unknown`
+11. Columns inside component — Definisikan di module level
+12. Skip date range validation — Validasi `fromDate <= toDate`
+13. Reusable helpers in page files — Extract ke `lib/utils/`
+14. Redundant state updates — API response = single source of truth
+15. Delete tanpa konfirmasi — Selalu pakai `AlertDialog`
+16. Lupa AbortController — Cancel fetch saat component unmount
+17. Filter hilang saat refresh — Sync ke URL search params
 
 ---
 
 ## Testing Checklist
 
-Before committing:
-
 - [ ] Component renders without errors
 - [ ] Form validation works correctly
-- [ ] API calls handle loading/error states
+- [ ] Loading, empty, dan error state tertangani
 - [ ] Protected routes redirect unauthenticated users
-- [ ] Toast notifications show for success/error
-- [ ] Responsive design works on mobile
-- [ ] No TypeScript errors
+- [ ] Toast notifications untuk success dan error
+- [ ] Responsive design di mobile
+- [ ] No TypeScript errors (`npm run type-check`)
 - [ ] No console errors/warnings
+- [ ] Semua status/role values pakai constants
+- [ ] Date range tervalidasi (from ≤ to)
+- [ ] Delete action ada konfirmasi dialog
+- [ ] Fetch ter-cancel saat unmount (AbortController)
+- [ ] Filters tersimpan di URL search params
+- [ ] Import order konsisten
+- [ ] Helpers reusable sudah di-extract ke `lib/`

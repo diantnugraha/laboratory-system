@@ -9,10 +9,12 @@ import {
   ReviewOrderDTO,
   UploadPaymentDTO,
   InvoiceStatusInfo,
-} from '../contracts/IOrderRepository';
-import { RepositoryResult, PaginatedData } from '../results/RepositoryResult';
+} from '../contracts/IOrderRepository.js';
+import { RepositoryResult, PaginatedData } from '../results/RepositoryResult.js';
 // buildMultiFieldSearchCondition removed - not needed for Prisma built-in queries
-import { orderCodeCache } from '../../services/cacheService';
+import { orderCodeCache } from '../../services/cacheService.js';
+import { DueDateCalculatorService } from '../../services/dueDateCalculatorService.js';
+import { SamplePriority } from '../../config/sample.js';
 
 /**
  * Helper to sanitize date values that might be invalid (e.g., '0000-00-00' from MySQL)
@@ -56,7 +58,11 @@ function sanitizeOrderDates<T extends Record<string, any>>(order: T): T {
  * Concrete implementation of order data access operations
  */
 export class OrderRepository implements IOrderRepository {
-  constructor(private prisma: PrismaClient) {}
+  private dueDateService: DueDateCalculatorService;
+
+  constructor(private prisma: PrismaClient) {
+    this.dueDateService = new DueDateCalculatorService(prisma);
+  }
 
   /**
    * Status to integer mapping for comparison
@@ -595,7 +601,28 @@ export class OrderRepository implements IOrderRepository {
             // Generate sample code
             const sampleCode = await this.generateSampleCodeInTransaction(tx);
 
-            // Create sample
+            // Map priority to SamplePriority format and calculate due dates
+            const priorityMap: Record<string, SamplePriority> = {
+              'normal': 'Normal',
+              'urgent': 'Urgent',
+              'very_urgent': 'Very Urgent',
+              'special_request': 'Normal', // Map special_request to Normal
+              'Normal': 'Normal',
+              'Urgent': 'Urgent',
+              'Very Urgent': 'Very Urgent',
+              'Subcontracted': 'Subcontracted',
+            };
+            const samplePriority = sampleData.priority ?? 'Normal';
+            const mappedPriority = priorityMap[samplePriority] ?? 'Normal';
+
+            // Calculate due dates based on order date and priority
+            const startDate = data.orderDate ?? new Date();
+            const dueDateResult = await this.dueDateService.calculate({
+              startDate,
+              priority: mappedPriority,
+            });
+
+            // Create sample with calculated dates
             const createdSample = await tx.sample.create({
               data: {
                 code: sampleCode,
@@ -607,9 +634,11 @@ export class OrderRepository implements IOrderRepository {
                 packaging_type: sampleData.packagingType,
                 quantity: sampleData.quantity ?? 1,
                 sample_status: 'Process',
-                priority: sampleData.priority ?? 'Normal',
+                priority: mappedPriority,
                 lead_time: sampleData.leadTime ?? 'Normal',
-                due_date: sampleData.dueDate,
+                received_date: startDate,
+                due_date: sampleData.dueDate ?? dueDateResult.dueDate,
+                coa_release_due_date: dueDateResult.coaReleaseDueDate,
                 standart_id: sampleData.standardId,
                 price: sampleData.price,
                 discount: sampleData.discount,

@@ -220,7 +220,7 @@ export const customerService = {
     limit?: number;
     search?: string;
     months?: number;
-  }): Promise<CustomersResponse> => {
+  }, signal?: AbortSignal): Promise<CustomersResponse> => {
     // Convert page to offset for backend
     const { page = 1, limit = 30, ...otherParams } = params || {};
     const offset = (page - 1) * limit;
@@ -230,14 +230,15 @@ export const customerService = {
         offset,
         limit,
         ...otherParams
-      }
+      },
+      signal
     });
     return response.data;
   },
 
   // Get customer by ID with full details
-  getById: async (id: number | string): Promise<CustomerResponse> => {
-    const response = await api.get<CustomerResponse>(`/customers/${id}`);
+  getById: async (id: number | string, signal?: AbortSignal): Promise<CustomerResponse> => {
+    const response = await api.get<CustomerResponse>(`/customers/${id}`, { signal });
     return response.data;
   },
 

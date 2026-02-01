@@ -14,6 +14,8 @@ import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/constants/priority";
 
 const formatDate = (dateString: string | null) => {
   if (!dateString) return '-';
@@ -35,20 +37,6 @@ const formatCurrency = (value: number) => {
     currency: 'IDR',
     minimumFractionDigits: 0,
   }).format(value);
-};
-
-const getPriorityBadge = (priority: string | null) => {
-  switch (priority?.toLowerCase()) {
-    case "urgent":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent</Badge>;
-    case "very urgent":
-      return <Badge variant="destructive">Very Urgent</Badge>;
-    case "special request":
-      return <Badge variant="outline" className="text-purple-600 border-purple-600">Special</Badge>;
-    case "normal":
-    default:
-      return <Badge variant="outline" className="text-green-600 border-green-600">Normal</Badge>;
-  }
 };
 
 export default function ReviewOrderPage() {
@@ -140,7 +128,14 @@ export default function ReviewOrderPage() {
       label: "Priority",
       render: (item) => {
         const rawItem = item as unknown as { order_priority?: string };
-        return getPriorityBadge(item.orderPriority || rawItem.order_priority);
+        const priority = item.orderPriority || rawItem.order_priority || '';
+        return (
+          <StatusBadge
+            status={priority.toLowerCase()}
+            colorMap={PRIORITY_COLORS}
+            labelMap={PRIORITY_LABELS}
+          />
+        );
       },
     },
     {

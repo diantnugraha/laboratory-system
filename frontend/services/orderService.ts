@@ -252,14 +252,14 @@ export const orderService = {
     priority?: string;
     date_from?: string;
     date_to?: string;
-  }): Promise<OrdersResponse> => {
-    const response = await api.get<OrdersResponse>('/orders', { params });
+  }, signal?: AbortSignal): Promise<OrdersResponse> => {
+    const response = await api.get<OrdersResponse>('/orders', { params, signal });
     return response.data;
   },
 
   // Get order by ID with full details including samples
-  getById: async (id: number | string): Promise<OrderResponse> => {
-    const response = await api.get<OrderResponse>(`/orders/${id}`);
+  getById: async (id: number | string, signal?: AbortSignal): Promise<OrderResponse> => {
+    const response = await api.get<OrderResponse>(`/orders/${id}`, { signal });
     return response.data;
   },
 

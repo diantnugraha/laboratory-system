@@ -20,6 +20,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/constants/priority";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,19 +56,6 @@ const formatDate = (dateString: string | null | undefined) => {
     });
   } catch {
     return dateString;
-  }
-};
-
-const getPriorityBadge = (priority: string | null) => {
-  switch (priority?.toLowerCase()) {
-    case "urgent":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent</Badge>;
-    case "very-urgent":
-      return <Badge variant="destructive">Very Urgent</Badge>;
-    case "special-request":
-      return <Badge variant="outline" className="text-purple-600 border-purple-600">Special Request</Badge>;
-    default:
-      return <Badge variant="secondary">Normal</Badge>;
   }
 };
 
@@ -246,7 +235,11 @@ export default function PreOrderDetailPage() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Priority
               </p>
-              {getPriorityBadge(preorder.priority)}
+              <StatusBadge
+                status={preorder.priority?.toLowerCase() || 'normal'}
+                colorMap={PRIORITY_COLORS}
+                labelMap={PRIORITY_LABELS}
+              />
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">

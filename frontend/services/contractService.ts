@@ -165,7 +165,7 @@ export const contractService = {
     period_to_start?: string;
     period_to_end?: string;
     priority?: number;
-  }): Promise<ContractsResponse> => {
+  }, signal?: AbortSignal): Promise<ContractsResponse> => {
     // Convert page to offset for backend
     const { page = 1, limit = 30, ...otherParams } = params || {};
     const offset = (page - 1) * limit;
@@ -175,14 +175,15 @@ export const contractService = {
         offset,
         limit,
         ...otherParams
-      }
+      },
+      signal
     });
     return response.data;
   },
 
   // Get contract by ID with full details
-  getById: async (id: number | string): Promise<ContractResponse> => {
-    const response = await api.get<ContractResponse>(`/contracts/${id}`);
+  getById: async (id: number | string, signal?: AbortSignal): Promise<ContractResponse> => {
+    const response = await api.get<ContractResponse>(`/contracts/${id}`, { signal });
     return response.data;
   },
 

@@ -2,6 +2,45 @@ import api from './api';
 
 // ===== Interfaces =====
 
+export interface SampleListItem {
+  id: number;
+  code: string;
+  name: string;
+  sample_status: string;
+  due_date: string | null;
+  received_date: string | null;
+  order: {
+    id: number;
+    code: string;
+    order_status: string;
+    priority: string | null;
+    customer: {
+      id: number;
+      code: string;
+      customer_name: string;
+    };
+  } | null;
+}
+
+export interface SampleListResponse {
+  data: SampleListItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface SampleListParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
 export interface SampleWorksheet {
   id: number;
   code: string;
@@ -25,6 +64,7 @@ export interface SampleOrder {
   code: string;
   status: string;
   priority: string | null;
+  customerId: number | null;
   customerName: string | null;
 }
 
@@ -68,10 +108,27 @@ export interface SampleDetail {
 // ===== API Functions =====
 
 /**
+ * Get all samples with pagination and filters
+ */
+export const getAll = async (params: SampleListParams = {}, signal?: AbortSignal): Promise<SampleListResponse> => {
+  const queryParams = new URLSearchParams();
+
+  if (params.page) queryParams.append('page', params.page.toString());
+  if (params.limit) queryParams.append('limit', params.limit.toString());
+  if (params.search) queryParams.append('search', params.search);
+  if (params.status) queryParams.append('status', params.status);
+  if (params.fromDate) queryParams.append('date_from', params.fromDate);
+  if (params.toDate) queryParams.append('date_to', params.toDate);
+
+  const response = await api.get(`/samples?${queryParams.toString()}`, { signal });
+  return response.data;
+};
+
+/**
  * Get sample detail by ID with worksheets and progress
  */
-export const getSampleDetail = async (id: number): Promise<SampleDetail> => {
-  const response = await api.get(`/samples/${id}/detail`);
+export const getSampleDetail = async (id: number, signal?: AbortSignal): Promise<SampleDetail> => {
+  const response = await api.get(`/samples/${id}/detail`, { signal });
   return response.data.data;
 };
 
@@ -109,6 +166,7 @@ export const updateSample = async (id: number, data: Partial<{
 };
 
 export default {
+  getAll,
   getSampleDetail,
   updateSampleStatus,
   getSampleById,

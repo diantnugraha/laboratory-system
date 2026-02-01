@@ -145,14 +145,14 @@ export const serviceService = {
     page?: number;
     limit?: number;
     search?: string;
-  }): Promise<ServicesResponse> => {
-    const response = await api.get<ServicesResponse>('/services', { params });
+  }, signal?: AbortSignal): Promise<ServicesResponse> => {
+    const response = await api.get<ServicesResponse>('/services', { params, signal });
     return response.data;
   },
 
   // Get service by ID
-  getById: async (id: number | string): Promise<ServiceResponse> => {
-    const response = await api.get<ServiceResponse>(`/services/${id}`);
+  getById: async (id: number | string, signal?: AbortSignal): Promise<ServiceResponse> => {
+    const response = await api.get<ServiceResponse>(`/services/${id}`, { signal });
     return response.data;
   },
 

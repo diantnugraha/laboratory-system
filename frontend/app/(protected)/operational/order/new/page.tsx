@@ -736,7 +736,7 @@ export default function OrderNewPage() {
             return svc.packageServices.map(ps => ({
               service_id: ps.serviceId,
               package_id: svc.serviceId, // The package ID
-              discount: svc.discount || 0,
+              discount: Number(svc.discount) || 0,
               price: svc.price ? Math.round(svc.price / svc.packageServices!.length) : 0,
             }));
           } else {
@@ -744,7 +744,7 @@ export default function OrderNewPage() {
             return [{
               service_id: svc.serviceId,
               package_id: null,
-              discount: svc.discount || 0,
+              discount: Number(svc.discount) || 0,
               price: svc.price || 0,
             }];
           }

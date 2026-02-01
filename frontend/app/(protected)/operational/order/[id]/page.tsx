@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +39,10 @@ import { RenderHTML } from "@/components/shared/RenderHTML";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/constants/orderStatus";
+import { SAMPLE_STATUS_COLORS, SAMPLE_STATUS_LABELS } from "@/lib/constants/sampleStatus";
+import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/constants/priority";
 
 const formatDate = (dateString: string | null | undefined) => {
   if (!dateString) return '-';
@@ -55,62 +58,6 @@ const formatDate = (dateString: string | null | undefined) => {
   }
 };
 
-const getStatusBadge = (status: string | null) => {
-  switch (status?.toLowerCase()) {
-    case "created":
-      return <Badge variant="outline" className="text-blue-600 border-blue-600">Created</Badge>;
-    case "to be verified":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">To Be Verified</Badge>;
-    case "reviewed":
-      return <Badge variant="outline" className="text-green-600 border-green-600">Reviewed</Badge>;
-    case "under process":
-      return <Badge variant="secondary">Under Process</Badge>;
-    case "complete":
-      return <Badge variant="default">Complete</Badge>;
-    case "cancelled":
-      return <Badge variant="destructive">Cancelled</Badge>;
-    case "payment confirmation":
-      return <Badge variant="outline" className="text-purple-600 border-purple-600">Payment Confirmation</Badge>;
-    case "need to revise":
-      return <Badge variant="outline" className="text-red-600 border-red-600">Need to Revise</Badge>;
-    default:
-      return <Badge variant="outline">{status || '-'}</Badge>;
-  }
-};
-
-// Sample status badge helper
-const getSampleStatusBadge = (status: string | null) => {
-  switch (status?.toLowerCase()) {
-    case "complete":
-    case "approved":
-    case "verified":
-      return <Badge variant="default" className="text-xs">{status}</Badge>;
-    case "process":
-    case "under process":
-      return <Badge variant="secondary" className="text-xs">{status}</Badge>;
-    case "pending":
-    case "waiting":
-      return <Badge variant="outline" className="text-xs">{status}</Badge>;
-    case "cancel":
-    case "cancelled":
-      return <Badge variant="destructive" className="text-xs">{status}</Badge>;
-    default:
-      return <Badge variant="secondary" className="text-xs">{status || '-'}</Badge>;
-  }
-};
-
-const getPriorityBadge = (priority: string | null) => {
-  switch (priority?.toLowerCase()) {
-    case "urgent":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent</Badge>;
-    case "very urgent":
-      return <Badge variant="destructive">Very Urgent</Badge>;
-    case "special request":
-      return <Badge variant="outline" className="text-purple-600 border-purple-600">Special Request</Badge>;
-    default:
-      return <Badge variant="secondary">Normal</Badge>;
-  }
-};
 
 const getContactFullName = (contact: Order['contact']) => {
   if (!contact) return '-';
@@ -207,7 +154,11 @@ export default function OrderDetailPage() {
           </Button>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold text-foreground">{order.code}</h1>
-            {getStatusBadge(order.orderStatus)}
+            <StatusBadge
+              status={(order.orderStatus || '').toLowerCase()}
+              colorMap={ORDER_STATUS_COLORS}
+              labelMap={ORDER_STATUS_LABELS}
+            />
           </div>
         </div>
         {/* Actions Dropdown */}
@@ -293,13 +244,21 @@ export default function OrderDetailPage() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Priority
               </p>
-              {getPriorityBadge(order.orderPriority || order.priority)}
+              <StatusBadge
+                status={(order.orderPriority || order.priority || '').toLowerCase()}
+                colorMap={PRIORITY_COLORS}
+                labelMap={PRIORITY_LABELS}
+              />
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Status
               </p>
-              {getStatusBadge(order.orderStatus)}
+              <StatusBadge
+                status={(order.orderStatus || '').toLowerCase()}
+                colorMap={ORDER_STATUS_COLORS}
+                labelMap={ORDER_STATUS_LABELS}
+              />
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -491,7 +450,12 @@ export default function OrderDetailPage() {
                       <td className="px-4 py-3">{sample.priority}</td>
                       <td className="px-4 py-3">{formatDate(sample.dueDate)}</td>
                       <td className="px-4 py-3">
-                        {getSampleStatusBadge(sample.sampleStatus)}
+                        <StatusBadge
+                          status={(sample.sampleStatus || '').toLowerCase()}
+                          colorMap={SAMPLE_STATUS_COLORS}
+                          labelMap={SAMPLE_STATUS_LABELS}
+                          className="text-xs"
+                        />
                       </td>
                       <td className="px-4 py-3">{formatDate(sample.coaReleasedDate)}</td>
                     </tr>

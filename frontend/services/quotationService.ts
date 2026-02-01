@@ -297,14 +297,14 @@ export const quotationService = {
     date_end?: string;
     lab?: string;
     sort_subtotal?: 'ASC' | 'DESC';
-  }): Promise<QuotationsResponse> => {
-    const response = await api.get<QuotationsResponse>('/quotations', { params });
+  }, signal?: AbortSignal): Promise<QuotationsResponse> => {
+    const response = await api.get<QuotationsResponse>('/quotations', { params, signal });
     return response.data;
   },
 
   // Get quotation by ID with full details
-  getById: async (id: number | string): Promise<QuotationResponse> => {
-    const response = await api.get<QuotationResponse>(`/quotations/${id}`);
+  getById: async (id: number | string, signal?: AbortSignal): Promise<QuotationResponse> => {
+    const response = await api.get<QuotationResponse>(`/quotations/${id}`, { signal });
     return response.data;
   },
 

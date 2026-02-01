@@ -14,35 +14,13 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { orderService, Order } from "@/services/orderService";
 import { OrderRejectDialog } from "@/components/forms/OrderRejectDialog";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
-
-const getStatusBadge = (status: string | null) => {
-  switch (status?.toLowerCase()) {
-    case "created":
-      return <Badge variant="outline" className="text-blue-600 border-blue-600">Created</Badge>;
-    case "to be verified":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">To Be Verified</Badge>;
-    case "reviewed":
-      return <Badge variant="outline" className="text-green-600 border-green-600">Reviewed</Badge>;
-    case "under process":
-      return <Badge variant="secondary">Under Process</Badge>;
-    case "complete":
-      return <Badge variant="default">Complete</Badge>;
-    case "cancelled":
-      return <Badge variant="destructive">Cancelled</Badge>;
-    case "payment confirmation":
-      return <Badge variant="outline" className="text-purple-600 border-purple-600">Payment Confirmation</Badge>;
-    case "need to revise":
-      return <Badge variant="outline" className="text-red-600 border-red-600">Need to Revise</Badge>;
-    default:
-      return <Badge variant="outline">{status || '-'}</Badge>;
-  }
-};
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/constants/orderStatus";
 
 const getFileIcon = (filename: string) => {
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -186,7 +164,11 @@ export default function ReviewOrderDetailPage() {
             <h1 className="text-xl font-semibold text-foreground">
               Review Order: {order.code}
             </h1>
-            {getStatusBadge(order.orderStatus)}
+            <StatusBadge
+              status={order.orderStatus?.toLowerCase() || ''}
+              colorMap={ORDER_STATUS_COLORS}
+              labelMap={ORDER_STATUS_LABELS}
+            />
           </div>
         </div>
       </div>

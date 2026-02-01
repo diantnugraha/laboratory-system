@@ -1,5 +1,53 @@
 import { z } from "zod";
 
+// ===== Reusable Field Builders =====
+
+/**
+ * Creates a required string field with custom field name in error message
+ */
+export const requiredString = (fieldName: string) =>
+  z.string().min(1, `${fieldName} is required`);
+
+/**
+ * Optional string that allows empty string
+ */
+export const optionalString = () =>
+  z.string().optional().or(z.literal(''));
+
+/**
+ * Optional email field (allows empty string)
+ */
+export const emailField = z
+  .string()
+  .email('Invalid email address')
+  .or(z.literal(''));
+
+/**
+ * Optional phone field with basic validation (allows empty string)
+ */
+export const phoneField = z
+  .string()
+  .regex(/^[0-9+\-\s()]*$/, 'Invalid phone number format')
+  .or(z.literal(''));
+
+/**
+ * Required email field
+ */
+export const requiredEmail = z
+  .string()
+  .min(1, 'Email is required')
+  .email('Invalid email address');
+
+/**
+ * Required phone field with basic validation
+ */
+export const requiredPhone = z
+  .string()
+  .min(1, 'Phone number is required')
+  .regex(/^[0-9+\-\s()]*$/, 'Invalid phone number format');
+
+// ===== Common Schemas =====
+
 // Common status schema
 const statusSchema = z.enum(["Active", "Inactive"]);
 

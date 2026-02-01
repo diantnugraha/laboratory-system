@@ -3,29 +3,41 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Edit, RefreshCw, Loader2, FlaskConical, Calendar, CheckCircle2, AlertCircle, Beaker } from 'lucide-react';
+import {
+  ArrowLeft,
+  Printer,
+  Download,
+  FlaskConical,
+  Beaker,
+  AlertCircle,
+  Calendar,
+  CheckCircle2,
+  Loader2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
-import { getSampleDetail, SampleDetail } from '@/services/sampleService';
-import { Breadcrumb } from '@/components/shared/Breadcrumb';
+import { RenderHTML } from '@/components/shared/RenderHTML';
 import { StatusBadge, ProgressBar } from '@/components/shared/StatusProgress';
 import { StatusBadge as PriorityBadge } from '@/components/shared/StatusBadge';
 import { PRIORITY_COLORS, PRIORITY_LABELS } from '@/lib/constants/priority';
-import { RenderHTML } from '@/components/shared/RenderHTML';
+import sampleService, { SampleDetail } from '@/services/sampleService';
+import { toast } from 'sonner';
+import { getErrorMessage } from '@/lib/utils/errorHandler';
+import { OPERATION_ERROR_MESSAGES } from '@/lib/constants/errorMessages';
 
 // Format date helper
-const formatDate = (dateString: string | null): string => {
+const formatDate = (dateString: string | null) => {
   if (!dateString) return '-';
   try {
-    return new Date(dateString).toLocaleDateString('id-ID', {
-      day: 'numeric',
+    const date = new Date(dateString);
+    return date.toLocaleDateString('id-ID', {
+      day: '2-digit',
       month: 'short',
       year: 'numeric',
     });
   } catch {
-    return '-';
+    return dateString;
   }
 };
 
@@ -41,38 +53,33 @@ const isOverdue = (dueDate: string | null, status: string | null): boolean => {
 export default function SampleDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { toast } = useToast();
-
-  const orderId = params.id as string;
-  const sampleId = params.sampleId as string;
-
   const [sample, setSample] = useState<SampleDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
-  const fetchSample = async (isRefresh = false) => {
-    try {
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      const data = await getSampleDetail(parseInt(sampleId));
-      setSample(data);
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error.response?.data?.message || 'Failed to load sample details',
-      });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  const sampleId = Number(params.id);
 
   useEffect(() => {
-    if (sampleId) {
-      fetchSample();
-    }
-  }, [sampleId]);
+    const fetchSample = async () => {
+      if (!sampleId || isNaN(sampleId)) {
+        toast.error('Invalid sample ID');
+        router.push('/operational/sample');
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const data = await sampleService.getSampleDetail(sampleId);
+        setSample(data);
+      } catch (error) {
+        toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('sample')));
+        router.push('/operational/sample');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSample();
+  }, [sampleId, router]);
 
   // Calculate worksheet status counts (grouped into 4 categories)
   const getStatusCounts = () => {
@@ -105,9 +112,17 @@ export default function SampleDetailPage() {
     );
   };
 
+  const handlePrint = () => {
+    toast.info('Print functionality coming soon');
+  };
+
+  const handleExport = () => {
+    toast.info('Export functionality coming soon');
+  };
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -115,12 +130,14 @@ export default function SampleDetailPage() {
 
   if (!sample) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <AlertCircle className="h-12 w-12 text-muted-foreground" />
-        <p className="text-muted-foreground">Sample not found</p>
-        <Button variant="outline" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Go Back
+      <div className="flex flex-col items-center justify-center py-16">
+        <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
+        <h2 className="text-lg font-semibold mb-2">Sample not found</h2>
+        <p className="text-muted-foreground mb-4">
+          The sample you&apos;re looking for doesn&apos;t exist.
+        </p>
+        <Button asChild>
+          <Link href="/operational/sample">Back to Sample List</Link>
         </Button>
       </div>
     );
@@ -131,20 +148,13 @@ export default function SampleDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
-      <Breadcrumb
-        items={[
-          { label: 'Orders', href: '/operational/order' },
-          { label: sample.order.code, href: `/operational/order/${orderId}` },
-          { label: sample.code },
-        ]}
-      />
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-9 w-9">
-            <ArrowLeft className="h-4 w-4" />
+          <Button variant="ghost" size="icon" asChild className="h-9 w-9">
+            <Link href="/operational/sample">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
           </Button>
           <div>
             <div className="flex items-center gap-2">
@@ -154,19 +164,17 @@ export default function SampleDetailPage() {
                 <Badge variant="destructive" className="text-xs">OVERDUE</Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              <RenderHTML html={sample.name} />
-            </p>
+            <p className="text-sm text-muted-foreground">{sample.name || 'Unnamed Sample'}</p>
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => fetchSample(true)} disabled={refreshing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
+          <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Printer className="h-4 w-4 mr-2" />
+            Print
           </Button>
-          <Button variant="outline" size="sm">
-            <Edit className="h-4 w-4 mr-2" />
-            Edit
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-2" />
+            Export
           </Button>
         </div>
       </div>
@@ -185,9 +193,7 @@ export default function SampleDetailPage() {
           {/* Sample Name */}
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sample Name</p>
-            <p className="text-sm font-medium">
-              <RenderHTML html={sample.name || '-'} />
-            </p>
+            <p className="text-sm font-medium">{sample.name || '-'}</p>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-4 border-t">
@@ -206,22 +212,20 @@ export default function SampleDetailPage() {
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Order</p>
               <p className="text-sm font-medium">
-                <Link href={`/operational/order/${orderId}`} className="text-primary hover:underline">
-                  {sample.order.code}
-                </Link>
+                {sample.order?.id ? (
+                  <Link href={`/operational/order/${sample.order.id}`} className="text-primary hover:underline">
+                    {sample.order.code}
+                  </Link>
+                ) : '-'}
               </p>
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Volume</p>
-              <p className="text-sm font-medium">
-                <RenderHTML html={sample.volume || '-'} />
-              </p>
+              <p className="text-sm font-medium">{sample.volume || '-'}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Storage</p>
-              <p className="text-sm font-medium">
-                <RenderHTML html={sample.sampleStorage || '-'} />
-              </p>
+              <p className="text-sm font-medium">{sample.sampleStorage || '-'}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Quantity</p>
@@ -278,9 +282,7 @@ export default function SampleDetailPage() {
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Lead Time</p>
-              <p className="text-sm font-medium">
-                <RenderHTML html={sample.leadTime} />
-              </p>
+              <p className="text-sm font-medium">{sample.leadTime || '-'}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Priority</p>
@@ -292,9 +294,7 @@ export default function SampleDetailPage() {
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Standard</p>
-              <p className="text-sm font-medium">
-                <RenderHTML html={sample.standardName || '-'} />
-              </p>
+              <p className="text-sm font-medium">{sample.standardName || '-'}</p>
             </div>
           </div>
 
@@ -372,7 +372,7 @@ export default function SampleDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Worksheets Card */}
+      {/* Worksheets Table */}
       <Card className="overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
           <CardTitle className="flex items-center gap-2">
@@ -401,50 +401,47 @@ export default function SampleDetailPage() {
                     <th className="text-left px-4 py-3 font-medium">Min</th>
                     <th className="text-left px-4 py-3 font-medium">Max</th>
                     <th className="text-left px-4 py-3 font-medium">Analyst</th>
-                    <th className="text-left px-4 py-3 font-medium">Due Date</th>
+                    <th className="text-left px-4 py-3 font-medium">Finish Date</th>
                     <th className="text-left px-4 py-3 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sample.worksheets.map((ws) => (
-                    <tr key={ws.id} className="border-b hover:bg-muted/20">
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/operational/order/${orderId}/sample/${sampleId}/worksheet/${ws.id}`}
-                          className="text-primary hover:underline font-medium"
-                        >
-                          {ws.code}
-                        </Link>
+                  {sample.worksheets.map((worksheet) => (
+                    <tr key={worksheet.id} className="border-b hover:bg-muted/20">
+                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                        {worksheet.code}
                       </td>
                       <td className="px-4 py-3">
-                        <div>
-                          <RenderHTML html={ws.parameter} />
-                          {ws.packageName && (
-                            <span className="text-xs text-muted-foreground block">
-                              Pkg: <RenderHTML html={ws.packageName} />
-                            </span>
-                          )}
-                        </div>
+                        <RenderHTML html={worksheet.parameter} />
+                        {worksheet.packageName && (
+                          <span className="text-xs text-muted-foreground block">
+                            Pkg: <RenderHTML html={worksheet.packageName} />
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        <RenderHTML html={ws.method} />
+                        {worksheet.method || '-'}
                       </td>
                       <td className="px-4 py-3 font-medium">
-                        <RenderHTML html={ws.result || '-'} />
+                        {worksheet.result || '-'}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        <RenderHTML html={ws.unit || '-'} />
+                        <RenderHTML html={worksheet.unit || '-'} />
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        <RenderHTML html={ws.min || '-'} />
+                        <RenderHTML html={worksheet.min || '-'} />
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        <RenderHTML html={ws.max || '-'} />
+                        <RenderHTML html={worksheet.max || '-'} />
                       </td>
-                      <td className="px-4 py-3">{ws.analystName || '-'}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDate(ws.dueDate)}</td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={ws.status} size="sm" />
+                        {worksheet.analystName || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {formatDate(worksheet.finishDate)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={worksheet.status} size="sm" />
                       </td>
                     </tr>
                   ))}

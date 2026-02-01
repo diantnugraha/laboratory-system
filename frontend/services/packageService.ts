@@ -140,14 +140,14 @@ export const packageService = {
     limit?: number;
     search?: string;
     select?: boolean;
-  }): Promise<PackagesResponse | PackageSelectResponse> => {
-    const response = await api.get<PackagesResponse | PackageSelectResponse>('/packages', { params });
+  }, signal?: AbortSignal): Promise<PackagesResponse | PackageSelectResponse> => {
+    const response = await api.get<PackagesResponse | PackageSelectResponse>('/packages', { params, signal });
     return response.data;
   },
 
   // Get package by ID with full details
-  getById: async (id: number | string): Promise<PackageResponse> => {
-    const response = await api.get<PackageResponse>(`/packages/${id}`);
+  getById: async (id: number | string, signal?: AbortSignal): Promise<PackageResponse> => {
+    const response = await api.get<PackageResponse>(`/packages/${id}`, { signal });
     return response.data;
   },
 

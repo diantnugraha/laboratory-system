@@ -147,67 +147,69 @@ export default function WorksheetDetailPage() {
       </div>
 
       {/* Analysis Information Card */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-medium flex items-center gap-2">
-            <FlaskConical className="h-4 w-4" />
+      <Card className="overflow-hidden">
+        <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
+          <CardTitle className="flex items-center gap-2">
+            <div className="p-1.5 rounded-md bg-primary/10">
+              <FlaskConical className="h-4 w-4 text-primary" />
+            </div>
             Analysis Information
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Status</p>
-              <StatusBadge status={worksheet.status} className="mt-1" />
+        <CardContent className="pt-6 space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</p>
+              <StatusBadge status={worksheet.status} />
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Parameter</p>
-              <div className="text-sm font-medium mt-1">
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Parameter</p>
+              <div className="text-sm font-medium">
                 <RenderHTML html={worksheet.parameter} />
               </div>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Method</p>
-              <p className="text-sm font-medium mt-1">{worksheet.method || '-'}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Method</p>
+              <p className="text-sm font-medium">{worksheet.method || '-'}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Unit</p>
-              <p className="text-sm font-medium mt-1">{worksheet.unit || worksheet.serviceUnit || '-'}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Unit</p>
+              <p className="text-sm font-medium">{worksheet.unit || worksheet.serviceUnit || '-'}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Result</p>
-              <p className="text-sm font-medium mt-1">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-6 border-t">
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Result</p>
+              <p className="text-sm font-medium">
                 {worksheet.result || '-'} {worksheet.result && worksheet.unit}
               </p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Numeric Result</p>
-              <p className="text-sm font-medium mt-1">{worksheet.nResult || '-'}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Numeric Result</p>
+              <p className="text-sm font-medium">{worksheet.nResult || '-'}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Percent PC</p>
-              <p className="text-sm font-medium mt-1">{worksheet.percentPc !== null ? `${worksheet.percentPc}%` : '-'}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Percent PC</p>
+              <p className="text-sm font-medium">{worksheet.percentPc !== null ? `${worksheet.percentPc}%` : '-'}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Price</p>
-              <p className="text-sm font-medium mt-1">{formatCurrency(worksheet.price)}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Price</p>
+              <p className="text-sm font-medium">{formatCurrency(worksheet.price)}</p>
             </div>
           </div>
 
           {worksheet.packageName && (
-            <div className="pt-4 border-t">
-              <p className="text-xs text-muted-foreground uppercase">Package</p>
-              <p className="text-sm font-medium mt-1">{worksheet.packageName}</p>
+            <div className="pt-6 border-t">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Package</p>
+              <p className="text-sm font-medium">{worksheet.packageName}</p>
             </div>
           )}
 
           {worksheet.remarks && (
-            <div className="pt-4 border-t">
-              <p className="text-xs text-muted-foreground uppercase">Remarks</p>
-              <div className="p-3 rounded-lg border bg-muted/30 mt-1">
+            <div className="pt-6 border-t">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Remarks</p>
+              <div className="p-4 rounded-lg border bg-muted/30">
                 <RenderHTML html={worksheet.remarks} className="text-sm leading-relaxed" />
               </div>
             </div>
@@ -216,88 +218,92 @@ export default function WorksheetDetailPage() {
       </Card>
 
       {/* Assignment & Workflow Card */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-medium flex items-center gap-2">
-            <Users className="h-4 w-4" />
+      <Card className="overflow-hidden">
+        <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
+          <CardTitle className="flex items-center gap-2">
+            <div className="p-1.5 rounded-md bg-primary/10">
+              <Users className="h-4 w-4 text-primary" />
+            </div>
             Assignment & Workflow
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Analyst</p>
-              <p className="text-sm font-medium mt-1">{worksheet.analystName || '-'}</p>
+        <CardContent className="pt-6 space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Analyst</p>
+              <p className="text-sm font-medium">{worksheet.analystName || '-'}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Supervisor</p>
-              <p className="text-sm font-medium mt-1">{worksheet.supervisorName || '-'}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Supervisor</p>
+              <p className="text-sm font-medium">{worksheet.supervisorName || '-'}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">QC</p>
-              <p className="text-sm font-medium mt-1">{worksheet.qcName || '-'}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">QC</p>
+              <p className="text-sm font-medium">{worksheet.qcName || '-'}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Manager</p>
-              <p className="text-sm font-medium mt-1">{worksheet.managerName || '-'}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Manager</p>
+              <p className="text-sm font-medium">{worksheet.managerName || '-'}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t mt-4">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Worksheet Date</p>
-              <p className="text-sm font-medium mt-1">{formatDate(worksheet.worksheetDate)}</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-6 border-t">
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Worksheet Date</p>
+              <p className="text-sm font-medium">{formatDate(worksheet.worksheetDate)}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Finish Date</p>
-              <p className="text-sm font-medium mt-1">{formatDate(worksheet.finishDate)}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Finish Date</p>
+              <p className="text-sm font-medium">{formatDate(worksheet.finishDate)}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">QC Verify Date</p>
-              <p className="text-sm font-medium mt-1">{formatDate(worksheet.verifyQcDate)}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">QC Verify Date</p>
+              <p className="text-sm font-medium">{formatDate(worksheet.verifyQcDate)}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Analyst Type</p>
-              <p className="text-sm font-medium mt-1">{worksheet.analystType || '-'}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Analyst Type</p>
+              <p className="text-sm font-medium">{worksheet.analystType || '-'}</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Retest/Revision History Card */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-medium flex items-center gap-2">
-            <History className="h-4 w-4" />
+      <Card className="overflow-hidden">
+        <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
+          <CardTitle className="flex items-center gap-2">
+            <div className="p-1.5 rounded-md bg-primary/10">
+              <History className="h-4 w-4 text-primary" />
+            </div>
             History
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Total Retest</p>
-              <p className="text-sm font-medium mt-1">{worksheet.totalRetest || 0}</p>
+        <CardContent className="pt-6 space-y-6">
+          <div className="grid grid-cols-3 gap-6">
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Retest</p>
+              <p className="text-sm font-medium">{worksheet.totalRetest || 0}</p>
               {worksheet.retestReason && (
                 <p className="text-xs text-muted-foreground mt-1">Reason: {worksheet.retestReason}</p>
               )}
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Total Revision</p>
-              <p className="text-sm font-medium mt-1">{worksheet.totalRevision || 0}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Revision</p>
+              <p className="text-sm font-medium">{worksheet.totalRevision || 0}</p>
               {worksheet.reviseReason && (
                 <p className="text-xs text-muted-foreground mt-1">Reason: {worksheet.reviseReason}</p>
               )}
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground uppercase">Customer Retest</p>
-              <p className="text-sm font-medium mt-1">{worksheet.totalCustomerRetest || 0}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Customer Retest</p>
+              <p className="text-sm font-medium">{worksheet.totalCustomerRetest || 0}</p>
             </div>
           </div>
 
           {resultHistoryItems.length > 0 && (
-            <div className="pt-4 border-t">
-              <p className="text-xs text-muted-foreground uppercase mb-2">Result History</p>
-              <div className="space-y-2 bg-muted/50 rounded-lg p-3">
+            <div className="pt-6 border-t">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Result History</p>
+              <div className="space-y-2 bg-muted/50 rounded-lg p-4">
                 {resultHistoryItems.map((item, idx) => (
                   <div key={idx} className="text-sm">
                     <span className="text-muted-foreground">{item.date}:</span> {item.result}
@@ -309,9 +315,9 @@ export default function WorksheetDetailPage() {
           )}
 
           {worksheet.resultHistory && resultHistoryItems.length === 0 && (
-            <div className="pt-4 border-t">
-              <p className="text-xs text-muted-foreground uppercase mb-2">Result History</p>
-              <div className="bg-muted/50 rounded-lg p-3">
+            <div className="pt-6 border-t">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Result History</p>
+              <div className="bg-muted/50 rounded-lg p-4">
                 <p className="text-sm whitespace-pre-wrap">{worksheet.resultHistory}</p>
               </div>
             </div>
@@ -321,36 +327,38 @@ export default function WorksheetDetailPage() {
 
       {/* Subcontract Info Card - Only show if relevant */}
       {hasSubcontractInfo && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Package className="h-4 w-4" />
+        <Card className="overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-muted/50 to-transparent border-b">
+            <CardTitle className="flex items-center gap-2">
+              <div className="p-1.5 rounded-md bg-primary/10">
+                <Package className="h-4 w-4 text-primary" />
+              </div>
               Subcontract Information
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-xs text-muted-foreground uppercase">Subcontractor</p>
-                <p className="text-sm font-medium mt-1">{worksheet.subcontractorName || '-'}</p>
+          <CardContent className="pt-6 space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subcontractor</p>
+                <p className="text-sm font-medium">{worksheet.subcontractorName || '-'}</p>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground uppercase">Air Way Bill</p>
-                <p className="text-sm font-medium mt-1">{worksheet.airWayBill || '-'}</p>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Air Way Bill</p>
+                <p className="text-sm font-medium">{worksheet.airWayBill || '-'}</p>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground uppercase">Send Date</p>
-                <p className="text-sm font-medium mt-1">{formatDate(worksheet.subconSendDate)}</p>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Send Date</p>
+                <p className="text-sm font-medium">{formatDate(worksheet.subconSendDate)}</p>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground uppercase">Received Date</p>
-                <p className="text-sm font-medium mt-1">{formatDate(worksheet.subconReceivedDate)}</p>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Received Date</p>
+                <p className="text-sm font-medium">{formatDate(worksheet.subconReceivedDate)}</p>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t mt-4">
-              <div>
-                <p className="text-xs text-muted-foreground uppercase">End Date</p>
-                <p className="text-sm font-medium mt-1">{formatDate(worksheet.subconEndDate)}</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-6 border-t">
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">End Date</p>
+                <p className="text-sm font-medium">{formatDate(worksheet.subconEndDate)}</p>
               </div>
             </div>
           </CardContent>

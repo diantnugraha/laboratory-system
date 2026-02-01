@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Plus, Search, Loader2 } from "lucide-react";
+import { Plus, Search, Loader2, AlertCircle } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -37,6 +37,8 @@ interface DataTableProps<T> {
 
   // Server-side mode props (all optional)
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   searchValue?: string;
   onSearchChange?: (query: string) => void;
   pagination?: {
@@ -57,6 +59,8 @@ export function DataTable<T extends { id: string | number }>({
   searchPlaceholder = "Search...",
   itemsPerPage = 10,
   loading = false,
+  error,
+  onRetry,
   searchValue,
   onSearchChange,
   pagination,
@@ -180,6 +184,20 @@ export function DataTable<T extends { id: string | number }>({
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-32 text-center">
                   <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+                </TableCell>
+              </TableRow>
+            ) : error ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-32 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <AlertCircle className="h-8 w-8 text-destructive" />
+                    <p className="text-sm text-muted-foreground">{error}</p>
+                    {onRetry && (
+                      <Button variant="outline" size="sm" onClick={onRetry}>
+                        Try Again
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : paginatedData.length === 0 ? (

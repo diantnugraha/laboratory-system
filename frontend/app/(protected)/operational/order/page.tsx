@@ -1,12 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Plus, Search } from 'lucide-react';
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { orderService, OrderListItem } from "@/services/orderService";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RenderHTML } from "@/components/shared/RenderHTML";
@@ -14,6 +13,9 @@ import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/constants/orderStatus";
+import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/constants/priority";
 
 const formatDate = (dateString: string | null) => {
   if (!dateString) return '-';
@@ -37,42 +39,7 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-const getStatusBadge = (status: string | null) => {
-  switch (status?.toLowerCase()) {
-    case "created":
-      return <Badge variant="outline" className="text-blue-600 border-blue-600">Created</Badge>;
-    case "to be verified":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">To Be Verified</Badge>;
-    case "reviewed":
-      return <Badge variant="outline" className="text-green-600 border-green-600">Reviewed</Badge>;
-    case "under process":
-      return <Badge variant="secondary">Under Process</Badge>;
-    case "complete":
-      return <Badge variant="default">Complete</Badge>;
-    case "cancelled":
-      return <Badge variant="destructive">Cancelled</Badge>;
-    case "payment confirmation":
-      return <Badge variant="outline" className="text-purple-600 border-purple-600">Payment Confirmation</Badge>;
-    case "need to revise":
-      return <Badge variant="outline" className="text-red-600 border-red-600">Need to Revise</Badge>;
-    default:
-      return <Badge variant="outline">{status || '-'}</Badge>;
-  }
-};
-
-const getPriorityBadge = (priority: string | null) => {
-  switch (priority?.toLowerCase()) {
-    case "urgent":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent</Badge>;
-    case "very urgent":
-      return <Badge variant="destructive">Very Urgent</Badge>;
-    case "special request":
-      return <Badge variant="outline" className="text-purple-600 border-purple-600">Special</Badge>;
-    case "normal":
-    default:
-      return <Badge variant="outline" className="text-green-600 border-green-600">Normal</Badge>;
-  }
-};
+const PAGE_LIMIT = 30;
 
 const columns: Column<OrderListItem>[] = [
   {
@@ -117,7 +84,14 @@ const columns: Column<OrderListItem>[] = [
     label: "Priority",
     render: (item) => {
       const rawItem = item as unknown as { order_priority?: string };
-      return getPriorityBadge(item.orderPriority || rawItem.order_priority);
+      const priority = item.orderPriority || rawItem.order_priority || '';
+      return (
+        <StatusBadge
+          status={priority.toLowerCase()}
+          colorMap={PRIORITY_COLORS}
+          labelMap={PRIORITY_LABELS}
+        />
+      );
     },
   },
   {
@@ -125,7 +99,14 @@ const columns: Column<OrderListItem>[] = [
     label: "Status",
     render: (item) => {
       const rawItem = item as unknown as { order_status?: string };
-      return getStatusBadge(item.orderStatus || rawItem.order_status);
+      const status = item.orderStatus || rawItem.order_status || '';
+      return (
+        <StatusBadge
+          status={status.toLowerCase()}
+          colorMap={ORDER_STATUS_COLORS}
+          labelMap={ORDER_STATUS_LABELS}
+        />
+      );
     },
   },
   {
@@ -137,47 +118,80 @@ const columns: Column<OrderListItem>[] = [
 
 export default function OrderPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Initialize state from URL params
+  const initialSearch = searchParams.get('search') || '';
+  const initialPage = Number(searchParams.get('page')) || 1;
+
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 30,
+    page: initialPage,
+    limit: PAGE_LIMIT,
     total: 0,
     totalPages: 0,
   });
 
   const debouncedSearch = useDebounce(searchQuery, 500);
 
-  const fetchOrders = useCallback(async (page: number = 1, search?: string, limit: number = 30) => {
+  // Update URL with current filter state
+  const updateURL = useCallback((params: Record<string, string | number | undefined>) => {
+    const newParams = new URLSearchParams(searchParams.toString());
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '' && value !== 1) {
+        newParams.set(key, String(value));
+      } else {
+        newParams.delete(key);
+      }
+    });
+    const queryString = newParams.toString();
+    router.replace(queryString ? `?${queryString}` : '', { scroll: false });
+  }, [searchParams, router]);
+
+  const fetchOrders = useCallback(async (page: number = 1, search?: string, signal?: AbortSignal) => {
     try {
       setLoading(true);
+      setError(null);
       const response = await orderService.getAll({
         page,
-        limit,
+        limit: PAGE_LIMIT,
         search: search && search.length >= 2 ? search : undefined,
-      });
+      }, signal);
       setOrders(response.data);
       setPagination(response.pagination);
-    } catch (error) {
-      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('orders')));
+    } catch (err) {
+      // Ignore cancelled requests (from AbortController)
+      if (err instanceof Error && (err.name === 'AbortError' || err.name === 'CanceledError')) return;
+      const errorMessage = getErrorMessage(err, OPERATION_ERROR_MESSAGES.FETCH('orders'));
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchOrders(1, debouncedSearch, pagination.limit);
-  }, [fetchOrders, debouncedSearch, pagination.limit]);
+    const controller = new AbortController();
+    fetchOrders(pagination.page, debouncedSearch, controller.signal);
+    return () => controller.abort();
+  }, [fetchOrders, debouncedSearch, pagination.page]);
 
   const handlePageChange = (page: number) => {
     setPagination(prev => ({ ...prev, page }));
-    fetchOrders(page, debouncedSearch, pagination.limit);
+    updateURL({ search: debouncedSearch, page });
   };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     setPagination(prev => ({ ...prev, page: 1 }));
+    updateURL({ search: query, page: 1 });
+  };
+
+  const handleRetry = () => {
+    fetchOrders(pagination.page, debouncedSearch);
   };
 
   return (
@@ -214,6 +228,8 @@ export default function OrderPage() {
         columns={columns}
         data={orders}
         loading={loading}
+        error={error}
+        onRetry={handleRetry}
         searchPlaceholder=""
         pagination={pagination}
         onPageChange={handlePageChange}

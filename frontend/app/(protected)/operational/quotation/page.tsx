@@ -14,6 +14,8 @@ import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
 import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/constants/priority";
 
 // Minimum order constants
 const MIN_TOTAL = 200000;
@@ -70,18 +72,6 @@ const getStatusVariant = (status: string) => {
   }
 };
 
-const getPriorityBadge = (priority: string | null) => {
-  switch (priority) {
-    case "urgent":
-      return <Badge variant="outline" className="text-orange-600 border-orange-600">Urgent</Badge>;
-    case "very urgent":
-      return <Badge variant="destructive">Very Urgent</Badge>;
-    case "normal":
-    default:
-      return <Badge variant="outline" className="text-green-600 border-green-600">Normal</Badge>;
-  }
-};
-
 const columns: Column<QuotationListItem>[] = [
   {
     key: "code",
@@ -131,7 +121,13 @@ const columns: Column<QuotationListItem>[] = [
   {
     key: "priority",
     label: "Priority",
-    render: (item) => getPriorityBadge(item.priority),
+    render: (item) => (
+      <StatusBadge
+        status={item.priority?.toLowerCase() || 'normal'}
+        colorMap={PRIORITY_COLORS}
+        labelMap={PRIORITY_LABELS}
+      />
+    ),
   },
   {
     key: "quoStatus",

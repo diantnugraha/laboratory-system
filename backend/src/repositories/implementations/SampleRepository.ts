@@ -301,6 +301,7 @@ export class SampleRepository implements ISampleRepository {
           code: sample.order.code,
           status: sample.order.order_status,
           priority: sample.order.order_priority,
+          customerId: sample.order.customer?.id || null,
           customerName: sample.order.customer?.customer_name || null,
         },
         worksheets: worksheets.map((ws: any) => {
