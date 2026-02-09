@@ -74,6 +74,13 @@ export interface WorksheetListResponse {
   };
 }
 
+export interface WorksheetCursorResponse {
+  success: boolean;
+  data: WorksheetListItem[];
+  cursor: number | null;
+  hasMore: boolean;
+}
+
 export interface WorksheetListParams {
   page?: number;
   limit?: number;
@@ -172,6 +179,21 @@ export const worksheetService = {
    */
   getAll: async (params?: WorksheetListParams, signal?: AbortSignal): Promise<WorksheetListResponse> => {
     const response = await api.get<WorksheetListResponse>('/worksheets', { params, signal });
+    return response.data;
+  },
+
+  /**
+   * Get all worksheets with cursor-based pagination (optimized for large datasets)
+   */
+  getAllCursor: async (params?: {
+    cursor?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+    sample_id?: number;
+    order_id?: number;
+  }, signal?: AbortSignal): Promise<WorksheetCursorResponse> => {
+    const response = await api.get<WorksheetCursorResponse>('/worksheets/cursor', { params, signal });
     return response.data;
   },
 

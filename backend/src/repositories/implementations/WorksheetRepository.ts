@@ -43,7 +43,59 @@ export class WorksheetRepository implements IWorksheetRepository {
   constructor(private prisma: PrismaClient) {}
 
   /**
-   * Common include for worksheet queries
+   * Optimized include for list views
+   * Only fetches fields needed for table display
+   */
+  private readonly worksheetListInclude = {
+    sample: {
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        due_date: true,
+        order: {
+          select: {
+            id: true,
+            order_priority: true,
+            customer: {
+              select: {
+                id: true,
+                customer_name: true,
+              },
+            },
+          },
+        },
+      },
+    },
+    service: {
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        parameter: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        method: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    },
+    analyst: {
+      select: {
+        id: true,
+        display_name: true,
+      },
+    },
+  };
+
+  /**
+   * Common include for worksheet queries (full data)
    */
   private readonly worksheetInclude = {
     sample: {
@@ -103,6 +155,12 @@ export class WorksheetRepository implements IWorksheetRepository {
             name: true,
           },
         },
+      },
+    },
+    analyst: {
+      select: {
+        id: true,
+        display_name: true,
       },
     },
   };
@@ -201,6 +259,95 @@ export class WorksheetRepository implements IWorksheetRepository {
       });
     } catch (error: any) {
       return RepositoryResult.fail(`Failed to fetch worksheets: ${error.message}`);
+    }
+  }
+
+  /**
+   * Find all worksheets with cursor-based pagination (optimized for large datasets)
+   * @param filter - Filter parameters including cursor
+   * @returns Cursor paginated data
+   */
+  async findAllCursor(filter: WorksheetFilter & { cursor?: number }): Promise<RepositoryResult<{
+    items: WorksheetWithRelations[];
+    nextCursor: number | null;
+    hasMore: boolean;
+  }>> {
+    try {
+      const { search, sampleId, orderId, status, cursor, limit = 50 } = filter;
+
+      const where: any = {
+        trash: null,
+        non_parameter: null,
+      };
+
+      // Search by code (prefix search for better index usage)
+      if (search) {
+        where.code = { startsWith: search };
+      }
+
+      // Filter by sample
+      if (sampleId) {
+        where.sample_id = sampleId;
+      }
+
+      // Filter by order (through sample)
+      if (orderId) {
+        where.sample = { order_id: orderId };
+      }
+
+      // Filter by status
+      if (status) {
+        if (Array.isArray(status)) {
+          where.status = { in: status };
+        } else {
+          where.status = status;
+        }
+      }
+
+      // Cursor filter: Get records with ID < cursor (descending order)
+      if (cursor) {
+        where.id = { lt: cursor };
+      }
+
+      // Analyst type filter (for analyst role)
+      if (filter.userAnalystTypeIds && filter.userAnalystTypeIds.length > 0) {
+        where.service = {
+          ...where.service,
+          analyst_type_id: { in: filter.userAnalystTypeIds },
+        };
+        // Analyst can only see worksheets they own or unassigned
+        where.OR = [
+          { analyst_id: filter.userRole === 5 ? { in: [null, filter.analystId] } : undefined },
+        ];
+      }
+
+      // Customer role filter
+      if (filter.userRole === 8 && filter.userCustomerId) {
+        where.sample = {
+          ...where.sample,
+          order: { customer_id: filter.userCustomerId },
+        };
+      }
+
+      // Fetch limit + 1 to check if there's more data
+      const items = await this.prisma.worksheet.findMany({
+        where,
+        take: limit + 1,
+        orderBy: { id: 'desc' },
+        include: this.worksheetListInclude, // Use optimized include
+      });
+
+      const hasMore = items.length > limit;
+      const data = hasMore ? items.slice(0, limit) : items;
+      const nextCursor = data.length > 0 ? data[data.length - 1].id : null;
+
+      return RepositoryResult.ok({
+        items: this.transformWorksheets(data),
+        nextCursor,
+        hasMore,
+      });
+    } catch (error: any) {
+      return RepositoryResult.fail(`Failed to fetch worksheets with cursor: ${error.message}`);
     }
   }
 
@@ -2336,6 +2483,10 @@ export class WorksheetRepository implements IWorksheetRepository {
         parameter: ws.service.parameter,
         method: ws.service.method,
       },
+      analyst: ws.analyst ? {
+        id: ws.analyst.id,
+        display_name: ws.analyst.display_name,
+      } : null,
     };
   }
 

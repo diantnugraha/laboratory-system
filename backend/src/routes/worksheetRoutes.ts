@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import {
   getAllWorksheets,
+  getWorksheetsWithCursor,
   getWorksheetById,
   getWorksheetDetail,
   getWorksheetsJson,
@@ -218,6 +219,27 @@ const worksheetRoutes: FastifyPluginAsync = async (fastify) => {
   }, quickSubmitResult);
 
   // ===== CRUD operations =====
+
+  // GET /api/worksheets/cursor - Cursor-based pagination (optimized for large datasets)
+  fastify.get('/cursor', {
+    schema: {
+      description: `Get worksheets with cursor-based pagination (optimized for 2M+ records). ${roleDescription([1, 2, 3, 5, 6, 7, 9, 8])}`,
+      tags: ['Worksheets'],
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          cursor: { type: 'integer', description: 'Cursor for pagination' },
+          limit: { type: 'integer', default: 50, description: 'Items per page' },
+          search: { type: 'string', description: 'Search by code (prefix match)' },
+          status: { type: 'string', description: 'Filter by status' },
+          sample_id: { type: 'integer', description: 'Filter by sample ID' },
+          order_id: { type: 'integer', description: 'Filter by order ID' }
+        }
+      }
+    },
+    preHandler: [authorize(1, 2, 3, 5, 6, 7, 9, 8)]
+  }, getWorksheetsWithCursor);
 
   // GET /api/worksheets - List with search
   fastify.get('/', {

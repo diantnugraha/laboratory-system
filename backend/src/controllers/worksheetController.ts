@@ -94,6 +94,55 @@ export const getAllWorksheets = async (request: FastifyRequest, reply: FastifyRe
 };
 
 /**
+ * GET /api/worksheets/cursor - List with cursor-based pagination (optimized for large datasets)
+ */
+export const getWorksheetsWithCursor = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+  const query = request.query as Record<string, unknown>;
+  const cursor = query.cursor ? parseId(query.cursor as string) : undefined;
+  const limit = parseQueryParam(query.limit, 50);
+  const search = typeof query.search === 'string' ? query.search : undefined;
+  const sampleId = query.sample_id ? parseId(query.sample_id as string) : undefined;
+  const orderId = query.order_id ? parseId(query.order_id as string) : undefined;
+  const status = typeof query.status === 'string' ? query.status : undefined;
+
+  // Get analyst type IDs for analyst role
+  let userAnalystTypeIds: number[] | undefined;
+  if (request.user?.role_id === 5) {
+    const analystTypesResult = await worksheetRepo.getUserAnalystTypeIds(request.user.id);
+    if (analystTypesResult.isSuccess()) {
+      userAnalystTypeIds = analystTypesResult.getValue();
+    }
+  }
+
+  const result = await worksheetRepo.findAllCursor({
+    search,
+    sampleId: sampleId || undefined,
+    orderId: orderId || undefined,
+    status,
+    cursor: cursor || undefined,
+    limit,
+    userRole: request.user?.role_id,
+    userCustomerId: request.user?.customer_id ?? undefined,
+    userAnalystTypeIds,
+    analystId: request.user?.role_id === 5 ? request.user.id : undefined,
+  });
+
+  if (result.isFailure()) {
+    throw new AppError(500, result.error || RESOURCE_ERRORS.FETCH_FAILED('worksheet'));
+  }
+
+  const data = result.getValue();
+  const response: ApiResponse = {
+    success: true,
+    data: data.items,
+    cursor: data.nextCursor,
+    hasMore: data.hasMore,
+  };
+
+  return reply.send(response);
+};
+
+/**
  * GET /api/worksheets/:id
  */
 export const getWorksheetById = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {

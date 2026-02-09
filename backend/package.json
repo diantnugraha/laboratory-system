@@ -41,6 +41,7 @@
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
     "fastify-plugin": "^5.0.1",
+    "ioredis": "^5.9.2",
     "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^9.0.2",
     "mailgun.js": "^12.6.0",

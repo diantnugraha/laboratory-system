@@ -44,6 +44,7 @@ model Users {
   promotion_program                                            promotion_program[]
   purchase                                                     purchase[]
   service_history                                              service_history[]
+  worksheets                                                   Worksheet[]         @relation("WorksheetAnalyst")
   role                                                         Roles               @relation(fields: [role_id], references: [id], onUpdate: Restrict, map: "users_ibfk_1")
   customer                                                     Customer?           @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "users_ibfk_2")
   complain_category_users_complain_categoryTocomplain_category complain_category?  @relation("users_complain_categoryTocomplain_category", fields: [complain_category], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "users_ibfk_3")
@@ -779,7 +780,9 @@ model Worksheet {
   service               Service   @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "worksheet_ibfk_2")
   standart              Standart? @relation(fields: [standart_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "worksheet_ibfk_3")
   package               Package?  @relation(fields: [package_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "worksheet_ibfk_4")
+  analyst               Users?    @relation("WorksheetAnalyst", fields: [analyst_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
+  @@index([analyst_id], map: "analyst_id")
   @@index([code], map: "idx_worksheet_code")
   @@index([trash, non_parameter, status, sample_id, service_id], map: "idx_worksheet_fast_query")
   @@index([package_id], map: "package_id")

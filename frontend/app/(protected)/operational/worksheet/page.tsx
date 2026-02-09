@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Search } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { worksheetService, WorksheetListItem } from "@/services/worksheetService";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -16,7 +17,6 @@ import {
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getErrorMessage } from "@/lib/utils/errorHandler";
-import { OPERATION_ERROR_MESSAGES } from "@/lib/constants/errorMessages";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { WORKSHEET_STATUS_COLORS, WORKSHEET_STATUS_LABELS } from "@/lib/constants/worksheetStatus";
 import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/constants/priority";
@@ -141,63 +141,74 @@ const columns: Column<WorksheetListItem>[] = [
 
 // ===== Main Component =====
 
+const PAGE_SIZE = 50;
+
 export default function WorksheetListPage() {
   const [worksheets, setWorksheets] = useState<WorksheetListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 20,
-    total: 0,
-    totalPages: 0,
-  });
+  const [cursorStack, setCursorStack] = useState<(number | null)[]>([null]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
-  const debouncedSearch = useDebounce(searchQuery, 500);
+  // Debounce search with 1 second delay (optimized for large datasets)
+  const debouncedSearch = useDebounce(searchQuery, 1000);
 
-  // Fetch worksheets
-  const fetchWorksheets = useCallback(async (
-    page: number = 1,
-    search?: string,
-    status?: string,
-    limit: number = 20
-  ) => {
+  // Fetch worksheets with cursor
+  const fetchWorksheets = useCallback(async (page: number) => {
     try {
       setLoading(true);
-      const response = await worksheetService.getAll({
-        page,
-        limit,
-        search: search && search.length >= 2 ? search : undefined,
-        status: status !== 'all' ? status : undefined,
+      const cursor = cursorStack[page - 1] ?? null;
+
+      const response = await worksheetService.getAllCursor({
+        cursor: cursor || undefined,
+        limit: PAGE_SIZE,
+        search: debouncedSearch.length >= 2 ? debouncedSearch : undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
       });
 
       setWorksheets(response.data);
-      setPagination(response.pagination);
+
+      // Update cursor stack for next page if there's more data
+      if (response.hasMore && response.data.length > 0) {
+        const nextCursor = response.data[response.data.length - 1].id;
+        if (cursorStack.length === page) {
+          setCursorStack([...cursorStack, nextCursor]);
+        }
+        // Estimate total pages (we know at least page + 1 exists)
+        setTotalPages(page + 1);
+      } else {
+        // No more data, we're on the last page
+        setTotalPages(page);
+      }
     } catch (error) {
-      toast.error(getErrorMessage(error, OPERATION_ERROR_MESSAGES.FETCH('worksheets')));
+      toast.error(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [debouncedSearch, statusFilter, cursorStack]);
 
-  // Initial load
+  // Initial load and reload on filter change
   useEffect(() => {
-    fetchWorksheets(1, debouncedSearch, statusFilter, pagination.limit);
-  }, [debouncedSearch, statusFilter, fetchWorksheets, pagination.limit]);
-
-  const handlePageChange = (page: number) => {
-    setPagination(prev => ({ ...prev, page }));
-    fetchWorksheets(page, debouncedSearch, statusFilter, pagination.limit);
-  };
+    setCursorStack([null]);
+    setCurrentPage(1);
+    setTotalPages(1);
+    fetchWorksheets(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, statusFilter]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    setPagination(prev => ({ ...prev, page: 1 }));
   };
 
   const handleStatusChange = (status: string) => {
     setStatusFilter(status);
-    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    fetchWorksheets(page);
   };
 
   return (
@@ -212,7 +223,7 @@ export default function WorksheetListPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by code, sample, customer..."
+            placeholder="Search by code (min 2 chars)..."
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             className="pl-9"
@@ -235,20 +246,21 @@ export default function WorksheetListPage() {
             <SelectItem value="Cancel">Cancel</SelectItem>
           </SelectContent>
         </Select>
-
-        <div className="text-sm text-muted-foreground">
-          {pagination.total} items
-        </div>
       </div>
 
-      {/* Data Table */}
+      {/* Data Table with built-in pagination */}
       <DataTable
         title=""
         columns={columns}
         data={worksheets}
         loading={loading}
         searchPlaceholder=""
-        pagination={pagination}
+        pagination={{
+          page: currentPage,
+          limit: PAGE_SIZE,
+          total: worksheets.length,
+          totalPages: totalPages,
+        }}
         onPageChange={handlePageChange}
       />
     </div>
